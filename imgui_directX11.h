@@ -122,6 +122,7 @@ namespace MyImGui {
         ImFontConfig cfg;
         cfg.SizePixels = 13 * SCALE;
         ImGui::GetIO().Fonts->AddFontDefault(&cfg)->DisplayOffset.y = SCALE;
+        ImGui::GetIO().IniFilename = nullptr;
 
         ImGui::StyleColorsDark();
 
