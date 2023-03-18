@@ -130,7 +130,7 @@ int main() {
 				if (B[i] == B[i - 1] + 1) {
 					solStr += '-';
 					i += 1;
-					while (B[i] == B[i - 1] + 1) {
+					while (i < B.size() && B[i] == B[i - 1] + 1) {
 						i += 1;
 					}
 					i -= 1;

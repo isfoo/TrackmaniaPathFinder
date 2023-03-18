@@ -60,7 +60,7 @@ void saveSolutionsToFile(const std::string& outputFileName, const std::vector<st
 				if (B[i] == B[i - 1] + 1) {
 					outFile << '-';
 					i += 1;
-					while (B[i] == B[i - 1] + 1) {
+					while (i < B.size() && B[i] == B[i - 1] + 1) {
 						i += 1;
 					}
 					i -= 1;
