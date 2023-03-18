@@ -26,6 +26,7 @@ struct ConstantData {
 	std::vector<std::vector<int>> revAdjList;
 	std::vector<std::pair<std::vector<int16_t>, float>> solutions;
 	int maxSolutionCount;
+	ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec;
 };
 
 struct VariableData {
@@ -59,7 +60,7 @@ int countReachableNodes(int node, const DynamicBitset& Bvisited, std::vector<std
 }
 
 void findSolutions(ConstantData& constData, VariableData& variableData, const CopyData& copyData = CopyData()) {
-	auto& [limit, A, threadPool, mutex, adjList, revAdjList, solutions, maxSolutionCount] = constData;
+	auto& [limit, A, threadPool, mutex, adjList, revAdjList, solutions, maxSolutionCount, solutionsVec] = constData;
 	auto& [B, Bvisited, inCounts, outCounts] = variableData;
 	auto& [x, countR, adjM, timeA, parallalize] = copyData;
 
@@ -69,11 +70,13 @@ void findSolutions(ConstantData& constData, VariableData& variableData, const Co
 			if (timeA >= solutions.back().second) {
 				return;
 			}
+			solutionsVec->push_back({ B, timeA });
 			solutions.back() = { B, timeA };
 			std::sort(solutions.begin(), solutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 			limit = solutions.back().second;
 		} else {
 			solutions.push_back({ B, timeA });
+			solutionsVec->push_back({ B, timeA });
 		}
 		return;
 	}
@@ -147,15 +150,16 @@ void findSolutions(ConstantData& constData, VariableData& variableData, const Co
 	}
 }
 
-std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, float ignoredValue, float _limit, int _maxSolutionCount) {
+std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, float ignoredValue, float _limit, int _maxSolutionCount, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& _solutionsVec) {
 	ConstantData constData;
 	VariableData variableData;
-	auto& [limit, A, threadPool, mutex, adjList, revAdjList, solutions, maxSolutionCount] = constData;
+	auto& [limit, A, threadPool, mutex, adjList, revAdjList, solutions, maxSolutionCount, solutionsVec] = constData;
 	auto& [B, Bvisited, inCounts, outCounts] = variableData;
 
 	limit = _limit;
 	maxSolutionCount = _maxSolutionCount;
 	A = A_;
+	solutionsVec = &_solutionsVec;
 
 	// Create adjList
 	adjList.resize(A.size());
