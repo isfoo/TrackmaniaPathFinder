@@ -29,11 +29,22 @@ struct ConstantData {
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec;
 };
 
+struct MinNodes {
+	float in = 1e10;
+	float out = 1e10;
+};
+
+struct Change {
+	int node;
+	float value;
+};
+
 struct VariableData {
 	std::vector<int16_t> B;
 	DynamicBitset Bvisited;
 	std::vector<int> inCounts; 
 	std::vector<int> outCounts;
+	std::vector<MinNodes> minNodes;
 };
 
 struct CopyData {
@@ -42,6 +53,8 @@ struct CopyData {
 	int adjM = 1;
 	float timeA = 0;
 	bool parallalize = true;
+	float minInSum;
+	float minOutSum;
 };
 
 int dfs(int x, DynamicBitset& visited, std::vector<std::vector<int>>& adjList) {
@@ -59,10 +72,10 @@ int countReachableNodes(int node, const DynamicBitset& Bvisited, std::vector<std
 	return dfs(node, visited, adjList);
 }
 
-void findSolutions(ConstantData& constData, VariableData& variableData, const CopyData& copyData = CopyData()) {
+void findSolutions(ConstantData& constData, VariableData& variableData, CopyData& copyData) {
 	auto& [limit, A, threadPool, mutex, adjList, revAdjList, solutions, maxSolutionCount, solutionsVec] = constData;
-	auto& [B, Bvisited, inCounts, outCounts] = variableData;
-	auto& [x, countR, adjM, timeA, parallalize] = copyData;
+	auto& [B, Bvisited, inCounts, outCounts, minNodes] = variableData;
+	auto& [x, countR, adjM, timeA, parallalize, minInSum, minOutSum] = copyData;
 
 	if (countR == A.size() - 1) {
 		std::unique_lock l{ mutex };
@@ -96,34 +109,67 @@ void findSolutions(ConstantData& constData, VariableData& variableData, const Co
 			}
 		}
 	}
-	float minIn = 0;
-	float minOut = 0;
-	for (int i = 0; i < adjList.size(); ++i) {
-		if (!Bvisited.test(i)) {
-			float minValue = 1e10;
-			for (int j : revAdjList[i]) {
-				if (!Bvisited.test(j) || j == x)
-					minValue = std::min(minValue, A[i][j]);
-			}
-			minIn += minValue;
-			if (i != adjList.size() - 1) {
-				float minValue = 1e10;
-				for (int j : adjList[i]) {
-					if (!Bvisited.test(j))
-						minValue = std::min(minValue, A[j][i]);
+	
+	auto savedMinNodes = minNodes[x];
+	minOutSum -= minNodes[x].out;
+	minInSum -= minNodes[x].in;
+
+	minNodes[x].out = 0;
+	minNodes[x].in = 0;
+
+	std::array<Change, 111> outChanges;
+	std::array<Change, 111> inChanges;
+	int outChangesCount = 0;
+	int inChangesCount = 0;
+	for (int m : revAdjList[x]) {
+		if (!Bvisited.test(m)) {
+			if (minNodes[m].out == A[x][m]) {
+				float newMin = 1e10;
+				for (int k : adjList[m]) {
+					if (!Bvisited.test(k)) {
+						newMin = std::min(newMin, A[k][m]);
+					}
 				}
-				minOut += minValue;
+				minOutSum += newMin - minNodes[m].out;
+				outChanges[outChangesCount++] = { m, minNodes[m].out };
+				minNodes[m].out = newMin;
 			}
 		}
 	}
-	if (timeA + std::max(minIn, minOut) > limit)
+
+	if (timeA + std::max(minInSum, minOutSum) > limit) {
+		for (int i = 0; i < outChangesCount; ++i) {
+			minNodes[outChanges[i].node].out = outChanges[i].value;
+		}
+		minNodes[x] = savedMinNodes;
 		return;
+	}
+
 	for (int a : revAdjList[x]) {
 		outCounts[a] -= 1;
 	}
 	for (int y : adjList[x]) {
 		inCounts[y] -= 1;
 	}
+
+	for (int m : adjList[x]) {
+		if (!Bvisited.test(m)) {
+			if (minNodes[m].in == A[m][x]) {
+				float newMin = 1e10;
+				for (int k : revAdjList[m]) {
+					if (!Bvisited.test(k)) {
+						newMin = std::min(newMin, A[m][k]);
+					}
+				}
+				if (newMin != 1e10) {
+					minInSum += newMin - minNodes[m].in;
+					inChanges[inChangesCount++] = { m, minNodes[m].in };
+					minNodes[m].in = newMin;
+				}
+			}
+		}
+	}
+
 	for (int i = 0; i < adjList[x].size(); ++i) {
 		int y = adjList[x][i];
 		if (necessaryY != -1 && y != necessaryY)
@@ -133,15 +179,26 @@ void findSolutions(ConstantData& constData, VariableData& variableData, const Co
 		B[countR] = y;
 		Bvisited.set(y);
 		if (parallalize && adjM >= 100) {
-			threadPool.addTask([&constData, variableData, y, countR, timeA = timeA + A[y][x]]() mutable {
-				findSolutions(constData, variableData, { y, countR + 1, 1, timeA, false });
+			threadPool.addTask([&constData, variableData, y, countR, minInSum, minOutSum, timeA = timeA + A[y][x]]() mutable {
+				auto cd = CopyData({ y, countR + 1, 1, timeA, false, minInSum, minOutSum });
+				findSolutions(constData, variableData, cd);
 			});
 		} else {
-			findSolutions(constData, variableData, { y, countR + 1, int(adjM * adjList[x].size()), timeA + A[y][x], parallalize });
+			auto cd = CopyData({ y, countR + 1, int(adjM * adjList[x].size()), timeA + A[y][x], parallalize, minInSum, minOutSum });
+			findSolutions(constData, variableData, cd);
 		}
+
 		B[countR] = -1;
 		Bvisited.reset(y);
 	}
+	for (int i = 0; i < outChangesCount; ++i) {
+		minNodes[outChanges[i].node].out = outChanges[i].value;
+	}
+	for (int i = 0; i < inChangesCount; ++i) {
+		minNodes[inChanges[i].node].in = inChanges[i].value;
+	}
+	minNodes[x] = savedMinNodes;
+
 	for (int y : adjList[x]) {
 		inCounts[y] += 1;
 	}
@@ -153,8 +210,9 @@ void findSolutions(ConstantData& constData, VariableData& variableData, const Co
 std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, float ignoredValue, float _limit, int _maxSolutionCount, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& _solutionsVec) {
 	ConstantData constData;
 	VariableData variableData;
+	CopyData copyData;
 	auto& [limit, A, threadPool, mutex, adjList, revAdjList, solutions, maxSolutionCount, solutionsVec] = constData;
-	auto& [B, Bvisited, inCounts, outCounts] = variableData;
+	auto& [B, Bvisited, inCounts, outCounts, minNodes] = variableData;
 
 	limit = _limit;
 	maxSolutionCount = _maxSolutionCount;
@@ -169,6 +227,7 @@ std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vect
 				adjList[i].push_back(j);
 			}
 		}
+		std::sort(adjList[i].begin(), adjList[i].end(), [&](int a, int b) { return A[a][i] < A[b][i]; });
 	}
 
 	// remove unnecessary connections
@@ -211,11 +270,33 @@ std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vect
 		}
 	}
 
+	minNodes.resize(A.size());
+	for (int i = 0; i < adjList.size(); ++i) {
+		float minValue = 1e10;
+		for (int j : revAdjList[i]) {
+			minValue = std::min(minValue, A[i][j]);
+		}
+		minNodes[i].in = minValue;
+		minValue = 1e10;
+		for (int j : adjList[i]) {
+			minValue = std::min(minValue, A[j][i]);
+		}
+		minNodes[i].out = minValue;
+	}
+	minNodes[0].in = 0;
+	minNodes.back().out = 0;
+	copyData.minInSum = 0;
+	copyData.minOutSum = 0;
+	for (auto min : minNodes) {
+		copyData.minInSum += min.in;
+		copyData.minOutSum += min.out;
+	}
+
 	// run algorithm
 	B.resize(A.size() - 1, -1);
 	Bvisited = DynamicBitset(A.size());
 	Bvisited.set(0);
-	findSolutions(constData, variableData);
+	findSolutions(constData, variableData, copyData);
 	threadPool.completeTasksAndStop();
 	std::sort(solutions.begin(), solutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 	return solutions;
