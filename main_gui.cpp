@@ -33,33 +33,35 @@ int main() {
 		ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, io.DisplaySize.y));
 		ImGui::Begin("Window", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
 
-		ImGui::BeginColumns("", 2, ImGuiColumnsFlags_NoBorder);
-		ImGui::SetColumnWidth(0, 250);
-		ImGui::SetColumnWidth(1, 900);
 		ImGui::Text("ignored node value:");
-		ImGui::NextColumn();
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(250);
+		ImGui::SetNextItemWidth(-1);
 		if (ImGui::InputFloat("##ignored node value", &ignoredValue)) {
 			ignoredValue = std::clamp(ignoredValue, 1.0f, 100'000.0f);
 		}
-		ImGui::NextColumn();
 		ImGui::Text("max solution time:");
-		ImGui::NextColumn();
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(250);
+		ImGui::SetNextItemWidth(-1);
 		if (ImGui::InputFloat("##max solution length", &limitValue)) {
 			limitValue = std::clamp(limitValue, 1.0f, 100'000.0f);
 		}
-		ImGui::NextColumn();
 		ImGui::Text("max number of solutions:");
-		ImGui::NextColumn();
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(250);
+		ImGui::SetNextItemWidth(-1);
 		if (ImGui::InputInt("##max number of solutions", &maxSolutionCount)) {
 			maxSolutionCount = std::clamp(maxSolutionCount, 1, 100'000);
 		}
-		ImGui::NextColumn();
 		ImGui::Text("output data file:");
-		ImGui::NextColumn();
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(250);
+		ImGui::SetNextItemWidth(-1);
 		ImGui::InputText("##output data file", outputDataFile, sizeof(outputDataFile));
-		ImGui::NextColumn();
 		ImGui::Text("input data file:");
-		ImGui::NextColumn();
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(250);
 		if (ImGui::Button("Find file")) {
 			OPENFILENAMEA ofn;
 			CHAR szFile[260] = { 0 };
@@ -79,8 +81,8 @@ int main() {
 			}
 		}
 		ImGui::SameLine();
+		ImGui::SetNextItemWidth(-1);
 		ImGui::InputText("##input data file", inputDataFile, sizeof(inputDataFile));
-		ImGui::EndColumns();
 
 		ImGui::RadioButton("use output style 1, e.g. [0,2,3,4,5,1,7,8]", &outputStyle, 0);
 		ImGui::RadioButton("use output style 2, e.g. [0,2-5,1,7-8]", &outputStyle, 1);
