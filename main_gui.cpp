@@ -140,7 +140,8 @@ int main() {
 				solStr += std::to_string(B[i] - 1);
 			}
 			solStr += "]";
-			ImGui::Text("%s", solStr.c_str());
+			ImGui::SetNextItemWidth(-1);
+			ImGui::InputText(("##solution" + std::to_string(j)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
 		}
 
 		if (!errorMsg.empty())
