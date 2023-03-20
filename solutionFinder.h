@@ -15,6 +15,7 @@
 #include <array>
 #include <queue>
 #include <stack>
+#include <algorithm>
 
 constexpr float MaxLimit = 1e10;
 constexpr int MaxMaxSolutionCount = 1e7;

@@ -72,9 +72,9 @@ int main(int argc, char** argv) {
 
 	auto timer = Timer();
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>> solutionsView;
-	auto algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, A, ignoredValue, limit, maxSolutionCount, outputStyle=argc<6]() {
+	auto algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, A, ignoredValue, limit, maxSolutionCount]() {
 		auto sols = runAlgorithm(A, ignoredValue, limit, maxSolutionCount, solutionsView);
-		saveSolutionsToFile("out.txt", sols, outputStyle == 0);
+		saveSolutionsToFile("out.txt", sols);
 		timer.stop();
 	});
 	int solutionsFound = 0;

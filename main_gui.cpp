@@ -13,7 +13,6 @@ int main() {
 	float ignoredValue = 9000;
 	float limitValue = 1850;
 	int maxSolutionCount = 20;
-	int outputStyle = 0;
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>> solutionsView;
 	std::vector<std::pair<std::vector<int16_t>, float>> bestFoundSolutions;
 
@@ -84,9 +83,6 @@ int main() {
 		ImGui::SetNextItemWidth(-1);
 		ImGui::InputText("##input data file", inputDataFile, sizeof(inputDataFile));
 
-		ImGui::RadioButton("use output style 1, e.g. [0,2,3,4,5,1,7,8]", &outputStyle, 0);
-		ImGui::RadioButton("use output style 2, e.g. [0,2-5,1,7-8]", &outputStyle, 1);
-
 		if (ImGui::Button("Run algorithm")) {
 			if (!isRunning(algorithmRunTask)) {
 				errorMsg = "";
@@ -95,9 +91,9 @@ int main() {
 					bestFoundSolutions.clear();
 					solutionsView = ThreadSafeVec<std::pair<std::vector<int16_t>, float>>{};
 					timer = Timer();
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount, outputStyle]() {
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() {
 						auto sols = runAlgorithm(A, ignoredValue, limitValue, maxSolutionCount, solutionsView);
-						saveSolutionsToFile(outputDataFile, sols, outputStyle == 0);
+						saveSolutionsToFile(outputDataFile, sols);
 						timer.stop();
 					});
 				}
