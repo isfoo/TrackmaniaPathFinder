@@ -81,10 +81,26 @@ private:
 	}
 };
 
+#if defined(__clang__)
+#define COMPILER_CLANG
+#elif defined(__INTEL_COMPILER)
+#define COMPILER_INTEL
+#elif defined(_MSC_VER)
+#define COMPILER_MSVC
+#elif defined(__GNUC__)
+#define COMPILER_GCC
+#endif
+
 uint64_t mostSignificantBitPosition(uint64_t a) {
+#if defined(COMPILER_GCC) || defined(COMPILER_CLANG)
+	return 63 - __builtin_clzll(a);
+#elif defined(COMPILER_MSVC)
 	unsigned long index;
 	_BitScanReverse64(&index, a);
 	return index;
+#else
+	static_assert(false, "unsupported compiler. Cannot compute mostSignificantBit");
+#endif
 }
 
 template<typename T> struct ThreadSafeVec {
