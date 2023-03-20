@@ -217,6 +217,7 @@ std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vec
 			}
 		}
 	}
+	std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 	return bestSolutions;
 }
 
