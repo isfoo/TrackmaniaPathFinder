@@ -13,6 +13,8 @@ int main() {
 	float ignoredValue = 9000;
 	float limitValue = 1850;
 	int maxSolutionCount = 20;
+	bool allowRepeatNodes = false;
+	std::vector<std::vector<int>> repeatNodeMatrix;
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>> solutionsView;
 	std::vector<std::pair<std::vector<int16_t>, float>> bestFoundSolutions;
 
@@ -83,10 +85,20 @@ int main() {
 		ImGui::SetNextItemWidth(-1);
 		ImGui::InputText("##input data file", inputDataFile, sizeof(inputDataFile));
 
+		ImGui::Text("allow repeat nodes:");
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(250);
+		ImGui::SetNextItemWidth(-1);
+		ImGui::Checkbox("##Allow repeat nodes", &allowRepeatNodes);
+
 		if (ImGui::Button("Run algorithm")) {
 			if (!isRunning(algorithmRunTask)) {
 				errorMsg = "";
+				repeatNodeMatrix.clear();
 				auto A = loadCsvData(inputDataFile, ignoredValue, errorMsg);
+				if (allowRepeatNodes) {
+					repeatNodeMatrix = addRepeatNodeEdges(A, ignoredValue);
+				}
 				if (errorMsg.empty()) {
 					bestFoundSolutions.clear();
 					solutionsView = ThreadSafeVec<std::pair<std::vector<int16_t>, float>>{};
@@ -125,7 +137,9 @@ int main() {
 			std::string solStr = "[";
 			solStr += std::to_string(B[0] - 1);
 			for (int i = 1; i < B.size(); ++i) {
-				if (B[i] == B[i - 1] + 1) {
+				if (!repeatNodeMatrix.empty() && repeatNodeMatrix[B[i]][B[i - 1]]) {
+					solStr += ",(" + std::to_string(repeatNodeMatrix[B[i]][B[i - 1]] - 1) + "),";
+				} else if (B[i] == B[i - 1] + 1) {
 					solStr += '-';
 					i += 1;
 					while (i < B.size() && B[i] == B[i - 1] + 1) {

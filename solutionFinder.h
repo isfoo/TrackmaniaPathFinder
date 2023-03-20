@@ -221,8 +221,36 @@ std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vec
 	return bestSolutions;
 }
 
-std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A, float ignoredValue, float limit, int maxSolutionCount, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec) {
-	auto A_ = A;
-	A_[0].back() = 0;
-	return findSolutions(A_, maxSolutionCount, limit, &solutionsVec);
+std::vector<std::vector<int>> addRepeatNodeEdges(std::vector<std::vector<float>>& A, float ignoredValue) {
+	std::vector<std::vector<int>> adjList(A.size());
+	for (int i = 0; i < A.size(); ++i) {
+		for (int j = 0; j < A[i].size(); ++j) {
+			if (A[j][i] != ignoredValue) {
+				adjList[i].push_back(j);
+			}
+		}
+	}
+
+	std::vector<std::vector<int>> repeatEdgeMatrix(A.size(), std::vector<int>(A.size()));
+	for (int i = 0; i < adjList.size(); ++i) {
+		for (int j : adjList[i]) {
+			for (int k : adjList[j]) {
+				if (i == k)
+					continue;
+				float time = A[k][j] + A[j][i];
+				if (time < A[k][i]) {
+					repeatEdgeMatrix[k][i] = j;
+					A[k][i] = time;
+				}
+			}
+		}
+	}
+	
+	return repeatEdgeMatrix;
+}
+
+std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, float ignoredValue, float limit, int maxSolutionCount, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec) {
+	auto A = A_;
+	A[0].back() = 0;
+	return findSolutions(A, maxSolutionCount, limit, &solutionsVec);
 }
