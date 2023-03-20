@@ -13,291 +13,214 @@
 #include <iomanip>
 #include <charconv>
 #include <array>
+#include <queue>
+#include <stack>
 
 constexpr float MaxLimit = 1e10;
-constexpr int MaxMaxSolutionCount = 1e10;
+constexpr int MaxMaxSolutionCount = 1e7;
 
-struct ConstantData {
-	float limit;
-	std::vector<std::vector<float>> A;
-	ThreadPool threadPool;
-	std::mutex mutex;
-	std::vector<std::vector<int>> adjList;
-	std::vector<std::vector<int>> revAdjList;
-	std::vector<std::pair<std::vector<int16_t>, float>> solutions;
-	int maxSolutionCount;
-	ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec;
+using Edge = std::pair<int, int>;
+constexpr Edge NullEdge = { -1, -1 };
+
+enum class EdgeType {
+	Outgoing,
+	Incoming
 };
 
-struct MinNodes {
-	float in = 1e10;
-	float out = 1e10;
-};
+struct PartialSolution {
+	constexpr static float Inf = 1e10;
 
-struct Change {
-	int node;
-	float value;
-};
-
-struct VariableData {
-	std::vector<int16_t> B;
-	DynamicBitset Bvisited;
-	std::vector<int> inCounts; 
-	std::vector<int> outCounts;
-	std::vector<MinNodes> minNodes;
-};
-
-struct CopyData {
-	int x = 0;
-	int countR = 0;
-	int adjM = 1;
-	float timeA = 0;
-	bool parallalize = true;
-	float minInSum;
-	float minOutSum;
-};
-
-int dfs(int x, DynamicBitset& visited, std::vector<std::vector<int>>& adjList) {
-	int visitedCount = 1;
-	visited.set(x);
-	for (auto i : adjList[x]) {
-		if (!visited.test(i)) {
-			visitedCount += dfs(i, visited, adjList);
-		}
+	bool operator>(const PartialSolution& other) const {
+		return lowerBound > other.lowerBound;
 	}
-	return visitedCount;
-}
-int countReachableNodes(int node, const DynamicBitset& Bvisited, std::vector<std::vector<int>>& adjList) {
-	auto visited = Bvisited;
-	return dfs(node, visited, adjList);
-}
 
-void findSolutions(ConstantData& constData, VariableData& variableData, CopyData& copyData) {
-	auto& [limit, A, threadPool, mutex, adjList, revAdjList, solutions, maxSolutionCount, solutionsVec] = constData;
-	auto& [B, Bvisited, inCounts, outCounts, minNodes] = variableData;
-	auto& [x, countR, adjM, timeA, parallalize, minInSum, minOutSum] = copyData;
+	PartialSolution withEdge(Edge pivot, const std::vector<std::vector<float>>& A) {
+		auto i = pivot.first;
+		auto j = pivot.second;
 
-	if (countR == A.size() - 1) {
-		std::unique_lock l{ mutex };
-		if (maxSolutionCount != MaxMaxSolutionCount && solutions.size() == maxSolutionCount) {
-			if (timeA >= solutions.back().second) {
-				return;
-			}
-			solutionsVec->push_back({ B, timeA });
-			solutions.back() = { B, timeA };
-			std::sort(solutions.begin(), solutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
-			limit = solutions.back().second;
-		} else {
-			solutions.push_back({ B, timeA });
-			solutionsVec->push_back({ B, timeA });
+		PartialSolution child = *this;
+		child.time += A[j][i];
+		for (int k = 0; k < n; ++k) {
+			child.matrix[i * n + k] = Inf;
+			child.matrix[k * n + j] = Inf;
 		}
-		return;
-	}
-	int necessaryY = -1;
-	for (int y : adjList[x]) {
-		if (!Bvisited.test(y) && inCounts[y] == 1) {
-			if (necessaryY != -1) {
-				return;
-			}
-			necessaryY = y;
-		}
-	}
-	for (int a : revAdjList[x]) {
-		if (!Bvisited.test(a)) {
-			if (outCounts[a] <= 1) {
-				return;
-			}
-		}
-	}
-	
-	auto savedMinNodes = minNodes[x];
-	minOutSum -= minNodes[x].out;
-	minInSum -= minNodes[x].in;
+		child.edges[int(EdgeType::Outgoing)][i] = j;
+		child.edges[int(EdgeType::Incoming)][j] = i;
 
-	minNodes[x].out = 0;
-	minNodes[x].in = 0;
+		auto subpathTo = child.traverseSubPath(i, EdgeType::Outgoing);
+		auto subpathFrom = child.traverseSubPath(i, EdgeType::Incoming);
+		if (subpathTo.size() + subpathFrom.size() - 1 != n) {
+			child.matrix[subpathTo.back() * n + subpathFrom.back()] = Inf;
+		}
 
-	std::array<Change, 111> outChanges;
-	std::array<Change, 111> inChanges;
-	int outChangesCount = 0;
-	int inChangesCount = 0;
-	for (int m : revAdjList[x]) {
-		if (!Bvisited.test(m)) {
-			if (minNodes[m].out == A[x][m]) {
-				float newMin = 1e10;
-				for (int k : adjList[m]) {
-					if (!Bvisited.test(k)) {
-						newMin = std::min(newMin, A[k][m]);
+		child.reduceMatrix();
+		return child;
+	}
+
+	PartialSolution withoutEdge(Edge pivot) {
+		auto i = pivot.first;
+		auto j = pivot.second;
+
+		PartialSolution child = *this;
+		child.matrix[i * n + j] = Inf;
+		child.reduceMatrix(EdgeType::Outgoing, i);
+		child.reduceMatrix(EdgeType::Incoming, j);
+
+		return child;
+	}
+
+	Edge choosePivotEdge() {
+		auto minStride = [&](int except, int k, int kStride) {
+			float m = Inf;
+			for (int i = 0; i < n; i++)
+				if (i != except)
+					m = std::min(m, *(matrix.data() + IK(i, k, kStride)));
+			return m;
+		};
+		auto rowMin = [&](int k, int except) { return minStride(except, k, n); };
+		auto columnMin = [&](int k, int except) { return minStride(except, k, 1); };
+
+		float bestIncrease = 0;
+		Edge bestPivot = NullEdge;
+		for (int i = 0; i < n; ++i) {
+			for (int j = 0; j < n; ++j) {
+				if (matrix[i * n + j] == 0) {
+					auto increase = rowMin(i, j) + columnMin(j, i);
+					if (increase > bestIncrease) {
+						bestIncrease = increase;
+						bestPivot = Edge(i, j);
 					}
 				}
-				minOutSum += newMin - minNodes[m].out;
-				outChanges[outChangesCount++] = { m, minNodes[m].out };
-				minNodes[m].out = newMin;
+			}
+		}
+		return bestPivot;
+	}
+
+	std::vector<int> traverseSubPath(int cur, EdgeType edgeType) {
+		std::vector<int> subpath{ cur };
+		for (int k = 0; k < n; ++k) {
+			auto next = edges[int(edgeType)][cur];
+			if (next == -1) {
+				break;
+			}
+			subpath.push_back(next);
+			cur = next;
+		}
+		return subpath;
+	}
+
+	void reduceMatrix(EdgeType edgeType, int i) {
+		auto kStride = edgeType == EdgeType::Outgoing ? 1 : n;
+		float m = Inf;
+		for (int k = 0; k < n; ++k) {
+			m = std::min(m, *(matrix.data() + IK(i, k, kStride)));
+		}
+		if (m != Inf) {
+			for (int k = 0; k < n; ++k) {
+				auto& val = *(matrix.data() + IK(i, k, kStride));
+				if (val != Inf)
+					val -= m;
+			}
+			lowerBound += m;
+		}
+	}
+
+	void reduceMatrix() {
+		for (int i = 0; i < n; ++i)
+			reduceMatrix(EdgeType::Outgoing, i);
+		for (int j = 0; j < n; ++j)
+			reduceMatrix(EdgeType::Incoming, j);
+	}
+
+	bool isComplete() {
+		auto path = traverseSubPath(0, EdgeType::Outgoing);
+		return path.size() == n + 1 && path[n - 1] == n - 1;
+	}
+
+	std::vector<int16_t> getPath() {
+		std::vector<int16_t> result;
+		auto path = traverseSubPath(0, EdgeType::Outgoing);
+		for (int i = 1; i < path.size() - 1; ++i) {
+			result.push_back(path[i]);
+		}
+		return result;
+	}
+
+	int IK(int i, int k, int kStride) {
+		return (n + 1 - kStride) * i + kStride * k;
+	}
+
+	int n;
+	float time = Inf;
+	float lowerBound = 0;
+	std::vector<float> matrix;
+	std::array<std::vector<int>, 2> edges;
+
+	PartialSolution() {}
+	PartialSolution(const std::vector<std::vector<float>>& A) : n(A.size()), matrix(n* n) {
+		for (int i = 0; i < A.size(); ++i) {
+			for (int j = 0; j < A.size(); ++j) {
+				matrix[i * n + j] = A[j][i];
+			}
+		}
+
+		edges[0].resize(n);
+		edges[1].resize(n);
+		for (int i = 0; i < n; ++i) {
+			matrix[i + i * n] = Inf;
+			edges[0][i] = -1;
+			edges[1][i] = -1;
+		}
+		time = 0;
+		reduceMatrix();
+	}
+};
+
+std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vector<std::vector<float>>& A, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec) {
+	std::vector<std::pair<std::vector<int16_t>, float>> bestSolutions;
+	PartialSolution root = PartialSolution(A).withEdge(Edge(A.size() - 1, 0), A);
+
+	std::priority_queue<PartialSolution, std::vector<PartialSolution>, std::greater<PartialSolution> > right;
+	std::stack<PartialSolution> left;
+	left.push(root);
+
+	while (!left.empty() || !right.empty()) {
+		auto currentSolution = !left.empty() ? left.top() : right.top();
+		if (!left.empty())
+			left.pop();
+		else
+			right.pop();
+		if (currentSolution.isComplete()) {
+			auto solution = std::make_pair(currentSolution.getPath(), currentSolution.time);
+			solutionsVec->push_back(solution);
+			if (bestSolutions.size() < maxSolutionCount) {
+				bestSolutions.push_back(solution);
+			} else if (currentSolution.time < limit) {
+				bestSolutions.back() = solution;
+			}
+			if (bestSolutions.size() >= maxSolutionCount) {
+				std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
+				limit = bestSolutions.back().second;
+			}
+		} else if (currentSolution.lowerBound < limit) {
+			auto pivot = currentSolution.choosePivotEdge();
+			if (pivot != NullEdge) {
+				auto withPivot = currentSolution.withEdge(pivot, A);
+				auto withoutPivot = currentSolution.withoutEdge(pivot);
+
+				if (withPivot.lowerBound < limit)
+					left.push(withPivot);
+
+				if (withoutPivot.lowerBound < limit)
+					right.push(withoutPivot);
 			}
 		}
 	}
-
-	if (timeA + std::max(minInSum, minOutSum) > limit) {
-		for (int i = 0; i < outChangesCount; ++i) {
-			minNodes[outChanges[i].node].out = outChanges[i].value;
-		}
-		minNodes[x] = savedMinNodes;
-		return;
-	}
-
-	for (int a : revAdjList[x]) {
-		outCounts[a] -= 1;
-	}
-	for (int y : adjList[x]) {
-		inCounts[y] -= 1;
-	}
-
-	for (int m : adjList[x]) {
-		if (!Bvisited.test(m)) {
-			if (minNodes[m].in == A[m][x]) {
-				float newMin = 1e10;
-				for (int k : revAdjList[m]) {
-					if (!Bvisited.test(k)) {
-						newMin = std::min(newMin, A[m][k]);
-					}
-				}
-				if (newMin != 1e10) {
-					minInSum += newMin - minNodes[m].in;
-					inChanges[inChangesCount++] = { m, minNodes[m].in };
-					minNodes[m].in = newMin;
-				}
-			}
-		}
-	}
-
-	for (int i = 0; i < adjList[x].size(); ++i) {
-		int y = adjList[x][i];
-		if (necessaryY != -1 && y != necessaryY)
-			continue;
-		if (Bvisited.test(y) || (countR % 10 == 9 && countReachableNodes(y, Bvisited, adjList) + countR < A.size() - 1))
-			continue;
-		B[countR] = y;
-		Bvisited.set(y);
-		if (parallalize && adjM >= 100) {
-			threadPool.addTask([&constData, variableData, y, countR, minInSum, minOutSum, timeA = timeA + A[y][x]]() mutable {
-				auto cd = CopyData({ y, countR + 1, 1, timeA, false, minInSum, minOutSum });
-				findSolutions(constData, variableData, cd);
-			});
-		} else {
-			auto cd = CopyData({ y, countR + 1, int(adjM * adjList[x].size()), timeA + A[y][x], parallalize, minInSum, minOutSum });
-			findSolutions(constData, variableData, cd);
-		}
-
-		B[countR] = -1;
-		Bvisited.reset(y);
-	}
-	for (int i = 0; i < outChangesCount; ++i) {
-		minNodes[outChanges[i].node].out = outChanges[i].value;
-	}
-	for (int i = 0; i < inChangesCount; ++i) {
-		minNodes[inChanges[i].node].in = inChanges[i].value;
-	}
-	minNodes[x] = savedMinNodes;
-
-	for (int y : adjList[x]) {
-		inCounts[y] += 1;
-	}
-	for (int a : revAdjList[x]) {
-		outCounts[a] += 1;
-	}
+	return bestSolutions;
 }
 
-std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, float ignoredValue, float _limit, int _maxSolutionCount, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& _solutionsVec) {
-	ConstantData constData;
-	VariableData variableData;
-	CopyData copyData;
-	auto& [limit, A, threadPool, mutex, adjList, revAdjList, solutions, maxSolutionCount, solutionsVec] = constData;
-	auto& [B, Bvisited, inCounts, outCounts, minNodes] = variableData;
-
-	limit = _limit;
-	maxSolutionCount = _maxSolutionCount;
-	A = A_;
-	solutionsVec = &_solutionsVec;
-
-	// Create adjList
-	adjList.resize(A.size());
-	for (int i = 0; i < A.size(); ++i) {
-		for (int j = 0; j < A[i].size(); ++j) {
-			if (A[j][i] != ignoredValue) {
-				adjList[i].push_back(j);
-			}
-		}
-		std::sort(adjList[i].begin(), adjList[i].end(), [&](int a, int b) { return A[a][i] < A[b][i]; });
-	}
-
-	// remove unnecessary connections
-	inCounts.resize(A.size(), 0);
-	for (int i = 0; i < adjList.size(); ++i) {
-		for (int j : adjList[i]) {
-			inCounts[j] += 1;
-		}
-	}
-
-	bool removedConnection = true;
-	while (removedConnection) {
-		removedConnection = false;
-		for (int i = 0; i < adjList.size(); ++i) {
-			for (int j : adjList[i]) {
-				if (adjList[i].size() == 1)
-					continue;
-				if (inCounts[j] == 1) {
-					for (int k : adjList[i]) {
-						if (k != j)
-							inCounts[k] -= 1;
-					}
-					adjList[i] = { j };
-					removedConnection = true;
-					break;
-				}
-			}
-		}
-	}
-
-	outCounts.resize(A.size(), 0);
-	for (int i = 0; i < adjList.size(); ++i) {
-		outCounts[i] = adjList[i].size();
-	}
-
-	revAdjList.resize(A.size());
-	for (int i = 0; i < adjList.size(); ++i) {
-		for (int j : adjList[i]) {
-			revAdjList[j].push_back(i);
-		}
-	}
-
-	minNodes.resize(A.size());
-	for (int i = 0; i < adjList.size(); ++i) {
-		float minValue = 1e10;
-		for (int j : revAdjList[i]) {
-			minValue = std::min(minValue, A[i][j]);
-		}
-		minNodes[i].in = minValue;
-		minValue = 1e10;
-		for (int j : adjList[i]) {
-			minValue = std::min(minValue, A[j][i]);
-		}
-		minNodes[i].out = minValue;
-	}
-	minNodes[0].in = 0;
-	minNodes.back().out = 0;
-	copyData.minInSum = 0;
-	copyData.minOutSum = 0;
-	for (auto min : minNodes) {
-		copyData.minInSum += min.in;
-		copyData.minOutSum += min.out;
-	}
-
-	// run algorithm
-	B.resize(A.size() - 1, -1);
-	Bvisited = DynamicBitset(A.size());
-	Bvisited.set(0);
-	findSolutions(constData, variableData, copyData);
-	threadPool.completeTasksAndStop();
-	std::sort(solutions.begin(), solutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
-	return solutions;
+std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A, float ignoredValue, float limit, int maxSolutionCount, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec) {
+	auto A_ = A;
+	A_[0].back() = 0;
+	return findSolutions(A_, maxSolutionCount, limit, &solutionsVec);
 }
