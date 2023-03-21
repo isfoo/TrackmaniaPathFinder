@@ -23,14 +23,138 @@ constexpr int MaxMaxSolutionCount = 1e7;
 using Edge = std::pair<int, int>;
 constexpr Edge NullEdge = { -1, -1 };
 
-enum class EdgeType {
-	Outgoing,
-	Incoming
+enum Direction {
+	Out,
+	In
+};
+
+constexpr float Inf = 1e10;
+std::vector<std::vector<float>> M;
+
+struct AdjList {
+	std::array<std::vector<int8_t>, 2> data;
+	std::array<std::vector<int8_t>, 2> sizes;
+	std::array<std::vector<float>, 2> reductions;
+	int n_;
+	AdjList(int n=0) : n_(n) {
+		data[Out].resize(n * n);
+		data[In].resize(n * n);
+		sizes[Out].resize(n);
+		sizes[In].resize(n);
+		reductions[Out].resize(n);
+		reductions[In].resize(n);
+	}
+
+	void add(int i, int j) {
+		add(Out, i, j);
+		add(In, j, i);
+	}
+
+	void setNecessaryEdge(int i, int j) {
+		for (int k = 0; k < sizes[Out][i]; ++k) {
+			int x = data[Out][i * n() + k];
+			removeEdge(i, x);
+			k -= 1;
+		}
+
+		for (int k = 0; k < sizes[In][j]; ++k) {
+			int x = data[In][j * n() + k];
+			removeEdge(x, j);
+			k -= 1;
+		}
+	}
+
+	void removeEdge(int i, int j) {
+		removeEdge(Out, i, j);
+		removeEdge(In, j, i);
+	}
+
+	void shrinkToSize() {
+		std::array<std::vector<int8_t>, 2> newData;
+		int newN = 0;
+		for (int i = 0; i < sizes[0].size(); ++i) {
+			newN = std::max<int>(newN, sizes[0][i]);
+			newN = std::max<int>(newN, sizes[1][i]);
+		}
+		for (int d = 0; d < 2; ++d) {
+			newData[d].resize(sizes[0].size() * newN);
+			for (int i = 0; i < sizes[0].size(); ++i) {
+				memcpy(&newData[d][i * newN], &data[d][i * n()], newN * sizeof(data[0][0]));
+			}
+		}
+		data = newData;
+		n_ = newN;
+	}
+
+	float getMin(Direction d, int i) {
+		float min = Inf;
+		for (int k = 0; k < sizes[d][i]; ++k) {
+			auto j = data[d][i * n() + k];
+			min = std::min(min, valueAt(d, i, j));
+		}
+		return min;
+	}
+
+	float reduce(Direction d, int i) {
+		auto min = getMin(d, i);
+		if (min != Inf) {
+			reductions[d][i] += min;
+		}
+		return min;
+	}
+
+	Edge getPivot() {
+		float bestIncrease = 0;
+		Edge bestPivot = NullEdge;
+
+		for (int i = 0; i < sizes[0].size(); ++i) {
+			for (int k = 0; k < sizes[Out][i]; ++k) {
+				int j = data[Out][i * n() + k];
+				if (std::abs(valueAt(Out, i, j)) <= 0.01) {
+					auto oldValue = M[j][i];
+					M[j][i] = Inf;
+					auto outMin = getMin(Out, i);
+					auto inMin = getMin(In, j);
+					float increase = outMin + inMin;
+					if (increase > bestIncrease) {
+						bestIncrease = increase;
+						bestPivot = Edge(i, j);
+					}
+					M[j][i] = oldValue;
+				}
+			}
+		}
+
+		return bestPivot;
+	}
+
+
+	float valueAt(Direction d, int i, int j) {
+		if (d == Out) {
+			return M[j][i] - reductions[Out][i] - reductions[In][j];
+		} else {
+			return M[i][j] - reductions[In][i] - reductions[Out][j];
+		}
+	}
+	void add(Direction d, int i, int j) {
+		data[d][i * n() + sizes[d][i]] = j;
+		sizes[d][i] += 1;
+	}
+	void removeEdge(Direction d, int i, int j) {
+		for (int k = 0; k < sizes[d][i]; ++k) {
+			if (data[d][i * n() + k] == j) {
+				sizes[d][i] -= 1;
+				std::swap(data[d][i * n() + k], data[d][i * n() + sizes[d][i]]);
+				break;
+			}
+		}
+	}
+	int n() {
+		return n_;
+	}
 };
 
 struct PartialSolution {
-	constexpr static float Inf = 1e10;
-
 	bool operator>(const PartialSolution& other) const {
 		return lowerBound > other.lowerBound;
 	}
@@ -41,20 +165,19 @@ struct PartialSolution {
 
 		PartialSolution child = *this;
 		child.time += A[j][i];
-		for (int k = 0; k < n; ++k) {
-			child.matrix[i * n + k] = Inf;
-			child.matrix[k * n + j] = Inf;
-		}
-		child.edges[int(EdgeType::Outgoing)][i] = j;
-		child.edges[int(EdgeType::Incoming)][j] = i;
 
-		auto subpathTo = child.traverseSubPath(i, EdgeType::Outgoing);
-		auto subpathFrom = child.traverseSubPath(i, EdgeType::Incoming);
+		child.adjList.setNecessaryEdge(i, j);
+		child.edges[Out][i] = j;
+		child.edges[In][j] = i;
+
+		auto subpathTo = child.traverseSubPath(i, Out);
+		auto subpathFrom = child.traverseSubPath(i, In);
 		if (subpathTo.size() + subpathFrom.size() - 1 != n) {
-			child.matrix[subpathTo.back() * n + subpathFrom.back()] = Inf;
+			child.adjList.removeEdge(subpathTo.back(), subpathFrom.back());
 		}
 
 		child.reduceMatrix();
+
 		return child;
 	}
 
@@ -63,41 +186,18 @@ struct PartialSolution {
 		auto j = pivot.second;
 
 		PartialSolution child = *this;
-		child.matrix[i * n + j] = Inf;
-		child.reduceMatrix(EdgeType::Outgoing, i);
-		child.reduceMatrix(EdgeType::Incoming, j);
+		child.adjList.removeEdge(i, j);
+		child.reduceMatrix(Out, i);
+		child.reduceMatrix(In, j);
 
 		return child;
 	}
 
 	Edge choosePivotEdge() {
-		auto minStride = [&](int except, int k, int kStride) {
-			float m = Inf;
-			for (int i = 0; i < n; i++)
-				if (i != except)
-					m = std::min(m, *(matrix.data() + IK(i, k, kStride)));
-			return m;
-		};
-		auto rowMin = [&](int k, int except) { return minStride(except, k, n); };
-		auto columnMin = [&](int k, int except) { return minStride(except, k, 1); };
-
-		float bestIncrease = 0;
-		Edge bestPivot = NullEdge;
-		for (int i = 0; i < n; ++i) {
-			for (int j = 0; j < n; ++j) {
-				if (matrix[i * n + j] == 0) {
-					auto increase = rowMin(i, j) + columnMin(j, i);
-					if (increase > bestIncrease) {
-						bestIncrease = increase;
-						bestPivot = Edge(i, j);
-					}
-				}
-			}
-		}
-		return bestPivot;
+		return adjList.getPivot();
 	}
 
-	std::vector<int> traverseSubPath(int cur, EdgeType edgeType) {
+	std::vector<int> traverseSubPath(int cur, Direction edgeType) {
 		std::vector<int> subpath{ cur };
 		for (int k = 0; k < n; ++k) {
 			auto next = edges[int(edgeType)][cur];
@@ -110,37 +210,27 @@ struct PartialSolution {
 		return subpath;
 	}
 
-	void reduceMatrix(EdgeType edgeType, int i) {
-		auto kStride = edgeType == EdgeType::Outgoing ? 1 : n;
-		float m = Inf;
-		for (int k = 0; k < n; ++k) {
-			m = std::min(m, *(matrix.data() + IK(i, k, kStride)));
-		}
-		if (m != Inf) {
-			for (int k = 0; k < n; ++k) {
-				auto& val = *(matrix.data() + IK(i, k, kStride));
-				if (val != Inf)
-					val -= m;
-			}
-			lowerBound += m;
-		}
+	void reduceMatrix(Direction edgeType, int i) {
+		auto min = adjList.reduce(edgeType, i);
+		if (min != Inf)
+			lowerBound += min;
 	}
 
 	void reduceMatrix() {
 		for (int i = 0; i < n; ++i)
-			reduceMatrix(EdgeType::Outgoing, i);
+			reduceMatrix(Out, i);
 		for (int j = 0; j < n; ++j)
-			reduceMatrix(EdgeType::Incoming, j);
+			reduceMatrix(In, j);
 	}
 
 	bool isComplete() {
-		auto path = traverseSubPath(0, EdgeType::Outgoing);
+		auto path = traverseSubPath(0, Out);
 		return path.size() == n + 1 && path[n - 1] == n - 1;
 	}
 
 	std::vector<int16_t> getPath() {
 		std::vector<int16_t> result;
-		auto path = traverseSubPath(0, EdgeType::Outgoing);
+		auto path = traverseSubPath(0, Out);
 		for (int i = 1; i < path.size() - 1; ++i) {
 			result.push_back(path[i]);
 		}
@@ -154,41 +244,48 @@ struct PartialSolution {
 	int n;
 	float time = Inf;
 	float lowerBound = 0;
-	std::vector<float> matrix;
+	AdjList adjList;
 	std::array<std::vector<int>, 2> edges;
 
 	PartialSolution() {}
-	PartialSolution(const std::vector<std::vector<float>>& A) : n(A.size()), matrix(n* n) {
-		for (int i = 0; i < A.size(); ++i) {
-			for (int j = 0; j < A.size(); ++j) {
-				matrix[i * n + j] = A[j][i];
-			}
-		}
-
+	PartialSolution(const std::vector<std::vector<float>>& A, AdjList adjList) : n(A.size()), adjList(adjList) {
+		time = 0;
+		
 		edges[0].resize(n);
 		edges[1].resize(n);
+
 		for (int i = 0; i < n; ++i) {
-			matrix[i + i * n] = Inf;
 			edges[0][i] = -1;
 			edges[1][i] = -1;
 		}
-		time = 0;
+
+		for (int i = 0; i < A.size(); ++i) {
+			for (int j = 0; j < A[i].size(); ++j) {
+				if (A[j][i] == 9000) {
+					adjList.removeEdge(i, j);
+				}
+			}
+		}
+		adjList.shrinkToSize();
+
 		reduceMatrix();
 	}
 };
 
-std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vector<std::vector<float>>& A, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec) {
-	std::vector<std::pair<std::vector<int16_t>, float>> bestSolutions;
-	PartialSolution root = PartialSolution(A).withEdge(Edge(A.size() - 1, 0), A);
-
+void findSolutions(
+	const PartialSolution& root, 
+	const std::vector<std::vector<float>>& A, 
+	int maxSolutionCount, float& limit, 
+	std::vector<std::pair<std::vector<int16_t>, float>>& bestSolutions, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec
+) {
 	std::priority_queue<PartialSolution, std::vector<PartialSolution>, std::greater<PartialSolution> > right;
-	std::stack<PartialSolution> left;
-	left.push(root);
+	std::optional<PartialSolution> left = root;
+	int taskCount = 0;
 
-	while (!left.empty() || !right.empty()) {
-		auto currentSolution = !left.empty() ? left.top() : right.top();
-		if (!left.empty())
-			left.pop();
+	while (left || !right.empty()) {
+		auto currentSolution = left ? *left : right.top();
+		if (left)
+			left = std::nullopt;
 		else
 			right.pop();
 		if (currentSolution.isComplete()) {
@@ -208,15 +305,27 @@ std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vec
 			if (pivot != NullEdge) {
 				auto withPivot = currentSolution.withEdge(pivot, A);
 				auto withoutPivot = currentSolution.withoutEdge(pivot);
-
 				if (withPivot.lowerBound < limit)
-					left.push(withPivot);
-
+					left = withPivot;
 				if (withoutPivot.lowerBound < limit)
 					right.push(withoutPivot);
 			}
 		}
 	}
+}
+
+std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vector<std::vector<float>>& A, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec) {
+	std::vector<std::pair<std::vector<int16_t>, float>> bestSolutions;
+	AdjList adjList(A.size());
+
+	for (int i = 0; i < A.size(); ++i) {
+		for (int j = 0; j < A[i].size(); ++j) {
+			adjList.add(i, j);
+		}
+	}
+
+	PartialSolution root = PartialSolution(A, adjList).withEdge(Edge(A.size() - 1, 0), A);
+	findSolutions(root, A, maxSolutionCount, limit, bestSolutions, solutionsVec);
 	std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 	return bestSolutions;
 }
@@ -252,5 +361,6 @@ std::vector<std::vector<int>> addRepeatNodeEdges(std::vector<std::vector<float>>
 std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, float ignoredValue, float limit, int maxSolutionCount, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec) {
 	auto A = A_;
 	A[0].back() = 0;
+	M = A;
 	return findSolutions(A, maxSolutionCount, limit, &solutionsVec);
 }
