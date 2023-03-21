@@ -273,46 +273,39 @@ struct PartialSolution {
 };
 
 void findSolutions(
-	const PartialSolution& root, 
-	const std::vector<std::vector<float>>& A, 
-	int maxSolutionCount, float& limit, 
+	PartialSolution& currentSolution,
+	const std::vector<std::vector<float>>& A,
+	int maxSolutionCount, float& limit,
 	std::vector<std::pair<std::vector<int16_t>, float>>& bestSolutions, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec
 ) {
-	std::priority_queue<PartialSolution, std::vector<PartialSolution>, std::greater<PartialSolution> > right;
-	std::optional<PartialSolution> left = root;
-	int taskCount = 0;
+	if (currentSolution.isComplete()) {
+		auto solution = std::make_pair(currentSolution.getPath(), currentSolution.time);
+		solutionsVec->push_back(solution);
+		if (bestSolutions.size() < maxSolutionCount) {
+			bestSolutions.push_back(solution);
+		} else if (currentSolution.time < limit) {
+			bestSolutions.back() = solution;
+		}
+		if (bestSolutions.size() >= maxSolutionCount) {
+			std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
+			limit = bestSolutions.back().second;
+		}
+	} else if (currentSolution.lowerBound < limit) {
+		auto pivot = currentSolution.choosePivotEdge();
+		if (pivot != NullEdge) {
+			auto withPivot = currentSolution.withEdge(pivot, A);
+			if (withPivot.lowerBound < limit) {
+				findSolutions(withPivot, A, maxSolutionCount, limit, bestSolutions, solutionsVec);
+			}
 
-	while (left || !right.empty()) {
-		auto currentSolution = left ? *left : right.top();
-		if (left)
-			left = std::nullopt;
-		else
-			right.pop();
-		if (currentSolution.isComplete()) {
-			auto solution = std::make_pair(currentSolution.getPath(), currentSolution.time);
-			solutionsVec->push_back(solution);
-			if (bestSolutions.size() < maxSolutionCount) {
-				bestSolutions.push_back(solution);
-			} else if (currentSolution.time < limit) {
-				bestSolutions.back() = solution;
-			}
-			if (bestSolutions.size() >= maxSolutionCount) {
-				std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
-				limit = bestSolutions.back().second;
-			}
-		} else if (currentSolution.lowerBound < limit) {
-			auto pivot = currentSolution.choosePivotEdge();
-			if (pivot != NullEdge) {
-				auto withPivot = currentSolution.withEdge(pivot, A);
-				auto withoutPivot = currentSolution.withoutEdge(pivot);
-				if (withPivot.lowerBound < limit)
-					left = withPivot;
-				if (withoutPivot.lowerBound < limit)
-					right.push(withoutPivot);
+			auto withoutPivot = currentSolution.withoutEdge(pivot);
+			if (withoutPivot.lowerBound < limit) {
+				findSolutions(withoutPivot, A, maxSolutionCount, limit, bestSolutions, solutionsVec);
 			}
 		}
 	}
 }
+
 
 std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vector<std::vector<float>>& A, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec) {
 	std::vector<std::pair<std::vector<int16_t>, float>> bestSolutions;
