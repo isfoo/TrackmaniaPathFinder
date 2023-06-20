@@ -153,10 +153,11 @@ std::optional<float> parseFloat(const std::string& s) {
 	return result != 0 ? std::optional{ result } : std::nullopt;
 }
 
-std::vector<float> splitToFloats(std::string_view str, float ignoredValue, std::string_view delim = ",") {
+std::vector<float> splitToFloats(std::string_view str, float ignoredValue) {
+	constexpr auto PossiblyFloatChars = "0123456789.+-e";
 	std::vector<float> result;
 	while (true) {
-		std::size_t pos = pos = str.find(delim);
+		auto pos = str.find_first_not_of(PossiblyFloatChars);
 		auto s = std::string(str.substr(0, pos));
 		auto value = parseFloat(s);
 		if (value)
@@ -165,6 +166,6 @@ std::vector<float> splitToFloats(std::string_view str, float ignoredValue, std::
 			result.emplace_back(ignoredValue);
 		if (pos == std::string::npos)
 			return result;
-		str = str.substr(pos + delim.size());
+		str = str.substr(str.find_first_of(PossiblyFloatChars, pos));
 	}
 }
