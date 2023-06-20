@@ -117,12 +117,6 @@ namespace MyImGui {
         ImGui_ImplWin32_Init(hwnd_out);
         ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-        float SCALE = 1.4f;
-        ImFontConfig cfg;
-        cfg.SizePixels = 13 * SCALE;
-        ImGui::GetIO().Fonts->AddFontDefault(&cfg)->DisplayOffset.y = SCALE;
-        ImGui::GetIO().IniFilename = nullptr;
-
         ImGui::StyleColorsDark();
 
         return true;
