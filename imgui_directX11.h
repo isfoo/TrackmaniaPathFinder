@@ -96,7 +96,7 @@ namespace MyImGui {
     bool INIT(const std::u16string& windowName, WNDCLASSEXW& wc_out, HWND& hwnd_out) {
         wc_out = { sizeof(WNDCLASSEXW), CS_CLASSDC, MyImGui::WndProc, 0L, 0L, GetModuleHandleW(NULL), NULL, NULL, NULL, NULL, L"ImGui", NULL };
         ::RegisterClassExW(&wc_out);
-        hwnd_out = ::CreateWindowW(wc_out.lpszClassName, (LPCWSTR)windowName.c_str(), WS_SYSMENU | WS_CAPTION | WS_MINIMIZE	| WS_SIZEBOX /*WS_OVERLAPPEDWINDOW*/, 100, 100, 800, 600, NULL, NULL, wc_out.hInstance, NULL);
+        hwnd_out = ::CreateWindowW(wc_out.lpszClassName, (LPCWSTR)windowName.c_str(), WS_SYSMENU | WS_CAPTION | WS_MINIMIZEBOX | WS_MAXIMIZEBOX	| WS_SIZEBOX /*WS_OVERLAPPEDWINDOW*/, 100, 100, 800, 600, NULL, NULL, wc_out.hInstance, NULL);
 
         // Initialize Direct3D
         if (!MyImGui::CreateDeviceD3D(hwnd_out)) {
