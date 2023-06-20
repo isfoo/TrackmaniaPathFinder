@@ -161,4 +161,5 @@ int main() {
 
 		ImGui::End();
 	});
+	std::quick_exit(0);
 }
