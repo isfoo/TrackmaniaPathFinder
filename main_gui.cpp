@@ -22,7 +22,7 @@ int main() {
 	MyImGui::Init(u"Trackmania Path Finder");
 
 	float ignoredValue = 9000;
-	float limitValue = 1850;
+	float limitValue = 100'000;
 	int maxSolutionCount = 20;
 	bool allowRepeatNodes = false;
 	constexpr int MinFontSize = 8;
