@@ -104,6 +104,8 @@ int main() {
 		ImGui::InputText("##output data file", outputDataFile, sizeof(outputDataFile));
 		ImGui::Text("input data file:");
 		ImGui::SameLine();
+		HelpMarker("Format is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.");
+		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		if (ImGui::Button("Find file")) {
 			OPENFILENAMEA ofn;
