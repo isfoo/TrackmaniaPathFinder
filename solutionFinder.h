@@ -276,8 +276,11 @@ void findSolutions(
 	PartialSolution& currentSolution,
 	const std::vector<std::vector<float>>& A,
 	int maxSolutionCount, float& limit,
-	std::vector<std::pair<std::vector<int16_t>, float>>& bestSolutions, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec
+	std::vector<std::pair<std::vector<int16_t>, float>>& bestSolutions, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec, 
+	std::atomic<bool>& taskWasCanceled
 ) {
+	if (taskWasCanceled)
+		return;
 	if (currentSolution.isComplete()) {
 		auto solution = std::make_pair(currentSolution.getPath(), currentSolution.time);
 		solutionsVec->push_back(solution);
@@ -295,19 +298,19 @@ void findSolutions(
 		if (pivot != NullEdge) {
 			auto withPivot = currentSolution.withEdge(pivot, A);
 			if (withPivot.lowerBound < limit) {
-				findSolutions(withPivot, A, maxSolutionCount, limit, bestSolutions, solutionsVec);
+				findSolutions(withPivot, A, maxSolutionCount, limit, bestSolutions, solutionsVec, taskWasCanceled);
 			}
 
 			auto withoutPivot = currentSolution.withoutEdge(pivot);
 			if (withoutPivot.lowerBound < limit) {
-				findSolutions(withoutPivot, A, maxSolutionCount, limit, bestSolutions, solutionsVec);
+				findSolutions(withoutPivot, A, maxSolutionCount, limit, bestSolutions, solutionsVec, taskWasCanceled);
 			}
 		}
 	}
 }
 
 
-std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vector<std::vector<float>>& A, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec) {
+std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vector<std::vector<float>>& A, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec, std::atomic<bool>& taskWasCanceled) {
 	std::vector<std::pair<std::vector<int16_t>, float>> bestSolutions;
 	AdjList adjList(A.size());
 
@@ -318,7 +321,7 @@ std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vec
 	}
 
 	PartialSolution root = PartialSolution(A, adjList).withEdge(Edge(A.size() - 1, 0), A);
-	findSolutions(root, A, maxSolutionCount, limit, bestSolutions, solutionsVec);
+	findSolutions(root, A, maxSolutionCount, limit, bestSolutions, solutionsVec, taskWasCanceled);
 	std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 	return bestSolutions;
 }
@@ -351,9 +354,9 @@ std::vector<std::vector<int>> addRepeatNodeEdges(std::vector<std::vector<float>>
 	return repeatEdgeMatrix;
 }
 
-std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, float ignoredValue, float limit, int maxSolutionCount, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec) {
+std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, float ignoredValue, float limit, int maxSolutionCount, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec, std::atomic<bool>& taskWasCanceled) {
 	auto A = A_;
 	A[0].back() = 0;
 	M = A;
-	return findSolutions(A, maxSolutionCount, limit, &solutionsVec);
+	return findSolutions(A, maxSolutionCount, limit, &solutionsVec, taskWasCanceled);
 }

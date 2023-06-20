@@ -38,6 +38,7 @@ int main() {
 
 	std::string errorMsg;
 	std::future<void> algorithmRunTask;
+	std::atomic<bool> taskWasCanceled = false;
 
 	auto timer = Timer();
 	timer.stop();
@@ -141,6 +142,7 @@ int main() {
 		if (ImGui::Button("Run algorithm")) {
 			if (!isRunning(algorithmRunTask)) {
 				errorMsg = "";
+				taskWasCanceled = false;
 				repeatNodeMatrix.clear();
 				auto A = loadCsvData(inputDataFile, ignoredValue, errorMsg);
 				if (allowRepeatNodes) {
@@ -150,8 +152,8 @@ int main() {
 					bestFoundSolutions.clear();
 					solutionsView = ThreadSafeVec<std::pair<std::vector<int16_t>, float>>{};
 					timer = Timer();
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() {
-						auto sols = runAlgorithm(A, ignoredValue, limitValue, maxSolutionCount, solutionsView);
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &taskWasCanceled, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() {
+						auto sols = runAlgorithm(A, ignoredValue, limitValue, maxSolutionCount, solutionsView, taskWasCanceled);
 						saveSolutionsToFile(outputDataFile, sols);
 						timer.stop();
 					});
@@ -160,9 +162,23 @@ int main() {
 				errorMsg = "Already running";
 			}
 		}
+
+		if (isRunning(algorithmRunTask)) {
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel")) {
+				taskWasCanceled = true;
+			}
+		}
+
 		std::string status;
 		if (!algorithmRunTask.valid())
 			status = "Waiting for start";
+		else if (taskWasCanceled) {
+			if (isRunning(algorithmRunTask))
+				status = "Canceled (Still running)";
+			else
+				status = "Canceled";
+		}
 		else if (isRunning(algorithmRunTask))
 			status = "Running";
 		else
