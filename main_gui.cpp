@@ -132,6 +132,12 @@ int main() {
 		ImGui::SetNextItemWidth(-1);
 		ImGui::Checkbox("##Allow repeat nodes", &allowRepeatNodes);
 
+		if (!errorMsg.empty()) {
+			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 0, 0, 255));
+			ImGui::Text("Error: %s", errorMsg.c_str());
+			ImGui::PopStyleColor();
+		}
+
 		if (ImGui::Button("Run algorithm")) {
 			if (!isRunning(algorithmRunTask)) {
 				errorMsg = "";
@@ -196,9 +202,6 @@ int main() {
 			ImGui::SetNextItemWidth(-1);
 			ImGui::InputText(("##solution" + std::to_string(j)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
 		}
-
-		if (!errorMsg.empty())
-			ImGui::Text("Error: %s", errorMsg.c_str());
 
 		ImGui::End();
 	});
