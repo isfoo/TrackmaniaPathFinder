@@ -326,7 +326,14 @@ std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vec
 	return bestSolutions;
 }
 
-std::vector<std::vector<int>> addRepeatNodeEdges(std::vector<std::vector<float>>& A, float ignoredValue) {
+struct RepeatEdgePath {
+	int k, j, i;
+	float time(const std::vector<std::vector<float>>& A) const {
+		return A[k][j] + A[j][i];
+	}
+};
+
+std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<float>>& A, float ignoredValue) {
 	std::vector<std::vector<int>> adjList(A.size());
 	for (int i = 0; i < A.size(); ++i) {
 		for (int j = 0; j < A[i].size(); ++j) {
@@ -336,7 +343,7 @@ std::vector<std::vector<int>> addRepeatNodeEdges(std::vector<std::vector<float>>
 		}
 	}
 
-	std::vector<std::vector<int>> repeatEdgeMatrix(A.size(), std::vector<int>(A.size()));
+	std::vector<RepeatEdgePath> additionalPaths;
 	for (int i = 0; i < adjList.size(); ++i) {
 		for (int j : adjList[i]) {
 			for (int k : adjList[j]) {
@@ -344,13 +351,26 @@ std::vector<std::vector<int>> addRepeatNodeEdges(std::vector<std::vector<float>>
 					continue;
 				float time = A[k][j] + A[j][i];
 				if (time < A[k][i]) {
-					repeatEdgeMatrix[k][i] = j;
-					A[k][i] = time;
+					additionalPaths.emplace_back(k, j, i);
 				}
 			}
 		}
 	}
-	
+	std::sort(additionalPaths.begin(), additionalPaths.end(), [&](auto& a, auto& b) { return a.time(A) < b.time(A); });
+	return additionalPaths;
+}
+
+std::vector<std::vector<int>> addRepeatNodeEdges(std::vector<std::vector<float>>& A, const std::vector<RepeatEdgePath>& additionalPaths, int maxNodesToAdd = std::numeric_limits<int>::max()) {
+	std::vector<std::vector<int>> repeatEdgeMatrix(A.size(), std::vector<int>(A.size()));
+	auto ACopy = A;
+	for (int m = 0; m < maxNodesToAdd && m < additionalPaths.size(); ++m) {
+		auto k = additionalPaths[m].k;
+		auto j = additionalPaths[m].j;
+		auto i = additionalPaths[m].i;
+		repeatEdgeMatrix[k][i] = j;
+		ACopy[k][i] = additionalPaths[m].time(A);
+	}
+	A = ACopy;
 	return repeatEdgeMatrix;
 }
 

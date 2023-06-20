@@ -24,6 +24,8 @@ int main() {
 	float ignoredValue = 9000;
 	float limitValue = 100'000;
 	int maxSolutionCount = 20;
+	int maxRepeatNodesToAdd = 100;
+	int foundRepeatNodesCount = -1;
 	bool allowRepeatNodes = false;
 	constexpr int MinFontSize = 8;
 	constexpr int MaxFontSize = 20;
@@ -46,7 +48,7 @@ int main() {
 	MyImGui::Run([&] {
 		ImGui::GetIO().FontGlobalScale = fontSize / 10.0;
 
-		constexpr int LongestLineLength = 25;
+		constexpr int LongestLineLength = 26;
 		constexpr int FontPixelSize = 7;
 		float boxValuePosX = (LongestLineLength + 1) * FontPixelSize * ImGui::GetIO().FontGlobalScale;
 
@@ -123,17 +125,41 @@ int main() {
 			ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 			if (GetOpenFileNameA(&ofn) == TRUE) {
 				std::strcpy(inputDataFile, ofn.lpstrFile);
+				foundRepeatNodesCount = -1;
 			}
 		}
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(-1);
-		ImGui::InputText("##input data file", inputDataFile, sizeof(inputDataFile));
+		if (ImGui::InputText("##input data file", inputDataFile, sizeof(inputDataFile))) {
+			foundRepeatNodesCount = -1;
+		}
 
 		ImGui::Text("allow repeat nodes:");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
 		ImGui::Checkbox("##Allow repeat nodes", &allowRepeatNodes);
+		if (allowRepeatNodes) {
+			if (ImGui::Button("Count repeat nodes")) {
+				foundRepeatNodesCount = getRepeatNodeEdges(loadCsvData(inputDataFile, ignoredValue, errorMsg), ignoredValue).size();
+			}
+			if (foundRepeatNodesCount != -1) {
+				ImGui::SameLine();
+				ImGui::SetCursorPosX(boxValuePosX);
+				ImGui::Text("Found %d repeat nodes.", foundRepeatNodesCount);
+			}
+
+			ImGui::Text("max repeat nodes to add:");
+			ImGui::SameLine();
+			ImGui::SetCursorPosX(boxValuePosX);
+			ImGui::SetNextItemWidth(-1);
+			if (ImGui::InputInt("##max repeat nodes to add", &maxRepeatNodesToAdd)) {
+				maxRepeatNodesToAdd = std::clamp(maxRepeatNodesToAdd, 1, 100'000);
+			}
+		} else {
+			foundRepeatNodesCount = -1;
+			maxRepeatNodesToAdd = 100;
+		}
 
 		if (!errorMsg.empty()) {
 			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 0, 0, 255));
@@ -148,7 +174,7 @@ int main() {
 				repeatNodeMatrix.clear();
 				auto A = loadCsvData(inputDataFile, ignoredValue, errorMsg);
 				if (allowRepeatNodes) {
-					repeatNodeMatrix = addRepeatNodeEdges(A, ignoredValue);
+					repeatNodeMatrix = addRepeatNodeEdges(A, getRepeatNodeEdges(A, ignoredValue), maxRepeatNodesToAdd);
 				}
 				if (errorMsg.empty()) {
 					bestFoundSolutions.clear();
