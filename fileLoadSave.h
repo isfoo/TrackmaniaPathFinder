@@ -26,17 +26,30 @@ std::vector<std::vector<float>> loadCsvData(const std::string& inputFileName, fl
 	return A;
 }
 
-void saveSolutionsToFile(const std::string& outputFileName, const std::vector<std::pair<std::vector<int16_t>, float>>& solutions) {
+void saveSolutionsToFile(const std::string& outputFileName, const std::vector<std::pair<std::vector<int16_t>, float>>& solutions, const std::vector<std::vector<int>>& repeatNodeMatrix, bool useLegacyOutputFormat) {
 	std::ofstream outFile(outputFileName);
 	if (solutions.empty())
 		return;
 
-	for (auto& [B, timeA] : solutions) {
+	for (auto& [B_, timeA] : solutions) {
+		auto B = B_;
+		if (!useLegacyOutputFormat) {
+			B.insert(B.begin(), 0);
+			for (auto& b : B)
+				b += 1;
+		}
 		outFile << std::fixed << std::setprecision(1);
 		outFile << std::setw(8) << timeA << " [";
-		outFile << B[0] - 1;
+		if (!useLegacyOutputFormat)
+			outFile << "Start";
+		else
+			outFile << B[0] - 1;
 		for (int i = 1; i < B.size(); ++i) {
-			if (B[i] == B[i - 1] + 1) {
+			if (useLegacyOutputFormat && !repeatNodeMatrix.empty() && repeatNodeMatrix[B[i]][B[i - 1]]) {
+				outFile << ",(" << std::to_string(repeatNodeMatrix[B[i]][B[i - 1]] - 1) << "),";
+			} else if (!useLegacyOutputFormat && i > 1 && !repeatNodeMatrix.empty() && repeatNodeMatrix[B_[i - 1]][B_[i - 2]]) {
+				outFile << ",(" + std::to_string(repeatNodeMatrix[B_[i - 1]][B_[i - 2]]) << "),";
+			} else if (B[i] == B[i - 1] + 1) {
 				outFile << '-';
 				i += 1;
 				while (i < B.size() && B[i] == B[i - 1] + 1) {
@@ -46,7 +59,10 @@ void saveSolutionsToFile(const std::string& outputFileName, const std::vector<st
 			} else {
 				outFile << ',';
 			}
-			outFile << B[i] - 1;
+			if (i == B.size() - 1 && !useLegacyOutputFormat)
+				outFile << "Finish";
+			else
+				outFile << B[i] - 1;
 		}
 		outFile << "]\n";
 	}

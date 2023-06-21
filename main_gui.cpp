@@ -27,6 +27,7 @@ int main() {
 	int maxRepeatNodesToAdd = 100;
 	int foundRepeatNodesCount = -1;
 	bool allowRepeatNodes = false;
+	bool useLegacyOutputFormat = false;
 	constexpr int MinFontSize = 8;
 	constexpr int MaxFontSize = 20;
 	int fontSize = 15;
@@ -134,6 +135,12 @@ int main() {
 			foundRepeatNodesCount = -1;
 		}
 
+		ImGui::Text("use legacy output format:");
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(boxValuePosX);
+		ImGui::SetNextItemWidth(-1);
+		ImGui::Checkbox("##use legacy output format", &useLegacyOutputFormat);
+
 		ImGui::Text("allow repeat nodes:");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
@@ -180,9 +187,9 @@ int main() {
 					bestFoundSolutions.clear();
 					solutionsView = ThreadSafeVec<std::pair<std::vector<int16_t>, float>>{};
 					timer = Timer();
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &taskWasCanceled, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() {
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &taskWasCanceled, &repeatNodeMatrix, useLegacyOutputFormat, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() {
 						auto sols = runAlgorithm(A, ignoredValue, limitValue, maxSolutionCount, solutionsView, taskWasCanceled);
-						saveSolutionsToFile(outputDataFile, sols);
+						saveSolutionsToFile(outputDataFile, sols, repeatNodeMatrix, useLegacyOutputFormat);
 						timer.stop();
 					});
 				}
@@ -222,14 +229,27 @@ int main() {
 			std::sort(bestFoundSolutions.begin(), bestFoundSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 		}
 		for (int j = 0; j < bestFoundSolutions.size() && j < 100; ++j) {
-			auto& [B, time] = bestFoundSolutions[j];
+			auto& [B_, time] = bestFoundSolutions[j];
+			auto B = B_;
+			if (!useLegacyOutputFormat) {
+				B.insert(B.begin(), 0);
+				for (auto& b : B)
+					b += 1;
+			}
+
 			ImGui::Text("%.2f", time);
 			ImGui::SameLine();
 			std::string solStr = "[";
-			solStr += std::to_string(B[0] - 1);
+			if (!useLegacyOutputFormat) {
+				solStr += "Start";
+			} else {
+				solStr += std::to_string(B[0] - 1);
+			}
 			for (int i = 1; i < B.size(); ++i) {
-				if (!repeatNodeMatrix.empty() && repeatNodeMatrix[B[i]][B[i - 1]]) {
+				if (useLegacyOutputFormat && !repeatNodeMatrix.empty() && repeatNodeMatrix[B[i]][B[i - 1]]) {
 					solStr += ",(" + std::to_string(repeatNodeMatrix[B[i]][B[i - 1]] - 1) + "),";
+				} else if (!useLegacyOutputFormat && i > 1 && !repeatNodeMatrix.empty() && repeatNodeMatrix[B_[i-1]][B_[i - 2]]) {
+					solStr += ",(" + std::to_string(repeatNodeMatrix[B_[i - 1]][B_[i - 2]]) + "),";
 				} else if (B[i] == B[i - 1] + 1) {
 					solStr += '-';
 					i += 1;
@@ -240,7 +260,10 @@ int main() {
 				} else {
 					solStr += ',';
 				}
-				solStr += std::to_string(B[i] - 1);
+				if (i == B.size() - 1 && !useLegacyOutputFormat)
+					solStr += "Finish";
+				else
+					solStr += std::to_string(B[i] - 1);
 			}
 			solStr += "]";
 			ImGui::SetNextItemWidth(-1);
