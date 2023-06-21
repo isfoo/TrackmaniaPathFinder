@@ -158,14 +158,16 @@ std::vector<float> splitToFloats(std::string_view str, float ignoredValue) {
 	std::vector<float> result;
 	while (true) {
 		auto pos = str.find_first_not_of(PossiblyFloatChars);
-		auto s = std::string(str.substr(0, pos));
-		auto value = parseFloat(s);
+		auto value = parseFloat(std::string(str.substr(0, pos)));
 		if (value)
 			result.emplace_back(*value);
-		else if (!std::all_of(s.begin(), s.end(), isspace))
+		else
 			result.emplace_back(ignoredValue);
 		if (pos == std::string::npos)
 			return result;
-		str = str.substr(str.find_first_of(PossiblyFloatChars, pos));
+		auto pos2 = str.find_first_of(PossiblyFloatChars, pos);
+		if (pos2 == std::string::npos)
+			return result;
+		str = str.substr(pos2);
 	}
 }
