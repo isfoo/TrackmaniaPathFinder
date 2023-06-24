@@ -248,7 +248,7 @@ struct PartialSolution {
 	std::array<std::vector<int>, 2> edges;
 
 	PartialSolution() {}
-	PartialSolution(const std::vector<std::vector<float>>& A, AdjList adjList) : n(A.size()), adjList(adjList) {
+	PartialSolution(const std::vector<std::vector<float>>& A, AdjList adjList, float ignoredValue) : n(A.size()), adjList(adjList) {
 		time = 0;
 		
 		edges[0].resize(n);
@@ -261,8 +261,8 @@ struct PartialSolution {
 
 		for (int i = 0; i < A.size(); ++i) {
 			for (int j = 0; j < A[i].size(); ++j) {
-				if (A[j][i] == 9000) {
 					adjList.removeEdge(i, j);
+				if (A[j][i] == ignoredValue) {
 				}
 			}
 		}
@@ -310,7 +310,7 @@ void findSolutions(
 }
 
 
-std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vector<std::vector<float>>& A, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec, std::atomic<bool>& taskWasCanceled) {
+std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vector<std::vector<float>>& A, int maxSolutionCount, float limit, float ignoredValue, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec, std::atomic<bool>& taskWasCanceled) {
 	std::vector<std::pair<std::vector<int16_t>, float>> bestSolutions;
 	AdjList adjList(A.size());
 
@@ -320,7 +320,7 @@ std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vec
 		}
 	}
 
-	PartialSolution root = PartialSolution(A, adjList).withEdge(Edge(A.size() - 1, 0), A);
+	PartialSolution root = PartialSolution(A, adjList, ignoredValue).withEdge(Edge(A.size() - 1, 0), A);
 	findSolutions(root, A, maxSolutionCount, limit, bestSolutions, solutionsVec, taskWasCanceled);
 	std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 	return bestSolutions;
@@ -378,5 +378,5 @@ std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vect
 	auto A = A_;
 	A[0].back() = 0;
 	M = A;
-	return findSolutions(A, maxSolutionCount, limit, &solutionsVec, taskWasCanceled);
+	return findSolutions(A, maxSolutionCount, limit, ignoredValue, &solutionsVec, taskWasCanceled);
 }
