@@ -228,7 +228,9 @@ struct PartialSolution {
 	}
 
 	std::vector<int> traverseSubPath(int cur, Direction edgeType) {
-		std::vector<int> subpath{ cur };
+		std::vector<int> subpath;
+		subpath.reserve(n); 
+		subpath.push_back(cur);
 		for (int k = 0; k < n; ++k) {
 			auto next = edges[int(edgeType)][cur];
 			if (next == -1) {
