@@ -119,6 +119,8 @@ namespace MyImGui {
 
         ImGui::StyleColorsDark();
 
+        ImGui::GetIO().IniFilename = nullptr;
+
         return true;
     }
 
