@@ -1,5 +1,6 @@
 #pragma once
 #include <iostream>
+#include <cstdlib>
 #include <vector>
 #include <chrono>
 #include <fstream>
@@ -53,6 +54,97 @@ public:
 	}
 };
 
+#if defined(__clang__)
+#define COMPILER_CLANG
+#elif defined(__INTEL_COMPILER)
+#define COMPILER_INTEL
+#elif defined(_MSC_VER)
+#define COMPILER_MSVC
+#elif defined(__GNUC__)
+#define COMPILER_GCC
+#endif
+
+template<int Size, int Alignment> struct FreeList {
+	std::vector<void*> list;
+
+	FreeList() {}
+	FreeList(const FreeList&) = delete;
+	FreeList& operator=(const FreeList&) = delete;
+	~FreeList() {
+		while (!list.empty()) {
+		#ifdef COMPILER_MSVC
+			_aligned_free(list.back());
+		#else
+			std::free(list.back());
+		#endif
+			list.pop_back();
+		}
+	}
+
+	void* allocate() {
+		if (!list.empty()) {
+			auto ptr = list.back();
+			list.pop_back();
+			return ptr;
+		}
+		#ifdef COMPILER_MSVC
+		return _aligned_malloc(Size, Alignment);
+		#else
+		return std::aligned_alloc(Alignment, Size);
+		#endif
+	}
+	void deallocate(void* ptr) {
+		if (ptr)
+			list.push_back(ptr);
+	}
+};
+
+template<typename T, int Size> struct FreeListVector {
+	static inline FreeList<sizeof(T) * Size, alignof(T)> allocator;
+	T* data;
+	int size_ = 0;
+
+	FreeListVector() {
+		data = (T*)allocator.allocate();
+	}
+	FreeListVector(FreeListVector&& other) : data(other.data), size_(other.size_) {
+		other.data = nullptr;
+		other.size_ = 0;
+	}
+	FreeListVector& operator=(FreeListVector&& other) {
+		std::swap(data, other.data);
+		std::swap(size_, other.size_);
+		return *this;
+	}
+	FreeListVector(const FreeListVector& other) {
+		data = (T*)allocator.allocate();
+		size_ = other.size_;
+		std::memcpy(data, other.data, size_ * sizeof(T));
+	}
+	FreeListVector& operator=(const FreeListVector& other) {
+		size_ = other.size_;
+		std::memcpy(data, other.data, size_ * sizeof(T));
+		return *this;
+	}
+	~FreeListVector() {
+		allocator.deallocate(data);
+	}
+
+	void push_back(const T& val) {
+		static_assert(std::is_trivially_destructible_v<T>);
+		new (&data[size_]) T(val);
+		size_ += 1;
+	}
+
+	T* begin() { return &data[0]; }
+	T* end()   { return &data[size_]; }
+	T& back()  { return data[size_ - 1]; }
+	T& operator[](int i) { return data[i]; }
+	int size()   { return size_; }
+	void resize(int size) { size_ = size; }
+	void clear() { size_ = 0; }
+};
+
 struct DynamicBitset {
 	using IntType = uint64_t;
 	static constexpr int IntTypeBitSize = sizeof(IntType) * 8;
@@ -80,16 +172,6 @@ private:
 		return (1ull << (i % IntTypeBitSize));
 	}
 };
-
-#if defined(__clang__)
-#define COMPILER_CLANG
-#elif defined(__INTEL_COMPILER)
-#define COMPILER_INTEL
-#elif defined(_MSC_VER)
-#define COMPILER_MSVC
-#elif defined(__GNUC__)
-#define COMPILER_GCC
-#endif
 
 uint64_t mostSignificantBitPosition(uint64_t a) {
 #if defined(COMPILER_GCC) || defined(COMPILER_CLANG)

@@ -17,6 +17,7 @@
 #include <stack>
 #include <algorithm>
 
+constexpr int RemovedEdgesSize = 4096;
 constexpr float MaxLimit = 1e10;
 constexpr int MaxMaxSolutionCount = 1e7;
 
@@ -28,13 +29,19 @@ enum Direction {
 	In
 };
 
+struct RemovedEdge {
+	Direction d;
+	int8_t i;
+	int8_t j;
+};
+
 constexpr float Inf = 1e10;
 std::vector<std::vector<float>> M;
 
 struct AdjList {
 	std::array<std::vector<int8_t>, 2> data;
 	std::array<std::vector<int8_t>, 2> sizes;
-	std::array<std::vector<float>, 2> reductions;
+	std::array<FreeListVector<float, 256>, 2> reductions;
 	int n_;
 	AdjList(int n=0) : n_(n) {
 		data[Out].resize(n * n);
@@ -43,11 +50,27 @@ struct AdjList {
 		sizes[In].resize(n);
 		reductions[Out].resize(n);
 		reductions[In].resize(n);
+		std::memset(reductions[Out].data, 0, n * sizeof(float));
+		std::memset(reductions[In].data, 0, n * sizeof(float));
 	}
 
 	void add(int i, int j) {
 		add(Out, i, j);
 		add(In, j, i);
+	}
+
+	void setNecessaryEdge(int i, int j, FreeListVector<RemovedEdge, RemovedEdgesSize>& removedEdges) {
+		for (int k = 0; k < sizes[Out][i]; ++k) {
+			int x = data[Out][i * n() + k];
+			removeEdge(i, x, removedEdges);
+			k -= 1;
+		}
+
+		for (int k = 0; k < sizes[In][j]; ++k) {
+			int x = data[In][j * n() + k];
+			removeEdge(x, j, removedEdges);
+			k -= 1;
+		}
 	}
 
 	void setNecessaryEdge(int i, int j) {
@@ -64,6 +87,10 @@ struct AdjList {
 		}
 	}
 
+	void removeEdge(int i, int j, FreeListVector<RemovedEdge, RemovedEdgesSize>& removedEdges) {
+		removeEdge(Out, i, j, removedEdges);
+		removeEdge(In, j, i, removedEdges);
+	}
 	void removeEdge(int i, int j) {
 		removeEdge(Out, i, j);
 		removeEdge(In, j, i);
@@ -140,6 +167,16 @@ struct AdjList {
 		data[d][i * n() + sizes[d][i]] = j;
 		sizes[d][i] += 1;
 	}
+	void removeEdge(Direction d, int i, int j, FreeListVector<RemovedEdge, RemovedEdgesSize>& removedEdges) {
+		for (int k = 0; k < sizes[d][i]; ++k) {
+			if (data[d][i * n() + k] == j) {
+				sizes[d][i] -= 1;
+				std::swap(data[d][i * n() + k], data[d][i * n() + sizes[d][i]]);
+				removedEdges.push_back({ d, int8_t(i), int8_t(j) });
+				break;
+			}
+		}
+	}
 	void removeEdge(Direction d, int i, int j) {
 		for (int k = 0; k < sizes[d][i]; ++k) {
 			if (data[d][i * n() + k] == j) {
@@ -178,58 +215,75 @@ struct PartialSolution {
 		return true;
 	}
 
-	PartialSolution withEdge(Edge pivot, const std::vector<std::vector<float>>& A) {
-		auto i = pivot.first;
-		auto j = pivot.second;
+	struct SavedState {
+		float time;
+		float lowerBound;
+		std::array<FreeListVector<float, 256>, 2> reductions;
+		std::array<FreeListVector<int, 256>, 2> edges;
+		FreeListVector<RemovedEdge, RemovedEdgesSize> removedEdges;
+	};
 
-		PartialSolution child = *this;
-		child.time += A[j][i];
-
-		child.adjList.setNecessaryEdge(i, j);
-		child.edges[Out][i] = j;
-		child.edges[In][j] = i;
-
-		auto subpathTo = child.traverseSubPath(i, Out);
-		auto subpathFrom = child.traverseSubPath(i, In);
-		if (subpathTo.size() + subpathFrom.size() - 1 != n) {
-			child.adjList.removeEdge(subpathTo.back(), subpathFrom.back());
+	SavedState saveState() {
+		return SavedState{ time, lowerBound, adjList.reductions, edges };
+	}
+	void restoreState(SavedState& state) {
+		time = state.time;
+		lowerBound = state.lowerBound;
+		adjList.reductions = state.reductions;
+		edges = state.edges;
+		for (auto [d, i, j] : state.removedEdges) {
+			adjList.add(d, i, j);
 		}
-
-		if (!child.isGraphSatisfyingNecessaryConditionsForHamiltonianPath()) {
-			child.lowerBound = 1e10;
-			return child;
-		}
-
-		child.reduceMatrix();
-
-		return child;
 	}
 
-	PartialSolution withoutEdge(Edge pivot) {
+	SavedState addEdge(Edge pivot, const std::vector<std::vector<float>>& A) {
+		auto savedState = saveState();
+
+		auto i = pivot.first;
+		auto j = pivot.second;
+		time += A[j][i];
+		adjList.setNecessaryEdge(i, j, savedState.removedEdges);
+		edges[Out][i] = j;
+		edges[In][j] = i;
+
+		auto subpathTo = traverseSubPath(i, Out);
+		auto subpathFrom = traverseSubPath(i, In);
+		if (subpathTo.size() + subpathFrom.size() - 1 != n) {
+			adjList.removeEdge(subpathTo.back(), subpathFrom.back(), savedState.removedEdges);
+		}
+
+		if (!isGraphSatisfyingNecessaryConditionsForHamiltonianPath()) {
+			lowerBound = 1e10;
+			return savedState;
+		}
+		reduceMatrix();
+
+		return savedState;
+	}
+
+	SavedState removeEdge(Edge pivot) {
+		auto savedState = saveState();
+
 		auto i = pivot.first;
 		auto j = pivot.second;
 
-		PartialSolution child = *this;
-		child.adjList.removeEdge(i, j);
-
-		if (!child.isGraphSatisfyingNecessaryConditionsForHamiltonianPath()) {
-			child.lowerBound = 1e10;
-			return child;
+		adjList.removeEdge(i, j, savedState.removedEdges);
+		if (!isGraphSatisfyingNecessaryConditionsForHamiltonianPath()) {
+			lowerBound = 1e10;
+			return savedState;
 		}
+		reduceMatrix(Out, i);
+		reduceMatrix(In, j);
 
-		child.reduceMatrix(Out, i);
-		child.reduceMatrix(In, j);
-
-		return child;
+		return savedState;
 	}
 
 	Edge choosePivotEdge() {
 		return adjList.getPivot();
 	}
 
-	std::vector<int> traverseSubPath(int cur, Direction edgeType) {
-		std::vector<int> subpath;
-		subpath.reserve(n); 
+	FreeListVector<int, 256> traverseSubPath(int cur, Direction edgeType) {
+		FreeListVector<int, 256> subpath;
 		subpath.push_back(cur);
 		for (int k = 0; k < n; ++k) {
 			auto next = edges[int(edgeType)][cur];
@@ -273,7 +327,7 @@ struct PartialSolution {
 	float time = Inf;
 	float lowerBound = 0;
 	AdjList adjList;
-	std::array<std::vector<int>, 2> edges;
+	std::array<FreeListVector<int, 256>, 2> edges;
 
 	PartialSolution() {}
 	PartialSolution(const std::vector<std::vector<float>>& A, AdjList adjList, float ignoredValue) : n(A.size()), adjList(adjList) {
@@ -289,7 +343,7 @@ struct PartialSolution {
 
 		for (int i = 0; i < A.size(); ++i) {
 			for (int j = 0; j < A[i].size(); ++j) {
-				if (A[j][i] == ignoredValue) {
+				if (A[j][i] >= ignoredValue) {
 					this->adjList.removeEdge(i, j);
 				}
 			}
@@ -324,15 +378,17 @@ void findSolutions(
 	} else if (currentSolution.lowerBound < limit) {
 		auto pivot = currentSolution.choosePivotEdge();
 		if (pivot != NullEdge) {
-			auto withPivot = currentSolution.withEdge(pivot, A);
-			if (withPivot.lowerBound < limit) {
-				findSolutions(withPivot, A, maxSolutionCount, limit, bestSolutions, solutionsVec, taskWasCanceled);
+			auto savedState = currentSolution.addEdge(pivot, A);
+			if (currentSolution.lowerBound < limit) {
+				findSolutions(currentSolution, A, maxSolutionCount, limit, bestSolutions, solutionsVec, taskWasCanceled);
 			}
+			currentSolution.restoreState(savedState);
 
-			auto withoutPivot = currentSolution.withoutEdge(pivot);
-			if (withoutPivot.lowerBound < limit) {
-				findSolutions(withoutPivot, A, maxSolutionCount, limit, bestSolutions, solutionsVec, taskWasCanceled);
+			savedState = currentSolution.removeEdge(pivot);
+			if (currentSolution.lowerBound < limit) {
+				findSolutions(currentSolution, A, maxSolutionCount, limit, bestSolutions, solutionsVec, taskWasCanceled);
 			}
+			currentSolution.restoreState(savedState);
 		}
 	}
 }
@@ -348,7 +404,8 @@ std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vec
 		}
 	}
 
-	PartialSolution root = PartialSolution(A, adjList, ignoredValue).withEdge(Edge(A.size() - 1, 0), A);
+	PartialSolution root = PartialSolution(A, adjList, ignoredValue);
+	root.addEdge(Edge(A.size() - 1, 0), A);
 	findSolutions(root, A, maxSolutionCount, limit, bestSolutions, solutionsVec, taskWasCanceled);
 	std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 	return bestSolutions;
@@ -365,7 +422,7 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<flo
 	std::vector<std::vector<int>> adjList(A.size());
 	for (int i = 0; i < A.size(); ++i) {
 		for (int j = 0; j < A[i].size(); ++j) {
-			if (A[j][i] != ignoredValue) {
+			if (A[j][i] < ignoredValue) {
 				adjList[i].push_back(j);
 			}
 		}
