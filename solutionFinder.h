@@ -269,10 +269,6 @@ struct PartialSolution {
 		return result;
 	}
 
-	int IK(int i, int k, int kStride) {
-		return (n + 1 - kStride) * i + kStride * k;
-	}
-
 	int n;
 	float time = Inf;
 	float lowerBound = 0;
