@@ -152,11 +152,30 @@ struct AdjList {
 	int n() {
 		return n_;
 	}
+	int size() {
+		return sizes[Out].size();
+	}
 };
 
 struct PartialSolution {
 	bool operator>(const PartialSolution& other) const {
 		return lowerBound > other.lowerBound;
+	}
+
+	bool isGraphSatisfyingNecessaryConditionsForHamiltonianPath() {
+		for (int k = 0; k < edges[Out].size(); ++k) {
+			if (edges[Out][k] == -1) {
+				if (adjList.sizes[Out][k] <= 0) {
+					return false;
+				}
+			}
+			if (edges[In][k] == -1) {
+				if (adjList.sizes[In][k] <= 0) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	PartialSolution withEdge(Edge pivot, const std::vector<std::vector<float>>& A) {
@@ -176,6 +195,11 @@ struct PartialSolution {
 			child.adjList.removeEdge(subpathTo.back(), subpathFrom.back());
 		}
 
+		if (!child.isGraphSatisfyingNecessaryConditionsForHamiltonianPath()) {
+			child.lowerBound = 1e10;
+			return child;
+		}
+
 		child.reduceMatrix();
 
 		return child;
@@ -187,6 +211,12 @@ struct PartialSolution {
 
 		PartialSolution child = *this;
 		child.adjList.removeEdge(i, j);
+
+		if (!child.isGraphSatisfyingNecessaryConditionsForHamiltonianPath()) {
+			child.lowerBound = 1e10;
+			return child;
+		}
+
 		child.reduceMatrix(Out, i);
 		child.reduceMatrix(In, j);
 
@@ -261,12 +291,12 @@ struct PartialSolution {
 
 		for (int i = 0; i < A.size(); ++i) {
 			for (int j = 0; j < A[i].size(); ++j) {
-					adjList.removeEdge(i, j);
 				if (A[j][i] == ignoredValue) {
+					this->adjList.removeEdge(i, j);
 				}
 			}
 		}
-		adjList.shrinkToSize();
+		this->adjList.shrinkToSize();
 
 		reduceMatrix();
 	}
