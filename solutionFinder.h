@@ -115,11 +115,20 @@ struct AdjList {
 
 	float getMin(Direction d, int i) {
 		float min = Inf;
-		for (int k = 0; k < sizes[d][i]; ++k) {
-			auto j = data[d][i * n() + k];
-			min = std::min(min, valueAt(d, i, j));
+		auto* dataPtr = &data[d][i * n()];
+		if (d == Out) {
+			for (int k = 0; k < sizes[Out][i]; ++k) {
+				auto j = dataPtr[k];
+				min = std::min(min, M[j][i] - reductions[In][j]);
+			}
+		} else {
+			auto& mPtr = M[i];
+			for (int k = 0; k < sizes[In][i]; ++k) {
+				auto j = dataPtr[k];
+				min = std::min(min, mPtr[j] - reductions[Out][j]);
+			}
 		}
-		return min;
+		return min == Inf ? Inf : min - reductions[d][i];
 	}
 
 	float reduce(Direction d, int i) {
