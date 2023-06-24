@@ -21,7 +21,7 @@ void HelpMarker(const char* desc) {
 int main() {
 	MyImGui::Init(u"Trackmania Path Finder");
 
-	float ignoredValue = 9000;
+	float ignoredValue = 600;
 	float limitValue = 100'000;
 	int maxSolutionCount = 20;
 	int maxRepeatNodesToAdd = 100;
@@ -29,7 +29,7 @@ int main() {
 	bool allowRepeatNodes = false;
 	bool useLegacyOutputFormat = false;
 	constexpr int MinFontSize = 8;
-	constexpr int MaxFontSize = 20;
+	constexpr int MaxFontSize = 30;
 	int fontSize = 15;
 	std::vector<std::vector<int>> repeatNodeMatrix;
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>> solutionsView;
@@ -49,7 +49,7 @@ int main() {
 	MyImGui::Run([&] {
 		ImGui::GetIO().FontGlobalScale = fontSize / 10.0;
 
-		constexpr int LongestLineLength = 26;
+		constexpr int LongestLineLength = 29;
 		constexpr int FontPixelSize = 7;
 		float boxValuePosX = (LongestLineLength + 1) * FontPixelSize * ImGui::GetIO().FontGlobalScale;
 
@@ -79,11 +79,13 @@ int main() {
 
 		ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
-		ImGui::Text("ignored node value:");
+		ImGui::Text("max node value threshold:");
+		ImGui::SameLine();
+		HelpMarker("Node values with this or higher value\nwill not be considered in the solutions");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
-		if (ImGui::InputFloat("##ignored node value", &ignoredValue)) {
+		if (ImGui::InputFloat("##max node value threshold", &ignoredValue)) {
 			ignoredValue = std::clamp(ignoredValue, 1.0f, 100'000.0f);
 		}
 		ImGui::Text("max solution time:");
@@ -220,6 +222,8 @@ int main() {
 			status = "Done";
 		ImGui::Text("Status: %s", status.c_str());
 		ImGui::Text("Candidate solutions found: %d", solutionsView.size());
+		ImGui::SameLine();
+		HelpMarker("Number of solutions found while looking for the best ones.\n\nIf This exceeds \"max number of solutions\" it is meaningless\nand is shown just to give rough idea of how algorithm progresses");
 		ImGui::Text("Time elapsed: %.1f", timer.getTime());
 
 		if (solutionsView.size() > bestFoundSolutions.size()) {
