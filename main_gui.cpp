@@ -34,6 +34,7 @@ int main() {
 	std::vector<std::vector<int>> repeatNodeMatrix;
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>> solutionsView;
 	std::vector<std::pair<std::vector<int16_t>, float>> bestFoundSolutions;
+	std::atomic<int> partialSolutionCount = 0;
 
 	char inputDataFile[1024] = { 0 };
 	char outputDataFile[1024] = { 0 };
@@ -180,6 +181,7 @@ int main() {
 			if (!isRunning(algorithmRunTask)) {
 				errorMsg = "";
 				taskWasCanceled = false;
+				partialSolutionCount = 0;
 				repeatNodeMatrix.clear();
 				auto A = loadCsvData(inputDataFile, ignoredValue, errorMsg);
 				if (allowRepeatNodes) {
@@ -189,8 +191,8 @@ int main() {
 					bestFoundSolutions.clear();
 					solutionsView = ThreadSafeVec<std::pair<std::vector<int16_t>, float>>{};
 					timer = Timer();
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &taskWasCanceled, &repeatNodeMatrix, useLegacyOutputFormat, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() {
-						auto sols = runAlgorithm(A, ignoredValue, limitValue, maxSolutionCount, solutionsView, taskWasCanceled);
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, useLegacyOutputFormat, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() {
+						auto sols = runAlgorithm(A, ignoredValue, limitValue, maxSolutionCount, solutionsView, partialSolutionCount, taskWasCanceled);
 						saveSolutionsToFile(outputDataFile, sols, repeatNodeMatrix, useLegacyOutputFormat);
 						timer.stop();
 					});
@@ -221,10 +223,11 @@ int main() {
 		else
 			status = "Done";
 		ImGui::Text("Status: %s", status.c_str());
-		ImGui::Text("Candidate solutions found: %d", solutionsView.size());
+		ImGui::Text("Time elapsed: %.1f [s]", timer.getTime());
+		ImGui::Text("Partial solutions processed: %d", partialSolutionCount.load());
+		ImGui::Text("Candidate solutions found:   %d", solutionsView.size());
 		ImGui::SameLine();
 		HelpMarker("Number of solutions found while looking for the best ones.\n\nIf This exceeds \"max number of solutions\" it is meaningless\nand is shown just to give rough idea of how algorithm progresses");
-		ImGui::Text("Time elapsed: %.1f", timer.getTime());
 
 		if (solutionsView.size() > bestFoundSolutions.size()) {
 			for (int i = bestFoundSolutions.size(); i < solutionsView.size(); ++i) {
