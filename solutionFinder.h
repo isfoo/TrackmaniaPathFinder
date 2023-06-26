@@ -175,22 +175,6 @@ struct PartialSolution {
 		return lowerBound > other.lowerBound;
 	}
 
-	bool isGraphSatisfyingNecessaryConditionsForHamiltonianPath() {
-		for (int k = 0; k < edges[Out].size(); ++k) {
-			if (edges[Out][k] == -1) {
-				if (adjList.sizes[Out][k] <= 0) {
-					return false;
-				}
-			}
-			if (edges[In][k] == -1) {
-				if (adjList.sizes[In][k] <= 0) {
-					return false;
-				}
-			}
-		}
-		return true;
-	}
-
 	struct SavedState {
 		float time;
 		float lowerBound;
@@ -228,11 +212,6 @@ struct PartialSolution {
 			adjList.removeEdge(subpathTo.back(), subpathFrom.back(), &savedState.removedEdges);
 		}
 
-		if (!isGraphSatisfyingNecessaryConditionsForHamiltonianPath()) {
-			lowerBound = 1e10;
-			return savedState;
-		}
-
 		for (auto [k, m] : savedState.removedEdges) {
 			if (std::abs(adjList.valueAt(Out, k, m)) <= 0.01) {
 				if (k != i) reduceMatrix(Out, k);
@@ -250,10 +229,6 @@ struct PartialSolution {
 		auto j = pivot.second;
 
 		adjList.removeEdge(i, j, &savedState.removedEdges);
-		if (!isGraphSatisfyingNecessaryConditionsForHamiltonianPath()) {
-			lowerBound = 1e10;
-			return savedState;
-		}
 		if (std::abs(adjList.valueAt(Out, i, j)) <= 0.01) {
 			reduceMatrix(Out, i);
 			reduceMatrix(In, j);
