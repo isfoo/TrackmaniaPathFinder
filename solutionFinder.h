@@ -29,12 +29,6 @@ enum Direction {
 	In
 };
 
-struct RemovedEdge {
-	Direction d;
-	int8_t i;
-	int8_t j;
-};
-
 constexpr float Inf = 1e10;
 std::vector<std::vector<float>> M;
 
@@ -59,40 +53,24 @@ struct AdjList {
 		add(In, j, i);
 	}
 
-	void setNecessaryEdge(int i, int j, FreeListVector<RemovedEdge, RemovedEdgesSize>& removedEdges) {
+	void setNecessaryEdge(int i, int j, FreeListVector<Edge, RemovedEdgesSize>& removedEdges) {
 		for (int k = 0; k < sizes[Out][i]; ++k) {
 			int x = data[Out][i * n() + k];
-			removeEdge(i, x, removedEdges);
+			removeEdge(i, x, &removedEdges);
 			k -= 1;
 		}
 
 		for (int k = 0; k < sizes[In][j]; ++k) {
 			int x = data[In][j * n() + k];
-			removeEdge(x, j, removedEdges);
+			removeEdge(x, j, &removedEdges);
 			k -= 1;
 		}
 	}
 
-	void setNecessaryEdge(int i, int j) {
-		for (int k = 0; k < sizes[Out][i]; ++k) {
-			int x = data[Out][i * n() + k];
-			removeEdge(i, x);
-			k -= 1;
+	void removeEdge(int i, int j, FreeListVector<Edge, RemovedEdgesSize>* removedEdges) {
+		if (removeEdge(Out, i, j)) {
+			if (removedEdges) removedEdges->push_back({ i, j });
 		}
-
-		for (int k = 0; k < sizes[In][j]; ++k) {
-			int x = data[In][j * n() + k];
-			removeEdge(x, j);
-			k -= 1;
-		}
-	}
-
-	void removeEdge(int i, int j, FreeListVector<RemovedEdge, RemovedEdgesSize>& removedEdges) {
-		removeEdge(Out, i, j, removedEdges);
-		removeEdge(In, j, i, removedEdges);
-	}
-	void removeEdge(int i, int j) {
-		removeEdge(Out, i, j);
 		removeEdge(In, j, i);
 	}
 
@@ -128,14 +106,12 @@ struct AdjList {
 				min = std::min(min, mPtr[j] - reductions[Out][j]);
 			}
 		}
-		return min == Inf ? Inf : min - reductions[d][i];
+		return min - reductions[d][i];
 	}
 
 	float reduce(Direction d, int i) {
 		auto min = getMin(d, i);
-		if (min != Inf) {
-			reductions[d][i] += min;
-		}
+		reductions[d][i] += min;
 		return min;
 	}
 
@@ -176,24 +152,15 @@ struct AdjList {
 		data[d][i * n() + sizes[d][i]] = j;
 		sizes[d][i] += 1;
 	}
-	void removeEdge(Direction d, int i, int j, FreeListVector<RemovedEdge, RemovedEdgesSize>& removedEdges) {
+	bool removeEdge(Direction d, int i, int j) {
 		for (int k = 0; k < sizes[d][i]; ++k) {
 			if (data[d][i * n() + k] == j) {
 				sizes[d][i] -= 1;
 				std::swap(data[d][i * n() + k], data[d][i * n() + sizes[d][i]]);
-				removedEdges.push_back({ d, int8_t(i), int8_t(j) });
-				break;
+				return true;
 			}
 		}
-	}
-	void removeEdge(Direction d, int i, int j) {
-		for (int k = 0; k < sizes[d][i]; ++k) {
-			if (data[d][i * n() + k] == j) {
-				sizes[d][i] -= 1;
-				std::swap(data[d][i * n() + k], data[d][i * n() + sizes[d][i]]);
-				break;
-			}
-		}
+		return false;
 	}
 	int n() {
 		return n_;
@@ -229,7 +196,7 @@ struct PartialSolution {
 		float lowerBound;
 		std::array<FreeListVector<float, 256>, 2> reductions;
 		std::array<FreeListVector<int, 256>, 2> edges;
-		FreeListVector<RemovedEdge, RemovedEdgesSize> removedEdges;
+		FreeListVector<Edge, RemovedEdgesSize> removedEdges;
 	};
 
 	SavedState saveState() {
@@ -240,8 +207,8 @@ struct PartialSolution {
 		lowerBound = state.lowerBound;
 		adjList.reductions = state.reductions;
 		edges = state.edges;
-		for (auto [d, i, j] : state.removedEdges) {
-			adjList.add(d, i, j);
+		for (auto [i, j] : state.removedEdges) {
+			adjList.add(i, j);
 		}
 	}
 
@@ -258,14 +225,20 @@ struct PartialSolution {
 		auto subpathTo = traverseSubPath(i, Out);
 		auto subpathFrom = traverseSubPath(i, In);
 		if (subpathTo.size() + subpathFrom.size() - 1 != n) {
-			adjList.removeEdge(subpathTo.back(), subpathFrom.back(), savedState.removedEdges);
+			adjList.removeEdge(subpathTo.back(), subpathFrom.back(), &savedState.removedEdges);
 		}
 
 		if (!isGraphSatisfyingNecessaryConditionsForHamiltonianPath()) {
 			lowerBound = 1e10;
 			return savedState;
 		}
-		reduceMatrix();
+
+		for (auto [k, m] : savedState.removedEdges) {
+			if (std::abs(adjList.valueAt(Out, k, m)) <= 0.01) {
+				if (k != i) reduceMatrix(Out, k);
+				if (m != j) reduceMatrix(In, m);
+			}
+		}
 
 		return savedState;
 	}
@@ -276,13 +249,15 @@ struct PartialSolution {
 		auto i = pivot.first;
 		auto j = pivot.second;
 
-		adjList.removeEdge(i, j, savedState.removedEdges);
+		adjList.removeEdge(i, j, &savedState.removedEdges);
 		if (!isGraphSatisfyingNecessaryConditionsForHamiltonianPath()) {
 			lowerBound = 1e10;
 			return savedState;
 		}
-		reduceMatrix(Out, i);
-		reduceMatrix(In, j);
+		if (std::abs(adjList.valueAt(Out, i, j)) <= 0.01) {
+			reduceMatrix(Out, i);
+			reduceMatrix(In, j);
+		}
 
 		return savedState;
 	}
@@ -306,9 +281,7 @@ struct PartialSolution {
 	}
 
 	void reduceMatrix(Direction edgeType, int i) {
-		auto min = adjList.reduce(edgeType, i);
-		if (min != Inf)
-			lowerBound += min;
+		lowerBound += adjList.reduce(edgeType, i);
 	}
 
 	void reduceMatrix() {
@@ -353,7 +326,7 @@ struct PartialSolution {
 		for (int i = 0; i < A.size(); ++i) {
 			for (int j = 0; j < A[i].size(); ++j) {
 				if (A[j][i] >= ignoredValue) {
-					this->adjList.removeEdge(i, j);
+					this->adjList.removeEdge(i, j, nullptr);
 				}
 			}
 		}
