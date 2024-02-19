@@ -1,8 +1,11 @@
+#pragma once
 #define _CRT_SECURE_NO_WARNINGS
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h"
 #include "imgui.cpp"
 #include "imgui_draw.cpp"
 #include "imgui_widgets.cpp"
+#include "imgui_tables.cpp"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_win32.cpp"
@@ -18,8 +21,11 @@
 #include <optional>
 
 namespace MyImGui {
-    static IDXGISwapChain* g_pSwapChain = NULL;
-    static ID3D11RenderTargetView* g_mainRenderTargetView = NULL;
+    static ID3D11Device*           g_pd3dDevice = nullptr;
+    static ID3D11DeviceContext*    g_pd3dDeviceContext = nullptr;
+    static IDXGISwapChain*         g_pSwapChain = nullptr;
+    static UINT                    g_ResizeWidth = 0, g_ResizeHeight = 0;
+    static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
     void CreateRenderTarget() {
         ID3D11Texture2D* pBackBuffer;
@@ -76,11 +82,10 @@ namespace MyImGui {
         case WM_ACTIVATE:
             break;
         case WM_SIZE:
-            if (g_pd3dDevice != NULL && wParam != SIZE_MINIMIZED) {
-                CleanupRenderTarget();
-                g_pSwapChain->ResizeBuffers(0, (UINT)LOWORD(lParam), (UINT)HIWORD(lParam), DXGI_FORMAT_UNKNOWN, 0);
-                CreateRenderTarget();
-            }
+            if (wParam == SIZE_MINIMIZED)
+                return 0;
+            g_ResizeWidth = (UINT)LOWORD(lParam);
+            g_ResizeHeight = (UINT)HIWORD(lParam);
             return 0;
         case WM_SYSCOMMAND:
             if ((wParam & 0xfff0) == SC_KEYMENU)
@@ -146,6 +151,13 @@ namespace MyImGui {
                 ::TranslateMessage(&msg);
                 ::DispatchMessageW(&msg);
                 continue;
+            }
+
+            if (g_ResizeWidth != 0 && g_ResizeHeight != 0) {
+                CleanupRenderTarget();
+                g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight, DXGI_FORMAT_UNKNOWN, 0);
+                g_ResizeWidth = g_ResizeHeight = 0;
+                CreateRenderTarget();
             }
 
             // Start the Dear ImGui frame
