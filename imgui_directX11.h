@@ -19,6 +19,8 @@
 #include <tuple>
 #include <string>
 #include <optional>
+#include <chrono>
+#include <thread>
 
 namespace MyImGui {
     static ID3D11Device*           g_pd3dDevice = nullptr;
@@ -26,6 +28,7 @@ namespace MyImGui {
     static IDXGISwapChain*         g_pSwapChain = nullptr;
     static UINT                    g_ResizeWidth = 0, g_ResizeHeight = 0;
     static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
+    static bool                    g_wndMinimized = false;
 
     void CreateRenderTarget() {
         ID3D11Texture2D* pBackBuffer;
@@ -82,6 +85,7 @@ namespace MyImGui {
         case WM_ACTIVATE:
             break;
         case WM_SIZE:
+            g_wndMinimized = (wParam == SIZE_MINIMIZED);
             if (wParam == SIZE_MINIMIZED)
                 return 0;
             g_ResizeWidth = (UINT)LOWORD(lParam);
@@ -150,6 +154,11 @@ namespace MyImGui {
             if (::PeekMessageW(&msg, NULL, 0U, 0U, PM_REMOVE)) {
                 ::TranslateMessage(&msg);
                 ::DispatchMessageW(&msg);
+                continue;
+            }
+
+            if (g_wndMinimized) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }
 
