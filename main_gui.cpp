@@ -209,8 +209,8 @@ int main() {
 					bestFoundSolutions.clear();
 					solutionsView = ThreadSafeVec<std::pair<std::vector<int16_t>, float>>{};
 					timer = Timer();
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, useLegacyOutputFormat, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() {
-						auto sols = runAlgorithm(A, ignoredValue, limitValue, maxSolutionCount, solutionsView, partialSolutionCount, taskWasCanceled);
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, useLegacyOutputFormat, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() mutable {
+						auto sols = runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, partialSolutionCount, taskWasCanceled);
 						saveSolutionsToFile(outputDataFile, sols, repeatNodeMatrix, useLegacyOutputFormat);
 						timer.stop();
 					});
