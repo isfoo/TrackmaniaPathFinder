@@ -17,6 +17,7 @@
 #include <stack>
 #include <algorithm>
 
+constexpr float Inf = 1e10;
 constexpr int RemovedEdgesSize = 4096;
 constexpr float MaxLimit = 1e10;
 constexpr int MaxMaxSolutionCount = 1e7;
@@ -24,20 +25,15 @@ constexpr int MaxMaxSolutionCount = 1e7;
 using Edge = std::pair<int, int>;
 constexpr Edge NullEdge = { -1, -1 };
 
-enum Direction {
-	Out,
-	In
-};
-
-constexpr float Inf = 1e10;
-std::vector<std::vector<float>> M;
+enum Direction { Out, In };
 
 struct AdjList {
 	std::array<std::vector<int8_t>, 2> data;
 	std::array<std::vector<int8_t>, 2> sizes;
 	std::array<FreeListVector<float, 256>, 2> reductions;
+	std::vector<std::vector<float>>* weights;
 	int n_;
-	AdjList(int n=0) : n_(n) {
+	AdjList(std::vector<std::vector<float>>* weights, int n=0) : weights(weights), n_(n) {
 		data[Out].resize(n * n);
 		data[In].resize(n * n);
 		sizes[Out].resize(n);
@@ -97,10 +93,10 @@ struct AdjList {
 		if (d == Out) {
 			for (int k = 0; k < sizes[Out][i]; ++k) {
 				auto j = dataPtr[k];
-				min = std::min(min, M[j][i] - reductions[In][j]);
+				min = std::min(min, (*weights)[j][i] - reductions[In][j]);
 			}
 		} else {
-			auto& mPtr = M[i];
+			auto& mPtr = (*weights)[i];
 			for (int k = 0; k < sizes[In][i]; ++k) {
 				auto j = dataPtr[k];
 				min = std::min(min, mPtr[j] - reductions[Out][j]);
@@ -123,8 +119,8 @@ struct AdjList {
 			for (int k = 0; k < sizes[Out][i]; ++k) {
 				int j = data[Out][i * n() + k];
 				if (std::abs(valueAt(Out, i, j)) <= 0.01) {
-					auto oldValue = M[j][i];
-					M[j][i] = Inf;
+					auto oldValue = (*weights)[j][i];
+					(*weights)[j][i] = Inf;
 					auto outMin = getMin(Out, i);
 					auto inMin = getMin(In, j);
 					float increase = outMin + inMin;
@@ -132,7 +128,7 @@ struct AdjList {
 						bestIncrease = increase;
 						bestPivot = Edge(i, j);
 					}
-					M[j][i] = oldValue;
+					(*weights)[j][i] = oldValue;
 				}
 			}
 		}
@@ -143,9 +139,9 @@ struct AdjList {
 
 	float valueAt(Direction d, int i, int j) {
 		if (d == Out) {
-			return M[j][i] - reductions[Out][i] - reductions[In][j];
+			return (*weights)[j][i] - reductions[Out][i] - reductions[In][j];
 		} else {
-			return M[i][j] - reductions[In][i] - reductions[Out][j];
+			return (*weights)[i][j] - reductions[In][i] - reductions[Out][j];
 		}
 	}
 	void add(Direction d, int i, int j) {
@@ -286,7 +282,6 @@ struct PartialSolution {
 	AdjList adjList;
 	std::array<FreeListVector<int, 256>, 2> edges;
 
-	PartialSolution() {}
 	PartialSolution(const std::vector<std::vector<float>>& A, AdjList adjList, float ignoredValue) : n(A.size()), adjList(adjList) {
 		time = 0;
 		
@@ -443,10 +438,9 @@ int countRepeatNodeEdges(const std::vector<std::vector<float>>& A, float ignored
 std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, int maxSolutionCount, float limit, float ignoredValue, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled) {
 	auto A = A_;
 	A[0].back() = 0;
-	M_ = A;
 	
 	std::vector<std::pair<std::vector<int16_t>, float>> bestSolutions;
-	AdjList adjList(A.size());
+	AdjList adjList(&A, A.size());
 
 	for (int i = 0; i < A.size(); ++i) {
 		for (int j = 0; j < A[i].size(); ++j) {
