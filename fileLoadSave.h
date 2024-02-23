@@ -27,7 +27,7 @@ std::vector<std::vector<float>> loadCsvData(const std::string& inputFileName, fl
 	return A;
 }
 
-void saveSolutionsToFile(const std::string& outputFileName, const std::vector<std::pair<std::vector<int16_t>, float>>& solutions, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, bool useLegacyOutputFormat) {
+void saveSolutionsToFile(const std::string& outputFileName, const std::vector<std::pair<std::vector<int16_t>, float>>& solutions, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
 	std::ofstream outFile(outputFileName);
 	if (solutions.empty())
 		return;
@@ -35,6 +35,6 @@ void saveSolutionsToFile(const std::string& outputFileName, const std::vector<st
 	for (auto& [B_, timeA] : solutions) {
 		outFile << std::fixed << std::setprecision(1);
 		outFile << std::setw(8) << timeA << " ";
-		outFile << createSolutionString(B_, repeatNodeMatrix, useLegacyOutputFormat) << '\n';
+		outFile << createSolutionString(B_, repeatNodeMatrix) << '\n';
 	}
 }

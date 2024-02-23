@@ -27,7 +27,6 @@ int main() {
 	int maxRepeatNodesToAdd = 100;
 	int foundRepeatNodesCount = -1;
 	bool allowRepeatNodes = false;
-	bool useLegacyOutputFormat = false;
 	constexpr int MinFontSize = 8;
 	constexpr int MaxFontSize = 30;
 	int fontSize = 15;
@@ -141,12 +140,6 @@ int main() {
 			foundRepeatNodesCount = -1;
 		}
 
-		ImGui::Text("use legacy output format:");
-		ImGui::SameLine();
-		ImGui::SetCursorPosX(boxValuePosX);
-		ImGui::SetNextItemWidth(-1);
-		ImGui::Checkbox("##use legacy output format", &useLegacyOutputFormat);
-
 		ImGui::Text("allow repeat nodes:");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
@@ -209,9 +202,9 @@ int main() {
 					bestFoundSolutions.clear();
 					solutionsView = ThreadSafeVec<std::pair<std::vector<int16_t>, float>>{};
 					timer = Timer();
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, useLegacyOutputFormat, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() mutable {
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() mutable {
 						auto sols = runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, partialSolutionCount, taskWasCanceled);
-						saveSolutionsToFile(outputDataFile, sols, repeatNodeMatrix, useLegacyOutputFormat);
+						saveSolutionsToFile(outputDataFile, sols, repeatNodeMatrix);
 						timer.stop();
 					});
 				}
@@ -255,7 +248,7 @@ int main() {
 		}
 		for (int j = 0; j < bestFoundSolutions.size() && j < 100; ++j) {
 			auto& [B_, time] = bestFoundSolutions[j];
-			auto solStr = createSolutionString(B_, repeatNodeMatrix, useLegacyOutputFormat);
+			auto solStr = createSolutionString(B_, repeatNodeMatrix);
 			ImGui::Text("%.2f", time);
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(-1);
