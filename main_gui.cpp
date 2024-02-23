@@ -2,6 +2,7 @@
 #include <windows.h>
 #include "solutionFinder.h"
 #include "utility.h"
+#include "common.h"
 #include "fileLoadSave.h"
 #include "imgui_directX11.h"
 namespace fs = std::filesystem;
@@ -30,7 +31,7 @@ int main() {
 	constexpr int MinFontSize = 8;
 	constexpr int MaxFontSize = 30;
 	int fontSize = 15;
-	std::vector<std::vector<int>> repeatNodeMatrix;
+	std::vector<std::vector<std::vector<int>>> repeatNodeMatrix;
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>> solutionsView;
 	std::vector<std::pair<std::vector<int16_t>, float>> bestFoundSolutions;
 	std::atomic<int> partialSolutionCount = 0;
@@ -42,6 +43,9 @@ int main() {
 	std::string errorMsg;
 	std::future<void> algorithmRunTask;
 	std::atomic<bool> taskWasCanceled = false;
+
+	std::vector<int> repeatNodesTurnedOff;
+	char inputTurnedOffRepeatNodes[1024] = { 0 };
 
 	auto timer = Timer();
 	timer.stop();
@@ -149,21 +153,36 @@ int main() {
 		ImGui::SetNextItemWidth(-1);
 		ImGui::Checkbox("##Allow repeat nodes", &allowRepeatNodes);
 		if (allowRepeatNodes) {
-			if (ImGui::Button("Count repeat nodes")) {
-				foundRepeatNodesCount = getRepeatNodeEdges(loadCsvData(inputDataFile, ignoredValue, errorMsg), ignoredValue).size();
-			}
-			if (foundRepeatNodesCount != -1) {
-				ImGui::SameLine();
-				ImGui::SetCursorPosX(boxValuePosX);
-				ImGui::Text("Found %d repeat nodes.", foundRepeatNodesCount);
-			}
-
 			ImGui::Text("max repeat nodes to add:");
 			ImGui::SameLine();
 			ImGui::SetCursorPosX(boxValuePosX);
 			ImGui::SetNextItemWidth(-1);
 			if (ImGui::InputInt("##max repeat nodes to add", &maxRepeatNodesToAdd)) {
 				maxRepeatNodesToAdd = std::clamp(maxRepeatNodesToAdd, 1, 100'000);
+			}
+
+			ImGui::Text("turned off repeat nodes:");
+			ImGui::SameLine();
+			HelpMarker("List of CP numbers you want to ban from repeating");
+			ImGui::SameLine();
+			ImGui::SetCursorPosX(boxValuePosX);
+			ImGui::SetNextItemWidth(-1);
+			if (ImGui::InputText("##turned off repeat nodes", inputTurnedOffRepeatNodes, sizeof(inputTurnedOffRepeatNodes))) {
+				auto nodes = splitToFloats(inputTurnedOffRepeatNodes, ignoredValue);
+				repeatNodesTurnedOff.clear();
+				for (auto node : nodes) {
+					if (node != ignoredValue)
+						repeatNodesTurnedOff.push_back(node);
+				}
+			}
+
+			if (ImGui::Button("Count repeat nodes")) {
+				foundRepeatNodesCount = countRepeatNodeEdges(loadCsvData(inputDataFile, ignoredValue, errorMsg), ignoredValue, repeatNodesTurnedOff);
+			}
+			if (foundRepeatNodesCount != -1) {
+				ImGui::SameLine();
+				ImGui::SetCursorPosX(boxValuePosX);
+				ImGui::Text("Found %d repeat nodes.", foundRepeatNodesCount);
 			}
 		} else {
 			foundRepeatNodesCount = -1;
@@ -184,7 +203,7 @@ int main() {
 				repeatNodeMatrix.clear();
 				auto A = loadCsvData(inputDataFile, ignoredValue, errorMsg);
 				if (allowRepeatNodes) {
-					repeatNodeMatrix = addRepeatNodeEdges(A, getRepeatNodeEdges(A, ignoredValue), maxRepeatNodesToAdd);
+					repeatNodeMatrix = addRepeatNodeEdges(A, ignoredValue, 1000000, repeatNodesTurnedOff);
 				}
 				if (errorMsg.empty()) {
 					bestFoundSolutions.clear();
@@ -236,42 +255,9 @@ int main() {
 		}
 		for (int j = 0; j < bestFoundSolutions.size() && j < 100; ++j) {
 			auto& [B_, time] = bestFoundSolutions[j];
-			auto B = B_;
-			if (!useLegacyOutputFormat) {
-				B.insert(B.begin(), 0);
-				for (auto& b : B)
-					b += 1;
-			}
-
+			auto solStr = createSolutionString(B_, repeatNodeMatrix, useLegacyOutputFormat);
 			ImGui::Text("%.2f", time);
 			ImGui::SameLine();
-			std::string solStr = "[";
-			if (!useLegacyOutputFormat) {
-				solStr += "Start";
-			} else {
-				solStr += std::to_string(B[0] - 1);
-			}
-			for (int i = 1; i < B.size(); ++i) {
-				if (useLegacyOutputFormat && !repeatNodeMatrix.empty() && repeatNodeMatrix[B[i]][B[i - 1]]) {
-					solStr += ",(" + std::to_string(repeatNodeMatrix[B[i]][B[i - 1]] - 1) + "),";
-				} else if (!useLegacyOutputFormat && i > 1 && !repeatNodeMatrix.empty() && repeatNodeMatrix[B_[i-1]][B_[i - 2]]) {
-					solStr += ",(" + std::to_string(repeatNodeMatrix[B_[i - 1]][B_[i - 2]]) + "),";
-				} else if (B[i] == B[i - 1] + 1) {
-					solStr += '-';
-					i += 1;
-					while (i < B.size() && B[i] == B[i - 1] + 1) {
-						i += 1;
-					}
-					i -= 1;
-				} else {
-					solStr += ',';
-				}
-				if (i == B.size() - 1 && !useLegacyOutputFormat)
-					solStr += "Finish";
-				else
-					solStr += std::to_string(B[i] - 1);
-			}
-			solStr += "]";
 			ImGui::SetNextItemWidth(-1);
 			ImGui::InputText(("##solution" + std::to_string(j)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
 		}

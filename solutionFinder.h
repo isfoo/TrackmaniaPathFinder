@@ -351,32 +351,14 @@ void findSolutions(
 	}
 }
 
-
-std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vector<std::vector<float>>& A, int maxSolutionCount, float limit, float ignoredValue, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled) {
-	std::vector<std::pair<std::vector<int16_t>, float>> bestSolutions;
-	AdjList adjList(A.size());
-
-	for (int i = 0; i < A.size(); ++i) {
-		for (int j = 0; j < A[i].size(); ++j) {
-			adjList.add(i, j);
-		}
-	}
-
-	PartialSolution root = PartialSolution(A, adjList, ignoredValue);
-	root.addEdge(Edge(A.size() - 1, 0), A);
-	findSolutions(root, A, maxSolutionCount, limit, bestSolutions, solutionsVec, partialSolutionCount, taskWasCanceled);
-	std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
-	return bestSolutions;
-}
-
 struct RepeatEdgePath {
+	RepeatEdgePath(int k, int j, int i) : k(k), j(j), i(i) {}
 	int k, j, i;
 	float time(const std::vector<std::vector<float>>& A) const {
 		return A[k][j] + A[j][i];
 	}
 };
-
-std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<float>>& A, float ignoredValue) {
+std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<float>>& A, float ignoredValue, std::vector<int> turnedOffRepeatNodes) {
 	std::vector<std::vector<int>> adjList(A.size());
 	for (int i = 0; i < A.size(); ++i) {
 		for (int j = 0; j < A[i].size(); ++j) {
@@ -394,7 +376,8 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<flo
 					continue;
 				float time = A[k][j] + A[j][i];
 				if (time < A[k][i]) {
-					additionalPaths.emplace_back(k, j, i);
+					if (std::find(turnedOffRepeatNodes.begin(), turnedOffRepeatNodes.end(), j) == turnedOffRepeatNodes.end())
+						additionalPaths.emplace_back(k, j, i);
 				}
 			}
 		}
@@ -403,18 +386,62 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<flo
 	return additionalPaths;
 }
 
-std::vector<std::vector<int>> addRepeatNodeEdges(std::vector<std::vector<float>>& A, const std::vector<RepeatEdgePath>& additionalPaths, int maxNodesToAdd = std::numeric_limits<int>::max()) {
-	std::vector<std::vector<int>> repeatEdgeMatrix(A.size(), std::vector<int>(A.size()));
+void addRepeatNodeEdges(std::vector<std::vector<float>>& A, std::vector<std::vector<std::vector<int>>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxNodesToAdd) {
 	auto ACopy = A;
 	for (int m = 0; m < maxNodesToAdd && m < additionalPaths.size(); ++m) {
 		auto k = additionalPaths[m].k;
 		auto j = additionalPaths[m].j;
 		auto i = additionalPaths[m].i;
-		repeatEdgeMatrix[k][i] = j;
+		repeatEdgeMatrix[k][i] = repeatEdgeMatrix[j][i];
+		repeatEdgeMatrix[k][i].push_back(j);
+		repeatEdgeMatrix[k][i].insert(repeatEdgeMatrix[k][i].end(), repeatEdgeMatrix[k][j].begin(), repeatEdgeMatrix[k][j].end());
 		ACopy[k][i] = additionalPaths[m].time(A);
 	}
 	A = ACopy;
+}
+
+std::vector<std::vector<std::vector<int>>> addRepeatNodeEdges(std::vector<std::vector<float>>& A, float ignoredValue, int maxNodesToAdd, std::vector<int> turnedOffRepeatNodes) {
+	std::vector<std::vector<std::vector<int>>> repeatEdgeMatrix(A.size(), std::vector<std::vector<int>>(A.size()));
+	for (int i = 0; i < 5; ++i) {
+		auto repeatEdges = getRepeatNodeEdges(A, ignoredValue, turnedOffRepeatNodes);
+		addRepeatNodeEdges(A, repeatEdgeMatrix, repeatEdges, maxNodesToAdd);
+		maxNodesToAdd = std::max<int>(0, maxNodesToAdd - repeatEdges.size());
+	}
 	return repeatEdgeMatrix;
+}
+
+int countRepeatNodeEdges(const std::vector<std::vector<float>>& A, float ignoredValue, std::vector<int> turnedOffRepeatNodes) {
+	std::vector<std::vector<std::vector<int>>> repeatEdgeMatrix(A.size(), std::vector<std::vector<int>>(A.size()));
+	auto A_ = A;
+	for (int i = 0; i < 5; ++i) {
+		auto repeatEdges = getRepeatNodeEdges(A_, ignoredValue, turnedOffRepeatNodes);
+		addRepeatNodeEdges(A_, repeatEdgeMatrix, repeatEdges, std::numeric_limits<int>::max());
+	}
+	int repeatEdgesCount = 0;
+	for (int i = 0; i < A.size(); ++i) {
+		for (int j = 0; j < A.size(); ++j) {
+			repeatEdgesCount += !repeatEdgeMatrix[i][j].empty();
+		}
+	}
+	return repeatEdgesCount;
+}
+
+
+std::vector<std::pair<std::vector<int16_t>, float>> findSolutions(const std::vector<std::vector<float>>& A, int maxSolutionCount, float limit, float ignoredValue, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>* solutionsVec, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled) {
+	std::vector<std::pair<std::vector<int16_t>, float>> bestSolutions;
+	AdjList adjList(A.size());
+
+	for (int i = 0; i < A.size(); ++i) {
+		for (int j = 0; j < A[i].size(); ++j) {
+			adjList.add(i, j);
+		}
+	}
+
+	PartialSolution root = PartialSolution(A, adjList, ignoredValue);
+	root.addEdge(Edge(A.size() - 1, 0), A);
+	findSolutions(root, A, maxSolutionCount, limit, bestSolutions, solutionsVec, partialSolutionCount, taskWasCanceled);
+	std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
+	return bestSolutions;
 }
 
 std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, float ignoredValue, float limit, int maxSolutionCount, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled) {
