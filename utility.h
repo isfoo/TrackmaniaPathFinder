@@ -72,7 +72,7 @@ template<int Size, int Alignment> struct FreeList {
 	FreeList& operator=(const FreeList&) = delete;
 	~FreeList() {
 		while (!list.empty()) {
-		#ifdef COMPILER_MSVC
+		#if defined(COMPILER_MSVC) || defined(COMPILER_CLANG)
 			_aligned_free(list.back());
 		#else
 			std::free(list.back());
@@ -87,7 +87,7 @@ template<int Size, int Alignment> struct FreeList {
 			list.pop_back();
 			return ptr;
 		}
-		#ifdef COMPILER_MSVC
+		#if defined(COMPILER_MSVC) || defined(COMPILER_CLANG)
 		return _aligned_malloc(Size, Alignment);
 		#else
 		return std::aligned_alloc(Alignment, Size);
