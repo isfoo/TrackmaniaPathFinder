@@ -17,7 +17,6 @@ void HelpMarker(const char* desc) {
 	}
 }
 
-#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup")
 int main() {
 	MyImGui::Init(u"Trackmania Path Finder");
 
