@@ -1,5 +1,6 @@
 #pragma once
 #include "utility.h"
+#include "fileLoadSave.h"
 #include <iostream>
 #include <vector>
 #include <chrono>
@@ -309,10 +310,12 @@ struct PartialSolution {
 struct SolutionConfig {
 	SolutionConfig(
 		const std::vector<std::vector<float>>& weights, int maxSolutionCount, float& limit,
-		ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec,
+		ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec, const std::string& outputFileName,
+		const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, 
 		std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled)
 		: 
 		weights(weights), maxSolutionCount(maxSolutionCount), limit(limit), solutionsVec(solutionsVec),
+		outputFileName(outputFileName), repeatNodeMatrix(repeatNodeMatrix),
 		partialSolutionCount(partialSolutionCount), taskWasCanceled(taskWasCanceled)
 	{}
 
@@ -320,6 +323,8 @@ struct SolutionConfig {
 	int maxSolutionCount;
 	float& limit;
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec;
+	const std::string& outputFileName;
+	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix;
 	std::atomic<int>& partialSolutionCount;
 	std::atomic<bool>& taskWasCanceled;
 };
@@ -330,7 +335,10 @@ void findSolutions(SolutionConfig& config, PartialSolution& currentSolution, std
 		return;
 	if (currentSolution.isComplete()) {
 		auto solution = std::make_pair(currentSolution.getPath(), currentSolution.time);
+		
 		config.solutionsVec.push_back(solution);
+		writeSolutionToFile(config.outputFileName, solution.first, currentSolution.time, config.repeatNodeMatrix);
+
 		if (bestSolutions.size() < config.maxSolutionCount) {
 			bestSolutions.push_back(solution);
 		} else if (currentSolution.time < config.limit) {
@@ -435,7 +443,12 @@ int countRepeatNodeEdges(const std::vector<std::vector<float>>& A, float ignored
 }
 
 
-std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vector<std::vector<float>>& A_, int maxSolutionCount, float limit, float ignoredValue, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled) {
+void runAlgorithm(
+	const std::vector<std::vector<float>>& A_, int maxSolutionCount, float limit, float ignoredValue, 
+	ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec, const std::string& outputFileName,
+	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix,
+	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
+) {
 	auto A = A_;
 	A[0].back() = 0;
 	
@@ -450,9 +463,7 @@ std::vector<std::pair<std::vector<int16_t>, float>> runAlgorithm(const std::vect
 
 	PartialSolution root = PartialSolution(A, adjList, ignoredValue);
 	root.addEdge(Edge(A.size() - 1, 0), A);
-	SolutionConfig config(A, maxSolutionCount, limit, solutionsVec, partialSolutionCount, taskWasCanceled);
+	SolutionConfig config(A, maxSolutionCount, limit, solutionsVec, outputFileName, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 	findSolutions(config, root, bestSolutions);
-	std::sort(bestSolutions.begin(), bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
-	return bestSolutions;
 }
 

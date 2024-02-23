@@ -27,14 +27,31 @@ std::vector<std::vector<float>> loadCsvData(const std::string& inputFileName, fl
 	return A;
 }
 
-void saveSolutionsToFile(const std::string& outputFileName, const std::vector<std::pair<std::vector<int16_t>, float>>& solutions, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
-	std::ofstream outFile(outputFileName);
-	if (solutions.empty())
-		return;
-
-	for (auto& [B_, timeA] : solutions) {
-		outFile << std::fixed << std::setprecision(1);
-		outFile << std::setw(8) << timeA << " ";
-		outFile << createSolutionString(B_, repeatNodeMatrix) << '\n';
+void writeSolutionFileProlog(const std::string& outputFileName, const std::string& inputFileName, float limit, bool allowRepeatNodes, const std::vector<int>& repeatNodesTurnedOff) {
+	std::ofstream solutionsFile(outputFileName, std::ios::app);
+	solutionsFile << "\nSTART\n";
+	solutionsFile << "Input file:              \"" << inputFileName << "\"\n";
+	solutionsFile << "Limit:                   " << limit << "\n";
+	solutionsFile << "Allow repeat nodes:      " << (allowRepeatNodes ? "Yes" : "No") << "\n";
+	solutionsFile << "Repeat nodes turned off: [";
+	if (!repeatNodesTurnedOff.empty()) {
+		solutionsFile << repeatNodesTurnedOff[0];
+		for (int i = 1; i < repeatNodesTurnedOff.size(); ++i) {
+			solutionsFile << ", " << repeatNodesTurnedOff[i];
+		}
 	}
+	solutionsFile << "]\n";
+
+}
+
+void writeSolutionFileEpilog(const std::string& outputFileName) {
+	std::ofstream solutionsFile(outputFileName, std::ios::app);
+	solutionsFile << "END\n";
+}
+
+void writeSolutionToFile(const std::string& outputFileName, const std::vector<int16_t>& solution, float time, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
+	std::ofstream solutionsFile(outputFileName, std::ios::app);
+	solutionsFile << std::fixed << std::setprecision(1);
+	solutionsFile << std::setw(8) << time << " ";
+	solutionsFile << createSolutionString(solution, repeatNodeMatrix) << '\n';
 }

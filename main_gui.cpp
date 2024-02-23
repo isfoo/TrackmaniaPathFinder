@@ -107,6 +107,8 @@ int main() {
 		}
 		ImGui::Text("output data file:");
 		ImGui::SameLine();
+		HelpMarker("Every time candidate solution is found it's saved to this file\nThe data will be added to the end of the file\nwithout removing what was there before\n\nYou have to sort that list yourself to find best solutions");
+		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
 		ImGui::InputText("##output data file", outputDataFile, sizeof(outputDataFile));
@@ -202,9 +204,10 @@ int main() {
 					bestFoundSolutions.clear();
 					solutionsView = ThreadSafeVec<std::pair<std::vector<int16_t>, float>>{};
 					timer = Timer();
+					writeSolutionFileProlog(outputDataFile, inputDataFile, limitValue, allowRepeatNodes, repeatNodesTurnedOff);
 					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() mutable {
-						auto sols = runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, partialSolutionCount, taskWasCanceled);
-						saveSolutionsToFile(outputDataFile, sols, repeatNodeMatrix);
+						runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, outputDataFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+						writeSolutionFileEpilog(outputDataFile);
 						timer.stop();
 					});
 				}
