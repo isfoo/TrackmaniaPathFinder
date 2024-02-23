@@ -12,7 +12,8 @@
 #include <string_view>
 #include <iomanip>
 #include <array>
-
+#include <queue>
+#include <condition_variable>
 
 class Timer {
 	std::chrono::time_point<std::chrono::steady_clock> startTime;
@@ -42,17 +43,86 @@ template<typename T> bool isRunning(const std::future<T>& f) {
 }
 
 class ThreadPool {
-	std::vector<std::future<void>> tasks;
-public:
-	void addTask(std::function<void(void)> task) {
-		tasks.emplace_back(std::async(std::launch::async | std::launch::deferred, task));
+	std::condition_variable taskInQueueOrAbortCondVar;
+	std::condition_variable taskDoneCondVar;
+	std::queue<std::function<void(int)>> tasks;
+	int activeTasksCount = 0;
+	std::mutex tasksMutex;
+	std::vector<std::thread> threads;
+	bool waiting = false;
+	bool active = false;
+
+	void workerThread(int threadId) {
+		std::unique_lock tasksLock(tasksMutex);
+		while (true) {
+			activeTasksCount -= 1;
+			tasksLock.unlock();
+			if (waiting && activeTasksCount == 0 && tasks.empty())
+				taskDoneCondVar.notify_all();
+			tasksLock.lock();
+			taskInQueueOrAbortCondVar.wait(tasksLock, [this] {
+				return !tasks.empty() || !active;
+			});
+			if (!active)
+				break;
+			{
+				auto task = std::move(tasks.front());
+				tasks.pop();
+				activeTasksCount += 1;
+				tasksLock.unlock();
+				task(threadId);
+			}
+			tasksLock.lock();
+		}
 	}
-	void completeTasksAndStop() {
-		for (auto& task : tasks)
-			task.wait();
-		tasks.clear();
+
+public:
+	ThreadPool(int threadCount = 0) {
+		if (threadCount <= 0) {
+			threadCount = (std::thread::hardware_concurrency() > 0) ? std::thread::hardware_concurrency() : 1;
+		}
+		activeTasksCount = threadCount;
+		active = true;
+		for (int i = 0; i < threadCount; ++i) {
+			threads.emplace_back(std::thread(&ThreadPool::workerThread, this, i));
+		}
+	}
+
+	ThreadPool(const ThreadPool&) = delete;
+	ThreadPool(ThreadPool&&) = delete;
+	ThreadPool& operator=(const ThreadPool&) = delete;
+	ThreadPool& operator=(ThreadPool&&) = delete;
+
+	~ThreadPool() {
+		wait();
+		{
+			const std::scoped_lock tasks_lock(tasksMutex);
+			active = false;
+		}
+		taskInQueueOrAbortCondVar.notify_all();
+		for (int i = 0; i < threads.size(); ++i) {
+			threads[i].join();
+		}
+	}
+
+	template<typename F> void addTask(F&& task) {
+		{
+			std::scoped_lock tasks_lock(tasksMutex);
+			tasks.emplace(std::forward<F>(task));
+		}
+		taskInQueueOrAbortCondVar.notify_one();
+	}
+
+	void wait() {
+		std::unique_lock tasks_lock(tasksMutex);
+		waiting = true;
+		taskDoneCondVar.wait(tasks_lock, [this] {
+			return activeTasksCount == 0 && tasks.empty();
+		});
+		waiting = false;
 	}
 };
+
 
 #if defined(__clang__)
 #define COMPILER_CLANG
