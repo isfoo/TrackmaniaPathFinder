@@ -163,13 +163,13 @@ int main(int argc, char** argv) {
 			foundRepeatNodesCount = -1;
 		}
 
-		ImGui::Text("allow repeat nodes:");
+		ImGui::Text("allow repeat CPs:");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
 		ImGui::Checkbox("##Allow repeat nodes", &allowRepeatNodes);
 		if (allowRepeatNodes) {
-			ImGui::Text("max repeat nodes to add:");
+			ImGui::Text("max connections to add:");
 			ImGui::SameLine();
 			ImGui::SetCursorPosX(boxValuePosX);
 			ImGui::SetNextItemWidth(-1);
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
 				maxRepeatNodesToAdd = std::clamp(maxRepeatNodesToAdd, 1, 100'000);
 			}
 
-			ImGui::Text("turned off repeat nodes:");
+			ImGui::Text("turned off repeat CPs:");
 			ImGui::SameLine();
 			HelpMarker("List of CP numbers you want to ban from repeating");
 			ImGui::SameLine();
@@ -192,13 +192,13 @@ int main(int argc, char** argv) {
 				}
 			}
 
-			if (ImGui::Button("Count repeat nodes")) {
+			if (ImGui::Button("Count repeat connections")) {
 				foundRepeatNodesCount = countRepeatNodeEdges(loadCsvData(inputDataFile, ignoredValue, errorMsg), ignoredValue, repeatNodesTurnedOff);
 			}
 			if (foundRepeatNodesCount != -1) {
 				ImGui::SameLine();
 				ImGui::SetCursorPosX(boxValuePosX);
-				ImGui::Text("Found %d repeat nodes.", foundRepeatNodesCount);
+				ImGui::Text("Found %d repeat repeat connections.", foundRepeatNodesCount);
 			}
 		} else {
 			foundRepeatNodesCount = -1;

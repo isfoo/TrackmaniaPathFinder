@@ -407,26 +407,29 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<flo
 	return additionalPaths;
 }
 
-void addRepeatNodeEdges(std::vector<std::vector<float>>& A, std::vector<std::vector<std::vector<int>>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxNodesToAdd) {
+int addRepeatNodeEdges(std::vector<std::vector<float>>& A, std::vector<std::vector<std::vector<int>>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxEdgesToAdd) {
 	auto ACopy = A;
-	for (int m = 0; m < maxNodesToAdd && m < additionalPaths.size(); ++m) {
+	int addedEdgesCount = 0;
+	for (int m = 0; m < additionalPaths.size() && addedEdgesCount < maxEdgesToAdd; ++m) {
 		auto k = additionalPaths[m].k;
 		auto j = additionalPaths[m].j;
 		auto i = additionalPaths[m].i;
+		addedEdgesCount += repeatEdgeMatrix[k][i].empty();
 		repeatEdgeMatrix[k][i] = repeatEdgeMatrix[j][i];
 		repeatEdgeMatrix[k][i].push_back(j);
 		repeatEdgeMatrix[k][i].insert(repeatEdgeMatrix[k][i].end(), repeatEdgeMatrix[k][j].begin(), repeatEdgeMatrix[k][j].end());
 		ACopy[k][i] = additionalPaths[m].time(A);
 	}
 	A = ACopy;
+	return addedEdgesCount;
 }
 
-std::vector<std::vector<std::vector<int>>> addRepeatNodeEdges(std::vector<std::vector<float>>& A, float ignoredValue, int maxNodesToAdd, std::vector<int> turnedOffRepeatNodes) {
+std::vector<std::vector<std::vector<int>>> addRepeatNodeEdges(std::vector<std::vector<float>>& A, float ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
 	std::vector<std::vector<std::vector<int>>> repeatEdgeMatrix(A.size(), std::vector<std::vector<int>>(A.size()));
 	for (int i = 0; i < 5; ++i) {
 		auto repeatEdges = getRepeatNodeEdges(A, ignoredValue, turnedOffRepeatNodes);
-		addRepeatNodeEdges(A, repeatEdgeMatrix, repeatEdges, maxNodesToAdd);
-		maxNodesToAdd = std::max<int>(0, maxNodesToAdd - repeatEdges.size());
+		auto edgesAdded = addRepeatNodeEdges(A, repeatEdgeMatrix, repeatEdges, maxEdgesToAdd);
+		maxEdgesToAdd = std::max<int>(0, maxEdgesToAdd - edgesAdded);
 	}
 	return repeatEdgeMatrix;
 }
