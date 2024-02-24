@@ -261,7 +261,7 @@ int main(int argc, char** argv) {
 		ImGui::Text("Status: %s", status.c_str());
 		ImGui::Text("Time elapsed: %.1f [s]", timer.getTime());
 		if (isHeuristicAlgorithm)
-			ImGui::Text("Completed runs count: %d", partialSolutionCount.load());
+			ImGui::Text("Starting points checked: %d", partialSolutionCount.load());
 		else
 			ImGui::Text("Partial solutions processed: %d", partialSolutionCount.load());
 		ImGui::Text("Candidate solutions found: %d", solutionsView.size());
