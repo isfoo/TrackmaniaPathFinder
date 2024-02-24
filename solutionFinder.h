@@ -556,7 +556,7 @@ void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<float>> wei
 	}
 }
 
-void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* programPath, 
+void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* programPath, int searchDepth,
 	const std::string& appendFile, const std::string& outputFile, float ignoredValue, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec,
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
@@ -569,7 +569,7 @@ void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* prog
 	std::mutex writeFileMutex;
 	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, A.size()); // +1 for main thread
 	auto processes = startChildProcesses(programPath, sharedMemInstances);
-	runHlkRecursive(config, A, threadPool, sharedMemInstances, programPath, writeFileMutex, ignoredValue, 2);
+	runHlkRecursive(config, A, threadPool, sharedMemInstances, programPath, writeFileMutex, ignoredValue, searchDepth);
 	stopChildProcesses(processes, sharedMemInstances);
 	threadPool.wait();
 }

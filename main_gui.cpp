@@ -33,6 +33,7 @@ int main(int argc, char** argv) {
 	float limitValue = 100'000;
 	int maxSolutionCount = 20;
 	int maxRepeatNodesToAdd = 100;
+	int heuristicSearchDepth = 2;
 	int foundRepeatNodesCount = -1;
 	bool allowRepeatNodes = false;
 	constexpr int MinFontSize = 8;
@@ -116,6 +117,15 @@ int main(int argc, char** argv) {
 		ImGui::SetNextItemWidth(-1);
 		if (ImGui::InputInt("##max number of solutions", &maxSolutionCount)) {
 			maxSolutionCount = std::clamp(maxSolutionCount, 1, 100'000);
+		}
+		ImGui::Text("heuristic search depth:");
+		ImGui::SameLine();
+		HelpMarker("Heuristic search first finds initial solution (likely optimal)\nThen it tries to remove each connection from that solution to see what it finds.\nThis process continues recursively and this value decides how deep it goes.\n\nfor 100 CP it means that:\ndepth = 0: 1 run\ndepth = 1: 100 runs\ndepth = 2: 10000 runs\ndepth = 3: 1000000 runs\n\nThe algorithm does early stopping depending on max solution time\nso if it's low then the number of actual runs will be much lower");
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(boxValuePosX);
+		ImGui::SetNextItemWidth(-1);
+		if (ImGui::InputInt("##heuristic search depth", &heuristicSearchDepth)) {
+			heuristicSearchDepth = std::clamp(heuristicSearchDepth, 0, 5);
 		}
 		ImGui::Text("output append data file:");
 		ImGui::SameLine();
@@ -227,11 +237,11 @@ int main(int argc, char** argv) {
 					timer = Timer();
 					clearFile(outputDataFile);
 					writeSolutionFileProlog(appendDataFile, inputDataFile, limitValue, isExactAlgorithm, allowRepeatNodes, repeatNodesTurnedOff);
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, appendDataFile, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount, programPath]() mutable {
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, appendDataFile, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount, programPath, heuristicSearchDepth]() mutable {
 						if (isExactAlgorithm)
 							runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, appendDataFile, outputDataFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 						else
-							runAlgorithmHlk(A, programPath, appendDataFile, outputDataFile, ignoredValue, limitValue, solutionsView, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+							runAlgorithmHlk(A, programPath, heuristicSearchDepth, appendDataFile, outputDataFile, ignoredValue, limitValue, solutionsView, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 						writeSolutionFileEpilog(appendDataFile, taskWasCanceled);
 						overwriteFileWithSortedSolutions(outputDataFile, solutionsView, repeatNodeMatrix);
 						timer.stop();
