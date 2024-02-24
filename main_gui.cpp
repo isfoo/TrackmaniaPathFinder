@@ -220,7 +220,7 @@ int main(int argc, char** argv) {
 							runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, outputDataFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 						else
 							runAlgorithmHlk(A, programPath, outputDataFile, ignoredValue, limitValue, solutionsView, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
-						writeSolutionFileEpilog(outputDataFile);
+						writeSolutionFileEpilog(outputDataFile, taskWasCanceled);
 						timer.stop();
 					});
 				}
