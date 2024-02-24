@@ -570,6 +570,6 @@ void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* prog
 	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, A.size()); // +1 for main thread
 	auto processes = startChildProcesses(programPath, sharedMemInstances);
 	runHlkRecursive(config, A, threadPool, sharedMemInstances, programPath, writeFileMutex, ignoredValue, searchDepth);
-	stopChildProcesses(processes, sharedMemInstances);
 	threadPool.wait();
+	stopChildProcesses(processes, sharedMemInstances);
 }
