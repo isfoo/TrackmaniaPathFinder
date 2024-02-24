@@ -47,6 +47,7 @@ class ThreadPool {
 	std::condition_variable taskDoneCondVar;
 	std::queue<std::function<void(int)>> tasks;
 	int activeTasksCount = 0;
+	int maxQueuedTaskCount;
 	std::mutex tasksMutex;
 	std::vector<std::thread> threads;
 	bool waiting = false;
@@ -77,7 +78,7 @@ class ThreadPool {
 	}
 
 public:
-	ThreadPool(int threadCount = 0) {
+	ThreadPool(int threadCount = 0, int maxQueuedTaskCount = 1000) : maxQueuedTaskCount(maxQueuedTaskCount) {
 		if (threadCount <= 0) {
 			threadCount = (std::thread::hardware_concurrency() > 0) ? std::thread::hardware_concurrency() : 1;
 		}
@@ -111,6 +112,9 @@ public:
 			tasks.emplace(std::forward<F>(task));
 		}
 		taskInQueueOrAbortCondVar.notify_one();
+		while (tasks.size() >= maxQueuedTaskCount) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
 	}
 
 	void wait() {
@@ -260,14 +264,15 @@ template<typename T> struct ThreadSafeVec {
 	std::vector<std::unique_ptr<std::vector<T>>> blocks;
 	int totalCapacity;
 	int size_;
+	std::mutex mutex;
 
-	ThreadSafeVec() : totalCapacity(1 << smallestPower2), size_(0) {
-		blocks.emplace_back(std::make_unique<std::vector<T>>(totalCapacity));
+	ThreadSafeVec() {
+		init();
 	}
 	int size() {
 		return size_;
 	}
-	void push_back(const T& val) {
+	void push_back_not_thread_safe(const T& val) {
 		if (size_ == 0) {
 			(*blocks[0])[0] = val;
 			size_ += 1;
@@ -285,6 +290,10 @@ template<typename T> struct ThreadSafeVec {
 		(*blocks[blockId])[posInBlock] = val;
 		size_ += 1;
 	}
+	void push_back(const T& val) {
+		std::scoped_lock l{ mutex };
+		push_back_not_thread_safe(val);
+	}
 	const T& operator[](int i) const {
 		if (i == 0)
 			return (*blocks[0])[0];
@@ -292,6 +301,16 @@ template<typename T> struct ThreadSafeVec {
 		int blockId = std::max(0, bitPos - smallestPower2 + 1);
 		int posInBlock = (blockId == 0) ? i : (i - (1 << bitPos));
 		return (*blocks[blockId])[posInBlock];
+	}
+	void clear() {
+		blocks.clear();
+		init();
+	}
+private:
+	void init() {
+		totalCapacity = 1 << smallestPower2;
+		size_ = 0;
+		blocks.emplace_back(std::make_unique<std::vector<T>>(totalCapacity));
 	}
 };
 

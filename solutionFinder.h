@@ -17,6 +17,8 @@
 #include <queue>
 #include <stack>
 #include <algorithm>
+#include <filesystem>
+#include "lkh.h"
 
 constexpr float Inf = 1e10;
 constexpr int RemovedEdgesSize = 4096;
@@ -336,7 +338,7 @@ void findSolutions(SolutionConfig& config, PartialSolution& currentSolution, std
 	if (currentSolution.isComplete()) {
 		auto solution = std::make_pair(currentSolution.getPath(), currentSolution.time);
 		
-		config.solutionsVec.push_back(solution);
+		config.solutionsVec.push_back_not_thread_safe(solution);
 		writeSolutionToFile(config.outputFileName, solution.first, currentSolution.time, config.repeatNodeMatrix);
 
 		if (bestSolutions.size() < config.maxSolutionCount) {
@@ -467,3 +469,99 @@ void runAlgorithm(
 	findSolutions(config, root, bestSolutions);
 }
 
+
+std::pair<std::vector<int16_t>, float> runHlk(SolutionConfig& config, std::vector<std::vector<float>> weights, LkhSharedMemoryManager& sharedMemory, const char* programPath, std::mutex& fileWriteMutex) {
+	auto solution = runLkhInChildProcess(sharedMemory, weights, config.taskWasCanceled);
+	if (solution.empty()) {
+		return { {}, 0 };
+	}
+
+	float time = 0;
+	for (int i = 1; i < solution.size(); ++i) {
+		time += weights[solution[i]][solution[i - 1]];
+	}
+	solution.erase(solution.begin());
+	if (std::find(solution.begin(), solution.end(), 0) != solution.end()) {
+		int x = 0;
+	}
+
+	if (time < config.limit) {
+		std::scoped_lock l{ fileWriteMutex };
+		for (int i = 0; i < config.solutionsVec.size(); ++i) {
+			auto& vec = config.solutionsVec[i].first;
+			if (solution == vec) {
+				return { {}, time };
+			}
+		}
+
+		config.solutionsVec.push_back({ solution, time });
+		writeSolutionToFile(config.outputFileName, solution, time, config.repeatNodeMatrix);
+	}
+	return { solution, time };
+}
+
+void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<float>> weights, ThreadPool& threadPool, std::vector<LkhSharedMemoryManager>& sharedMemory, const char* programPath, std::mutex& writeFileMutex, float ignoredValue, int maxDepth, int currentDepth=0) {
+	if (config.taskWasCanceled)
+		return;
+	
+	std::vector<int16_t> solution;
+	float time = 0;
+	int tryCount = 0;
+	do {
+		auto [s, t] = runHlk(config, weights, sharedMemory.back(), programPath, writeFileMutex);
+		solution = s;
+		time = t;
+		if (!solution.empty() && time <= config.limit)
+			break;
+		tryCount += 1;
+	} while ((solution.empty() || time > config.limit) && tryCount < 3);
+	config.partialSolutionCount += 1;
+	
+	if (currentDepth >= maxDepth) {
+		return;
+	}
+	if (solution.empty() || time > config.limit) {
+		config.partialSolutionCount += std::pow(config.weights.size() - 1, maxDepth - currentDepth);
+		return;
+	}
+
+	solution.insert(solution.begin(), 0);
+	for (int i = 1; i < solution.size(); ++i) {
+		if (config.taskWasCanceled)
+			return;
+		if (currentDepth >= maxDepth - 1) {
+			threadPool.addTask([&config, &writeFileMutex, weights=weights, solution, i, programPath, ignoredValue, &sharedMemory](int id) mutable {
+				if (config.taskWasCanceled)
+					return;
+				auto oldValue = weights[solution[i]][solution[i - 1]];
+				weights[solution[i]][solution[i - 1]] = ignoredValue;
+				runHlk(config, weights, sharedMemory[id], programPath, writeFileMutex);
+				config.partialSolutionCount += 1;
+				weights[solution[i]][solution[i - 1]] = oldValue;
+			});
+		} else {
+			auto oldValue = weights[solution[i]][solution[i - 1]];
+			weights[solution[i]][solution[i - 1]] = ignoredValue;
+			runHlkRecursive(config, weights, threadPool, sharedMemory, programPath, writeFileMutex, ignoredValue, maxDepth, currentDepth + 1);
+			weights[solution[i]][solution[i - 1]] = oldValue;
+		}
+	}
+}
+
+void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* programPath, 
+	const std::string& outputFile, float ignoredValue, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec, 
+	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
+) {
+	auto A = A_;
+	A[0].back() = 0;
+
+	int threadCount = 16;
+	auto config = SolutionConfig(A, 0, limit, solutionsVec, outputFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+	ThreadPool threadPool(threadCount, 1000);
+	std::mutex writeFileMutex;
+	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, A.size()); // +1 for main thread
+	auto processes = startChildProcesses(programPath, sharedMemInstances);
+	runHlkRecursive(config, A, threadPool, sharedMemInstances, programPath, writeFileMutex, ignoredValue, 2);
+	stopChildProcesses(processes, sharedMemInstances);
+	threadPool.wait();
+}

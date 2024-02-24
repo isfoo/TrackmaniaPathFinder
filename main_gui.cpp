@@ -5,6 +5,8 @@
 #include "common.h"
 #include "fileLoadSave.h"
 #include "imgui_directX11.h"
+#include "lkh.h"
+
 namespace fs = std::filesystem;
 
 void HelpMarker(const char* desc) {
@@ -18,7 +20,13 @@ void HelpMarker(const char* desc) {
 	}
 }
 
-int main() {
+int main(int argc, char** argv) {
+	if (argc >= 1 && !strcmp(argv[0], "LKH")) {
+		lkhChildWorkerProcess(argc - 1, &argv[1]);
+		return  0;
+	}
+	const char* programPath = argv[0];
+
 	MyImGui::Init(u"Trackmania Path Finder");
 
 	float ignoredValue = 600;
@@ -45,6 +53,8 @@ int main() {
 
 	std::vector<int> repeatNodesTurnedOff;
 	char inputTurnedOffRepeatNodes[1024] = { 0 };
+
+	bool isHeuristicAlgorithm = false;
 
 	auto timer = Timer();
 	timer.stop();
@@ -190,7 +200,7 @@ int main() {
 			ImGui::PopStyleColor();
 		}
 
-		if (ImGui::Button("Run algorithm")) {
+		auto startAlgorithm = [&](bool isExactAlgorithm) {
 			if (!isRunning(algorithmRunTask)) {
 				errorMsg = "";
 				taskWasCanceled = false;
@@ -202,11 +212,14 @@ int main() {
 				}
 				if (errorMsg.empty()) {
 					bestFoundSolutions.clear();
-					solutionsView = ThreadSafeVec<std::pair<std::vector<int16_t>, float>>{};
+					solutionsView.clear();
 					timer = Timer();
-					writeSolutionFileProlog(outputDataFile, inputDataFile, limitValue, allowRepeatNodes, repeatNodesTurnedOff);
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [&timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount]() mutable {
-						runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, outputDataFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+					writeSolutionFileProlog(outputDataFile, inputDataFile, limitValue, isExactAlgorithm, allowRepeatNodes, repeatNodesTurnedOff);
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount, programPath]() mutable {
+						if (isExactAlgorithm)
+							runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, outputDataFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+						else
+							runAlgorithmHlk(A, programPath, outputDataFile, ignoredValue, limitValue, solutionsView, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 						writeSolutionFileEpilog(outputDataFile);
 						timer.stop();
 					});
@@ -214,6 +227,15 @@ int main() {
 			} else {
 				errorMsg = "Already running";
 			}
+		};
+		if (ImGui::Button("Run exact algorithm")) {
+			isHeuristicAlgorithm = false;
+			startAlgorithm(true);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Run heuristic algorithm")) {
+			isHeuristicAlgorithm = true;
+			startAlgorithm(false);
 		}
 
 		if (isRunning(algorithmRunTask)) {
@@ -238,10 +260,11 @@ int main() {
 			status = "Done";
 		ImGui::Text("Status: %s", status.c_str());
 		ImGui::Text("Time elapsed: %.1f [s]", timer.getTime());
-		ImGui::Text("Partial solutions processed: %d", partialSolutionCount.load());
-		ImGui::Text("Candidate solutions found:   %d", solutionsView.size());
-		ImGui::SameLine();
-		HelpMarker("Number of solutions found while looking for the best ones.\n\nIf This exceeds \"max number of solutions\" it is meaningless\nand is shown just to give rough idea of how algorithm progresses");
+		if (isHeuristicAlgorithm)
+			ImGui::Text("Completed runs count: %d", partialSolutionCount.load());
+		else
+			ImGui::Text("Partial solutions processed: %d", partialSolutionCount.load());
+		ImGui::Text("Candidate solutions found: %d", solutionsView.size());
 
 		if (solutionsView.size() > bestFoundSolutions.size()) {
 			for (int i = bestFoundSolutions.size(); i < solutionsView.size(); ++i) {
