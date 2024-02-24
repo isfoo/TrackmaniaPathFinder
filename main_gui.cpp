@@ -44,6 +44,8 @@ int main(int argc, char** argv) {
 	std::atomic<int> partialSolutionCount = 0;
 
 	char inputDataFile[1024] = { 0 };
+	char appendDataFile[1024] = { 0 };
+	strcpy(appendDataFile, "append_out.txt");
 	char outputDataFile[1024] = { 0 };
 	strcpy(outputDataFile, "out.txt");
 
@@ -115,13 +117,22 @@ int main(int argc, char** argv) {
 		if (ImGui::InputInt("##max number of solutions", &maxSolutionCount)) {
 			maxSolutionCount = std::clamp(maxSolutionCount, 1, 100'000);
 		}
-		ImGui::Text("output data file:");
+		ImGui::Text("output append data file:");
 		ImGui::SameLine();
 		HelpMarker("Every time candidate solution is found it's saved to this file\nThe data will be added to the end of the file\nwithout removing what was there before\n\nYou have to sort that list yourself to find best solutions");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
+		ImGui::InputText("##append data file", appendDataFile, sizeof(appendDataFile));
+		
+		ImGui::Text("output data file:");
+		ImGui::SameLine();
+		HelpMarker("Every time candidate solution is found it's saved to this file\nThe data replaces whatever existed in that file beforehand\n\nAt the end the file is again updated with sorted list of candidate solutions found");
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(boxValuePosX);
+		ImGui::SetNextItemWidth(-1);
 		ImGui::InputText("##output data file", outputDataFile, sizeof(outputDataFile));
+
 		ImGui::Text("input data file:");
 		ImGui::SameLine();
 		HelpMarker("Format is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.");
@@ -214,13 +225,15 @@ int main(int argc, char** argv) {
 					bestFoundSolutions.clear();
 					solutionsView.clear();
 					timer = Timer();
-					writeSolutionFileProlog(outputDataFile, inputDataFile, limitValue, isExactAlgorithm, allowRepeatNodes, repeatNodesTurnedOff);
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount, programPath]() mutable {
+					clearFile(outputDataFile);
+					writeSolutionFileProlog(appendDataFile, inputDataFile, limitValue, isExactAlgorithm, allowRepeatNodes, repeatNodesTurnedOff);
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, appendDataFile, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount, programPath]() mutable {
 						if (isExactAlgorithm)
-							runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, outputDataFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+							runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, appendDataFile, outputDataFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 						else
-							runAlgorithmHlk(A, programPath, outputDataFile, ignoredValue, limitValue, solutionsView, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
-						writeSolutionFileEpilog(outputDataFile, taskWasCanceled);
+							runAlgorithmHlk(A, programPath, appendDataFile, outputDataFile, ignoredValue, limitValue, solutionsView, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+						writeSolutionFileEpilog(appendDataFile, taskWasCanceled);
+						overwriteFileWithSortedSolutions(outputDataFile, solutionsView, repeatNodeMatrix);
 						timer.stop();
 					});
 				}

@@ -269,7 +269,7 @@ template<typename T> struct ThreadSafeVec {
 	ThreadSafeVec() {
 		init();
 	}
-	int size() {
+	int size() const {
 		return size_;
 	}
 	void push_back_not_thread_safe(const T& val) {
