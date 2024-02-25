@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
 
 	MyImGui::Init(u"Trackmania Path Finder");
 
-	float ignoredValue = 600;
+	float ignoredValue = 1e6;
 	float limitValue = 100'000;
 	int maxSolutionCount = 20;
 	int maxRepeatNodesToAdd = 100;
@@ -95,15 +95,6 @@ int main(int argc, char** argv) {
 
 		ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
-		ImGui::Text("max node value threshold:");
-		ImGui::SameLine();
-		HelpMarker("Node values with this or higher value\nwill not be considered in the solutions");
-		ImGui::SameLine();
-		ImGui::SetCursorPosX(boxValuePosX);
-		ImGui::SetNextItemWidth(-1);
-		if (ImGui::InputFloat("##max node value threshold", &ignoredValue)) {
-			ignoredValue = std::clamp(ignoredValue, 1.0f, 100'000.0f);
-		}
 		ImGui::Text("max solution time:");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
