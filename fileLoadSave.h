@@ -30,11 +30,11 @@ std::vector<std::vector<float>> loadCsvData(const std::string& inputFileName, fl
 void writeSolutionFileProlog(const std::string& outputFileName, const std::string& inputFileName, float limit, bool isExactAlgorithm, bool allowRepeatNodes, const std::vector<int>& repeatNodesTurnedOff) {
 	std::ofstream solutionsFile(outputFileName, std::ios::app);
 	solutionsFile << "\nSTART\n";
-	solutionsFile << "Input file:              \"" << inputFileName << "\"\n";
-	solutionsFile << "Algorithm:               " << (isExactAlgorithm ? "Exact (BnB Assignment Relaxation)" : "Heuristic (LKH)") << "\n";
-	solutionsFile << "Limit:                   " << limit << "\n";
-	solutionsFile << "Allow repeat nodes:      " << (allowRepeatNodes ? "Yes" : "No") << "\n";
-	solutionsFile << "Repeat nodes turned off: [";
+	solutionsFile << "Input file:            \"" << inputFileName << "\"\n";
+	solutionsFile << "Algorithm:             " << (isExactAlgorithm ? "Exact (BnB Assignment Relaxation)" : "Heuristic (LKH)") << "\n";
+	solutionsFile << "Max route time:        " << limit << "\n";
+	solutionsFile << "allow repeat CPs:      " << (allowRepeatNodes ? "Yes" : "No") << "\n";
+	solutionsFile << "turned off repeat CPs: [";
 	if (!repeatNodesTurnedOff.empty()) {
 		solutionsFile << repeatNodesTurnedOff[0];
 		for (int i = 1; i < repeatNodesTurnedOff.size(); ++i) {

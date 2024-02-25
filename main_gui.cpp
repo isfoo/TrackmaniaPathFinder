@@ -95,23 +95,23 @@ int main(int argc, char** argv) {
 
 		ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
-		ImGui::Text("max solution time:");
+		ImGui::Text("max route time:");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
 		if (ImGui::InputFloat("##max solution length", &limitValue)) {
 			limitValue = std::clamp(limitValue, 1.0f, 100'000.0f);
 		}
-		ImGui::Text("max number of solutions:");
+		ImGui::Text("max number of routes:");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
-		if (ImGui::InputInt("##max number of solutions", &maxSolutionCount)) {
+		if (ImGui::InputInt("##max number of routes", &maxSolutionCount)) {
 			maxSolutionCount = std::clamp(maxSolutionCount, 1, 100'000);
 		}
 		ImGui::Text("heuristic search depth:");
 		ImGui::SameLine();
-		HelpMarker("Heuristic search first finds initial solution (likely optimal)\nThen it tries to remove each connection from that solution to see what it finds.\nThis process continues recursively and this value decides how deep it goes.\n\nfor 100 CP it means that:\ndepth = 0: 1 run\ndepth = 1: 100 runs\ndepth = 2: 10000 runs\ndepth = 3: 1000000 runs\n\nThe algorithm does early stopping depending on max solution time\nso if it's low then the number of actual runs will be much lower");
+		HelpMarker("Heuristic search first finds initial route (likely optimal)\nThen it tries to remove each connection from that route to see what it finds.\nThis process continues recursively and this value decides how deep it goes.\n\nfor 100 CP it means that:\ndepth = 0: 1 run\ndepth = 1: 100 runs\ndepth = 2: 10000 runs\ndepth = 3: 1000000 runs\n\nThe algorithm does early stopping depending on max route time\nso if it's low then the number of actual runs will be much lower");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
 		}
 		ImGui::Text("output append data file:");
 		ImGui::SameLine();
-		HelpMarker("Every time candidate solution is found it's saved to this file.\nThe data will be added to the end of the file\nwithout removing what was there before.\n\nYou have to sort that list yourself to find best solutions.");
+		HelpMarker("Every time candidate route is found it's saved to this file.\nThe data will be added to the end of the file\nwithout removing what was there before.\n\nYou have to sort that list yourself to find best routes.");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
 		
 		ImGui::Text("output data file:");
 		ImGui::SameLine();
-		HelpMarker("Every time candidate solution is found it's saved to this file.\nThe data replaces whatever existed in that file beforehand.\n\nAt the end the file is again updated with sorted list of \ntop \"max number of solutions\" found.");
+		HelpMarker("Every time candidate route is found it's saved to this file.\nThe data replaces whatever existed in that file beforehand.\n\nAt the end the file is again updated with sorted list of \ntop \"max number of routes\" found.");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
@@ -277,8 +277,8 @@ int main(int argc, char** argv) {
 		if (isHeuristicAlgorithm)
 			ImGui::Text("Starting points checked: %d", partialSolutionCount.load());
 		else
-			ImGui::Text("Partial solutions processed: %d", partialSolutionCount.load());
-		ImGui::Text("Candidate solutions found: %d", solutionsView.size());
+			ImGui::Text("Partial routes processed: %d", partialSolutionCount.load());
+		ImGui::Text("Candidate routes found: %d", solutionsView.size());
 
 		if (solutionsView.size() > bestFoundSolutions.size()) {
 			for (int i = bestFoundSolutions.size(); i < solutionsView.size(); ++i) {
