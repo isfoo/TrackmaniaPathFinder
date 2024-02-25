@@ -286,14 +286,20 @@ int main(int argc, char** argv) {
 			}
 			std::sort(bestFoundSolutions.begin(), bestFoundSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 		}
-		for (int j = 0; j < bestFoundSolutions.size() && j < 100; ++j) {
-			auto& [B_, time] = bestFoundSolutions[j];
-			auto solStr = createSolutionString(B_, repeatNodeMatrix);
-			ImGui::Text("%.2f", time);
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(-1);
-			ImGui::InputText(("##solution" + std::to_string(j)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
+
+		ImGuiListClipper clipper;
+		clipper.Begin(std::min<int>(bestFoundSolutions.size(), maxSolutionCount));
+		while (clipper.Step()) {
+			for (int j = clipper.DisplayStart; j < clipper.DisplayEnd; ++j) {
+				auto& [B_, time] = bestFoundSolutions[j];
+				auto solStr = createSolutionString(B_, repeatNodeMatrix);
+				ImGui::Text("%.2f", time);
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth(-1);
+				ImGui::InputText(("##solution" + std::to_string(j)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
+			}
 		}
+		clipper.End();
 
 		ImGui::End();
 	});
