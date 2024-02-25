@@ -121,6 +121,17 @@ In case of repeat CPs the repeated CPs are shown in brackets ```()```. For examp
 
 This means the route is: Start -> CP8 -> CP5 -> CP9 -> CP3 ->(go through CP5)-> CP4 ->(go through CP9 then CP3)-> CP1 -> CP2 -> CP6 -> CP7 -> Finish
 
+## Examples of real data used for reroutes
+
+| **Map** | **Spreadsheet** | **Spreadsheet creator** |
+|-------------|-----------|---------|
+| [Macopolis RPG](https://trackmania.exchange/maps/112275/macopolis-rpg) | [spreadsheet](example%20input%20data/Macopolis%20RPG.csv) | isfoo |
+| [[RPG] Catsuya](https://trackmania.exchange/maps/95028/rpg-catsuya) | [spreadsheet](example%20input%20data/%5BRPG%5D%20Catsuya.csv) | Lars_tm |
+| [World of Wampus 6](https://trackmania.exchange/maps/111213/world-of-wampus-6) | [spreadsheet](example%20input%20data/Wampus%206.csv) | Lars_tm |
+| [World of Wampus 7](https://trackmania.exchange/maps/138791/world-of-wampus-7) | [spreadsheet](example%20input%20data/Wampus%207.csv) | Lars_tm |
+
+Note that only my Macopolis spreadsheet is of reasonable size and Lars is crazy so his spreadsheets are hard to calculate.
+
 ## Implementation details
 
 TODO
