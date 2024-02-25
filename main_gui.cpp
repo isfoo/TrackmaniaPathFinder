@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
 		}
 		ImGui::Text("output append data file:");
 		ImGui::SameLine();
-		HelpMarker("Every time candidate solution is found it's saved to this file\nThe data will be added to the end of the file\nwithout removing what was there before\n\nYou have to sort that list yourself to find best solutions");
+		HelpMarker("Every time candidate solution is found it's saved to this file.\nThe data will be added to the end of the file\nwithout removing what was there before.\n\nYou have to sort that list yourself to find best solutions.");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
 		
 		ImGui::Text("output data file:");
 		ImGui::SameLine();
-		HelpMarker("Every time candidate solution is found it's saved to this file\nThe data replaces whatever existed in that file beforehand\n\nAt the end the file is again updated with sorted list of candidate solutions found");
+		HelpMarker("Every time candidate solution is found it's saved to this file.\nThe data replaces whatever existed in that file beforehand.\n\nAt the end the file is again updated with sorted list of candidate solutions found.");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
