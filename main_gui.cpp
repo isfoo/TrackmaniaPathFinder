@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
 
 	float ignoredValue = 1e6;
 	float limitValue = 100'000;
-	int maxSolutionCount = 20;
+	int maxSolutionCount = 100;
 	int maxRepeatNodesToAdd = 100;
 	int heuristicSearchDepth = 2;
 	int foundRepeatNodesCount = -1;
@@ -232,7 +232,7 @@ int main(int argc, char** argv) {
 						if (isExactAlgorithm)
 							runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, appendDataFile, outputDataFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 						else
-							runAlgorithmHlk(A, programPath, heuristicSearchDepth, appendDataFile, outputDataFile, ignoredValue, limitValue, solutionsView, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+							runAlgorithmHlk(A, programPath, heuristicSearchDepth, appendDataFile, outputDataFile, ignoredValue, maxSolutionCount, limitValue, solutionsView, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 						writeSolutionFileEpilog(appendDataFile, taskWasCanceled);
 						overwriteFileWithSortedSolutions(outputDataFile, solutionsView, repeatNodeMatrix);
 						timer.stop();
