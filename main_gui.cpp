@@ -128,7 +128,7 @@ int main(int argc, char** argv) {
 		
 		ImGui::Text("output data file:");
 		ImGui::SameLine();
-		HelpMarker("Every time candidate solution is found it's saved to this file.\nThe data replaces whatever existed in that file beforehand.\n\nAt the end the file is again updated with sorted list of candidate solutions found.");
+		HelpMarker("Every time candidate solution is found it's saved to this file.\nThe data replaces whatever existed in that file beforehand.\n\nAt the end the file is again updated with sorted list of \ntop \"max number of solutions\" found.");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
@@ -234,7 +234,7 @@ int main(int argc, char** argv) {
 						else
 							runAlgorithmHlk(A, programPath, heuristicSearchDepth, appendDataFile, outputDataFile, ignoredValue, maxSolutionCount, limitValue, solutionsView, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 						writeSolutionFileEpilog(appendDataFile, taskWasCanceled);
-						overwriteFileWithSortedSolutions(outputDataFile, solutionsView, repeatNodeMatrix);
+						overwriteFileWithSortedSolutions(outputDataFile, maxSolutionCount, solutionsView, repeatNodeMatrix);
 						timer.stop();
 					});
 				}

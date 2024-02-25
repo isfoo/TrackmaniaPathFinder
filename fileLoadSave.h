@@ -60,14 +60,15 @@ void writeSolutionToFile(const std::string& outputFileName, const std::vector<in
 	writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix);
 }
 
-void overwriteFileWithSortedSolutions(const std::string& outputFileName, const ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsView, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
+void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsView, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
 	std::vector<std::pair<std::vector<int16_t>, float>> sortedSolutions;
 	for (int i = 0; i < solutionsView.size(); ++i) {
 		sortedSolutions.push_back(solutionsView[i]);
 	}
 	std::sort(sortedSolutions.begin(), sortedSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 	std::ofstream solutionsFile(outputFileName, std::ios::trunc);
-	for (auto& [solution, time] : sortedSolutions) {
+	for (int i = 0; i < maxSolutionCount && i < sortedSolutions.size(); ++i) {
+		auto& [solution, time] = sortedSolutions[i];
 		writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix);
 	}
 }
