@@ -220,7 +220,7 @@ int main(int argc, char** argv) {
 				repeatNodeMatrix.clear();
 				auto A = loadCsvData(inputDataFile, ignoredValue, errorMsg);
 				if (allowRepeatNodes) {
-					repeatNodeMatrix = addRepeatNodeEdges(A, ignoredValue, 1000000, repeatNodesTurnedOff);
+					repeatNodeMatrix = addRepeatNodeEdges(A, ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
 				}
 				if (errorMsg.empty()) {
 					bestFoundSolutions.clear();
