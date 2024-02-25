@@ -327,6 +327,8 @@ std::optional<float> parseFloat(const std::string& s) {
 std::vector<float> splitToFloats(std::string_view str, float ignoredValue) {
 	constexpr auto PossiblyFloatChars = "0123456789.+-e";
 	std::vector<float> result;
+
+	str = str.substr(str.find_first_of(PossiblyFloatChars));
 	while (true) {
 		auto pos = str.find_first_not_of(PossiblyFloatChars);
 		auto value = parseFloat(std::string(str.substr(0, pos)));
