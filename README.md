@@ -10,6 +10,10 @@ The following sections explain how to use this program. I decided to write this 
 
 If you have any questions / feature requests the best way is to contact me through discord [@isfoo](https://discordapp.com/users/552077071333982219 "@isfoo")
 
+## Program screenshot
+
+![screenshot](https://github.com/isfoo/TrackmaniaPathFinder/assets/128239594/304e99a3-bab5-4d0f-9532-40e6e5208549)
+
 ## Input spreadsheet
 
 First you need to create spreadsheet containing N by N cells, where N is the number of CPs + 1 for the finish. So if I have map that has Start, CP1, CP2, CP3, CP4, Finish I have 5x5 table:
