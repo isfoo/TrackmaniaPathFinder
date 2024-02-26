@@ -126,8 +126,8 @@ This means the route is: Start -> CP8 -> CP5 -> CP9 -> CP3 ->(go through CP5)-> 
 | **Map** | **CP count** | **Spreadsheet** | **Spreadsheet creator** |
 |-------------|-----------|---------|---------|
 | [Macopolis RPG](https://trackmania.exchange/maps/112275/macopolis-rpg) | 26 | [spreadsheet](example%20input%20data/Macopolis%20RPG.csv) | isfoo |
-| [MTC - Castle of Confusion](https://tm.mania-exchange.com/maps/121329/mtc-castle-of-confusion) | 18 | [spreadsheet](example%20input%20data/MTC%20-%20Castle%20of%20Confusion) | Lars_tm
-| [Sobekite Eternal 2020](https://tm.mania-exchange.com/maps/182399/sobekite-eternal-2020) | 25 | [spreadsheet](example%20input%20data/Sobekite%20Eternal%202020) | Lars_tm
+| [MTC - Castle of Confusion](https://tm.mania-exchange.com/maps/121329/mtc-castle-of-confusion) | 18 | [spreadsheet](example%20input%20data/MTC%20-%20Castle%20of%20Confusion.csv) | Lars_tm
+| [Sobekite Eternal 2020](https://tm.mania-exchange.com/maps/182399/sobekite-eternal-2020) | 25 | [spreadsheet](example%20input%20data/Sobekite%20Eternal%202020.csv) | Lars_tm
 | [[RPG] Biozone](https://trackmania.exchange/maps/85912/rpg-biozone) | 25 | [spreadsheet](example%20input%20data/%5BRPG%5D%20Biozone.csv) | Lars_tm
 | [[RPG] Catsuya](https://trackmania.exchange/maps/95028/rpg-catsuya) | 111 | [spreadsheet](example%20input%20data/%5BRPG%5D%20Catsuya.csv) | Lars_tm |
 | [World of Wampus 6](https://trackmania.exchange/maps/111213/world-of-wampus-6) | 100 | [spreadsheet](example%20input%20data/World%20of%20Wampus%206.csv) | Lars_tm |
