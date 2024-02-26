@@ -137,4 +137,47 @@ Note that the 100+ CP Lars spreadsheets are crazy so they are hard to calculate.
 
 ## Implementation details
 
+The problem solved by this program can be most accurately described as finding the top N lowest weight hamiltonian paths in directed graph. Since problem of finding minimum weight hamiltonian path is a relaxed version of traveling salesman problem, generally in literature the algorithms are made and decsribed for the latter. Thus the algorithms used are made for finding top N solutions to ATSP (Asymmetric Traveling Salesman Problem).
+
+Although You will find online some efficient programs that solve TSP there are a couple of problems: 
+1. It's hard to find a program that is fast and easy to use - most good solvers are using command line interface or are just an API in some programming language.
+2. Many solvers don't natively support Asymmetric versions of TSP. For example [Concorde](https://www.math.uwaterloo.ca/tsp/concorde.html) which is consider one the best exact solvers doesn't support ATSP. Note that it's possible to convert ATSP to TSP problems by creating dummy nodes which is desribed well [here](https://www.linkedin.com/posts/andreas-beham-004279b_optimizing-asymmetric-travelling-salesperson-activity-7107809854215323648-FfuJ).
+3. No support for control over repeat nodes (aka repeat CPs)
+4. No ability to find top N solutions and not just a single one. This is a big one, because it's an important feature. There is a lot of hidden heuristic knowledge only the player generating solution has that can ultimatley decide which routes are truly the best, but to do that in practice one has to see a list of solutions. The factors are things like number of hard CPs in route and where the connections are (It's usually best to have hard connections first and easy connections last). I can also say from experience that once you have a list of routes you start to piece together a better picture of the map and it makes you realise which additional connections would be good and it leads you to finding new great connections.
+
+Here's how the current implementations work:
+
+### Exact algorithm
+
+Of course it is best if we can fully solve the problem - that is finding actual top N solutions and not just N good solutions that may or may not be the actual top solutions. After all we don't want to miss some great routes.
+
+In general first thing to note is that for exact algorithms you essentially have to check all possible paths. The differences between possible algorithms one could use are about how to try to skip checking as many paths as possible by proving they cannot possibly be fast enough. As an easy example say some connection between nodes `A` and `B` has assigned `cost=500`. If we already found a path with `cost=300` then we know for a fact that optimal solution cannot possibly contain `A->B` connection since the cost of that connection alone is higher than cost of current optimum known path so we can throw away all combinations that contain `A->B` connection.
+
+This program uses **Branch and Bound** method with **Assignment relaxation** solved using **Hungarian method**. It's a mouthful, but it's nothing too complicated. 
+
+**Branch and Bound** refers to the process of going through all possible routes where we try to check most promising routes first (that's the **Branch** part) and where we do this early stopping as desribed above (that's the **Bound** part).
+
+**Assignment relaxation** is the bounding / early stopping method. **Assignment problem** is a simpler version of **ATSP** that can be solved quickly. Instead of finding the lowest cost `N+1` edges that form a single cycle we find lowest cost set of `N+1` edges such that each of the `N` nodes has exactly `1` out edge and exactly `1` in edge. It means that every single possible **ATSP** solution is also possible **Assignment problem** solution, however not all possible **Assignment problem** solutions are possible **ATSP** solutions since in the former we could have multiple cycles and not just one.
+
+**Hungarian method** is an algorithm solving **Assignment problem**. A good simple explaination of this algorithm can be found [here](https://www.hungarianalgorithm.com/examplehungarianalgorithm.php)
+
+So here's how the algorithm works. Note that it's only a rough description of general idea:
+
+Input: `N` by `N` matrix with edge costs; `K` - number of best solutions to find.
+
+0. set **LowerBound** to 0
+1. Perform step of **Hungarian method** - subtract minimal value in each row from all values in a that row and do the same for columns. The sum of those minimum values tnat we used for subtracting is added to our **LowerBound** 
+2. If **LowerBound** is bigger than the cost of already found top `K` solutions then **return** (early stopping)
+3. Otherwise choose the most promising edge `E` (one that most probably will be included in the solution). We do this by going through the zeros in our matrix and checking how much **LowerBound** would increase if we were to remove this edge. The edge without which the **LowerBound** would increase the most is our chosen edge.
+4. Fork into 2 possible recursive paths:
+    1. Lock-in edge `E` - We remove the row and column from our matrix. Go to step 1. 
+    2. Remove edge `E` - We set the value of that edge to infinity. Go to step 1.
+
+Since the algorithm tries for each edge to either include it at step 4.1 or exclude it at step 4.2 we are guaranteed to go through all possible combinations. However because at each step we calculate current **LowerBound** on minimal cost of assignment we will be able to relatively quickly realize there is no point in recursing futher and can skip tons of routes.
+
+Although this algorithm is ok and I would say my implementation is pretty well optimized, it's nowhere close state of the art.
+It's because there are other relaxations methods and also best solvers use extension of **Branch and Bound** method called **Branch and Cut**. I wasn't able to find any good simple description of those algorithms or any reasonably short and understandable implementation I could adapt. Maybe if I find some time and motivation I will sit down and implement this.
+
+### Heuristic algorithm
+
 TODO
