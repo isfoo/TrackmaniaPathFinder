@@ -20,10 +20,20 @@ std::vector<std::vector<float>> loadCsvData(const std::string& inputFileName, fl
 		A.back().push_back(ignoredValue);
 	}
 	if (A.size() <= 1) {
-		errorMsg = "Couldn't load data from file\n";
+		errorMsg = "Couldn't load data from file";
 		return {};
 	}
 	A[0].resize(A[1].size(), ignoredValue);
+	if (A[0].size() != A.size()) {
+		errorMsg = "Found " + std::to_string(A.size() - 1) + " rows but there are " + std::to_string(A[0].size() - 1) + " columns in the first row";
+		return {};
+	}
+	for (int i = 0; i < A.size(); ++i) {
+		if (A[i].size() != A[0].size()) {
+			errorMsg = "First row has " + std::to_string(A[0].size() - 1) + " values, but " + std::to_string(i) + " row has " + std::to_string(A[i].size() - 1);
+			return {};
+		}
+	}
 	return A;
 }
 
