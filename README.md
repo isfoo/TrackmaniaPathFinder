@@ -180,4 +180,22 @@ It's because there are other relaxations methods and also best solvers use exten
 
 ### Heuristic algorithm
 
-TODO
+If exact method is too slow we can use a heuristic one. The difference is that this kind of algorithm doesn't give guarantees on solution quality, but should generally complete the search much faster and in practice will give good and even most likely optimal solutions. For this purpose I use [LKH program](http://webhotel4.ruc.dk/~keld/research/LKH/) that implements [Lin–Kernighan heuristic](https://en.wikipedia.org/wiki/Lin%E2%80%93Kernighan_heuristic). This program is considered state of the art in terms of heuristic algorithms for TSP.
+
+It has to be said that as great as this implementation is, from software engineering perspective it's terrible. Practically all state is saved in a huge list of global variables and the program is essentially hard coded to work as command line application that reads the data from file and saves output to a file. 
+
+I converted the code to be able to just feed it in with cost matrix and get the result programatically. While doing so I encountered a problem. There was a static variable inside one of the functions that would save state between my calls to the program and the value would be invalidated between runs. I fixed that problem, however it ment I had to essentially fork the **LKH** implementation and I decided to just put that fork together in this repo in **LKH** directory.
+
+With converted code I could now use this implementation as a normal function, however in order to parallelize it I have to do so in different processes, because of that shared state of global variables.
+
+Now the next step is that this only gives back a single best route it found, but we would like to have a list of many good routes. In order to do so here's what I do:
+
+1. Run **LKH** to find a solution
+2. If recursive depth was reached then **return**
+3. If cost of that solution is too big then **return**
+3. for each edge in that solution:
+    1. remove that edge and go recursively to step 1.
+
+That depth is set in the program by **heuristic search depth** parameter.
+
+Even if at each step **LKH** returns optimal solution, at best we could only guarantee that among solutions we will find top **heuristic search depth** + 1 best solutions, however in practice it's working really well.
