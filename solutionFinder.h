@@ -522,7 +522,7 @@ std::vector<std::vector<int>> createIntAtspMatrixFromInput(const std::vector<std
 }
 
 void runAlgorithm(
-	const std::vector<std::vector<float>>& A_, int maxSolutionCount, float limit, float ignoredValue, 
+	const std::vector<std::vector<float>>& A_, int maxSolutionCount, float limit, int ignoredValue, 
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec,
 	const std::string& appendFileName, const std::string& outputFileName,
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix,
@@ -539,7 +539,7 @@ void runAlgorithm(
 		}
 	}
 
-	PartialSolution root = PartialSolution(A, adjList, ignoredValue);
+	PartialSolution root = PartialSolution(A, adjList, ignoredValue * 10);
 	root.addEdge(Edge(A.size() - 1, 0), A);
 	SolutionConfig config(A, maxSolutionCount, limitInt, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 	findSolutions(config, root);
@@ -575,7 +575,7 @@ std::pair<std::vector<int16_t>, float> runHlk(SolutionConfig& config, std::vecto
 	return { solution, time };
 }
 
-void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weights, ThreadPool& threadPool, std::vector<LkhSharedMemoryManager>& sharedMemory, const char* programPath, std::mutex& writeFileMutex, float ignoredValue, int maxDepth, int currentDepth=0) {
+void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weights, ThreadPool& threadPool, std::vector<LkhSharedMemoryManager>& sharedMemory, const char* programPath, std::mutex& writeFileMutex, int ignoredValue, int maxDepth, int currentDepth=0) {
 	if (config.taskWasCanceled)
 		return;
 	
@@ -624,7 +624,7 @@ void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weigh
 }
 
 void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* programPath, int searchDepth,
-	const std::string& appendFile, const std::string& outputFile, float ignoredValue, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec,
+	const std::string& appendFile, const std::string& outputFile, int ignoredValue, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec,
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
 	std::vector<std::vector<int>> A = createIntAtspMatrixFromInput(A_);
@@ -636,7 +636,7 @@ void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* prog
 	std::mutex writeFileMutex;
 	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, A.size()); // +1 for main thread
 	auto processes = startChildProcesses(programPath, sharedMemInstances);
-	runHlkRecursive(config, A, threadPool, sharedMemInstances, programPath, writeFileMutex, ignoredValue, searchDepth);
+	runHlkRecursive(config, A, threadPool, sharedMemInstances, programPath, writeFileMutex, ignoredValue * 10, searchDepth);
 	threadPool.wait();
 	stopChildProcesses(processes, sharedMemInstances);
 }
