@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
 
 	MyImGui::Init(u"Trackmania Path Finder");
 
-	float ignoredValue = 1e6;
+	int ignoredValue = 600;
 	float limitValue = 100'000;
 	int maxSolutionCount = 100;
 	int maxRepeatNodesToAdd = 100;
@@ -95,6 +95,15 @@ int main(int argc, char** argv) {
 
 		ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
+		ImGui::Text("max connection time:");
+		ImGui::SameLine();
+		HelpMarker("Connections with this or higher time\nwill not be considered in the solutions");
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(boxValuePosX);
+		ImGui::SetNextItemWidth(-1);
+		if (ImGui::InputInt("##max node value threshold", &ignoredValue)) {
+			ignoredValue = std::clamp(ignoredValue, 1, 100'000);
+		}
 		ImGui::Text("max route time:");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
