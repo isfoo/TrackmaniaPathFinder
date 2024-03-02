@@ -64,6 +64,8 @@ The last step is to save this table in CSV format. That means we want to have a 
 999	12	999	17	25
 ```
 
+Currently the implementation only takes into account the first significant digit.
+
 Note that the decimal part of a number uses decimal point and not a comma - that is important to keep in mind, because if you export your data from somewhere it might save those values with commas instead of decimal points and then the program won't be able to read the values correctly.
 
 ## Basic program usage
@@ -72,6 +74,8 @@ First you need to download the program [TmPathFinder.exe](https://github.com/isf
 It's a GUI application where you configure parameters and run the search for fastests routes.
 
 Here's a basic explaination of the options:
+
+**max connection time** - maximum time a connection can take to be considered part of the route. Generally you should set it to the arbitrarily big value you used in your input spreadsheet, however in practice as long as you don't expect 600 second connections you can just leave the default value.
 
 **max route time** - maximum time a complete route from start to finish can take.
 
