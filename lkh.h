@@ -142,7 +142,7 @@ namespace LKH {
             return 0;
         return 1;
     }
-    static void Read_EDGE_WEIGHT_SECTION(Array2dView<float>& inputMatrix) {
+    static void Read_EDGE_WEIGHT_SECTION(Array2dView<int32_t>& inputMatrix) {
         Node* Ni, * Nj;
         int i, j, n, W;
 
@@ -156,7 +156,7 @@ namespace LKH {
         for (i = 1; i <= n; i++) {
             Ni = &NodeSet[i];
             for (j = 1; j <= n; j++) {
-                W = inputMatrix[j - 1][i - 1] * 10;
+                W = inputMatrix[j - 1][i - 1];
                 Ni->C[j] = W;
                 if (i != j && W > M)
                     M = W;
@@ -167,7 +167,7 @@ namespace LKH {
         Distance = Distance_ATSP;
         WeightType = -1;
     }
-    void ReadProblem(Array2dView<float>& inputMatrix) {
+    void ReadProblem(Array2dView<int32_t>& inputMatrix) {
         int i, K;
         char* Line, * Keyword;
 
@@ -291,7 +291,7 @@ namespace LKH {
     }
 
 
-    void run(Array2dView<float>& inputMatrix, ArrayView<int16_t>& outSolution) {
+    void run(Array2dView<int32_t>& inputMatrix, ArrayView<int16_t>& outSolution) {
         // Dirty fix to even dirtier code
         Gain23NeedToReset = 1;
         lkhSetParameters();
@@ -406,8 +406,8 @@ public:
         StopProcess = 3,
     };
 
-    Array2dView<float>& inputMatrix() {
-        return *(Array2dView<float>*) & data[offsetToInputMatrix];
+    Array2dView<int32_t>& inputMatrix() {
+        return *(Array2dView<int32_t>*) & data[offsetToInputMatrix];
     }
     ArrayView<int16_t>& solution() {
         return *(ArrayView<int16_t>*) & data[offsetToSolutionArray];
@@ -464,7 +464,7 @@ public:
         LkhSharedMemoryManager manager;
         manager.name_ = name;
         int headerSize = sizeof(int32_t) * 4;
-        int inputMatrixSize = sizeof(int32_t) + n * n * sizeof(float);
+        int inputMatrixSize = sizeof(int32_t) + n * n * sizeof(int32_t);
         int solutionArraySize = sizeof(int32_t) + n * sizeof(int16_t);
         manager.size_ = headerSize + inputMatrixSize + solutionArraySize;
 
@@ -546,7 +546,7 @@ std::vector<LkhSharedMemoryManager> createLkhSharedMemoryInstances(int count, in
 }
 
 
-std::vector<int16_t> runLkhInChildProcess(LkhSharedMemoryManager& sharedMem, const std::vector<std::vector<float>>& weights, std::atomic<bool>& taskWasCanceled) {
+std::vector<int16_t> runLkhInChildProcess(LkhSharedMemoryManager& sharedMem, const std::vector<std::vector<int>>& weights, std::atomic<bool>& taskWasCanceled) {
     auto& inputMatrix = sharedMem.memory()->inputMatrix();
     for (int i = 0; i < weights.size(); ++i) {
         for (int j = 0; j < weights.size(); ++j) {

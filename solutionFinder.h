@@ -20,7 +20,7 @@
 #include <filesystem>
 #include "lkh.h"
 
-constexpr float Inf = 1e10;
+constexpr int Inf = 100'000'000;
 constexpr int RemovedEdgesSize = 4096;
 constexpr float MaxLimit = 1e10;
 constexpr int MaxMaxSolutionCount = 1e7;
@@ -31,20 +31,23 @@ constexpr Edge NullEdge = { -1, -1 };
 enum Direction { Out, In };
 
 struct AdjList {
-	std::array<std::vector<int8_t>, 2> data;
-	std::array<std::vector<int8_t>, 2> sizes;
-	std::array<FreeListVector<float, 256>, 2> reductions;
-	std::vector<std::vector<float>>* weights;
+	std::array<FreeListArray<uint8_t>, 2> data;
+	std::array<FreeListArray<uint8_t>, 2> sizes;
+	std::array<FreeListVector<int, 256>, 2> reductions;
+	std::vector<std::vector<int>>* weights;
 	int n_;
-	AdjList(std::vector<std::vector<float>>* weights, int n=0) : weights(weights), n_(n) {
-		data[Out].resize(n * n);
-		data[In].resize(n * n);
-		sizes[Out].resize(n);
-		sizes[In].resize(n);
+	AdjList(std::vector<std::vector<int>>* weights, int n = 0) : 
+		data({ FreeListArray<uint8_t>(n * n), FreeListArray<uint8_t>(n * n) }), 
+		sizes({ FreeListArray<uint8_t>(n), FreeListArray<uint8_t>(n) }),
+		weights(weights), n_(n) 
+	{
+		std::memset(sizes[Out].data, 0, n * sizeof(uint8_t));
+		std::memset(sizes[In].data, 0, n * sizeof(uint8_t));
+
 		reductions[Out].resize(n);
 		reductions[In].resize(n);
-		std::memset(reductions[Out].data, 0, n * sizeof(float));
-		std::memset(reductions[In].data, 0, n * sizeof(float));
+		std::memset(reductions[Out].data, 0, n * sizeof(int));
+		std::memset(reductions[In].data, 0, n * sizeof(int));
 	}
 
 	void add(int i, int j) {
@@ -55,15 +58,16 @@ struct AdjList {
 	void setNecessaryEdge(int i, int j, FreeListVector<Edge, RemovedEdgesSize>& removedEdges) {
 		for (int k = 0; k < sizes[Out][i]; ++k) {
 			int x = data[Out][i * n() + k];
-			removeEdge(i, x, &removedEdges);
-			k -= 1;
+			removedEdges.push_back({ i, x });
+			removeEdge(In, x, i);
 		}
-
 		for (int k = 0; k < sizes[In][j]; ++k) {
 			int x = data[In][j * n() + k];
-			removeEdge(x, j, &removedEdges);
-			k -= 1;
+			removedEdges.push_back({ x, j });
+			removeEdge(Out, x, j);
 		}
+		sizes[Out][i] = 0;
+		sizes[In][j] = 0;
 	}
 
 	void removeEdge(int i, int j, FreeListVector<Edge, RemovedEdgesSize>* removedEdges) {
@@ -73,65 +77,115 @@ struct AdjList {
 		removeEdge(In, j, i);
 	}
 
-	void shrinkToSize() {
-		std::array<std::vector<int8_t>, 2> newData;
+	int minRequiredN() {
 		int newN = 0;
 		for (int i = 0; i < sizes[0].size(); ++i) {
 			newN = std::max<int>(newN, sizes[0][i]);
 			newN = std::max<int>(newN, sizes[1][i]);
 		}
-		for (int d = 0; d < 2; ++d) {
-			newData[d].resize(sizes[0].size() * newN);
-			for (int i = 0; i < sizes[0].size(); ++i) {
-				memcpy(&newData[d][i * newN], &data[d][i * n()], newN * sizeof(data[0][0]));
-			}
-		}
-		data = newData;
-		n_ = newN;
+		return newN;
 	}
 
-	float getMin(Direction d, int i) {
-		float min = Inf;
+	void shrinkToSize() {
+		int newN = minRequiredN();
+		if (newN <= 0.5 * n_) {
+			std::array<FreeListArray<uint8_t>, 2> newData = { FreeListArray<uint8_t>(sizes[0].size() * newN), FreeListArray<uint8_t>(sizes[0].size() * newN) };
+			for (int d = 0; d < 2; ++d) {
+				for (int i = 0; i < sizes[0].size(); ++i) {
+					memcpy(&newData[d][i * newN], &data[d][i * n()], newN * sizeof(data[0][0]));
+				}
+			}
+			data = newData;
+			n_ = newN;
+		}
+	}
+
+	int getMin(Direction d, int i) {
+		return sizes[d][i] <= 0 ? Inf : valueAt(d, i, data[d][i * n() + 0]);
+	}
+	int getMin2(Direction d, int i) {
+		return sizes[d][i] <= 1 ? Inf : valueAt(d, i, data[d][i * n() + 1]);
+	}
+	std::pair<int, int> getMinIndex(Direction d, int i) {
+		struct Min {
+			int index;
+			int value;
+		};
+		std::pair<Min, Min> mins = { {-1234, Inf}, {-1234, Inf} };
 		auto* dataPtr = &data[d][i * n()];
 		if (d == Out) {
 			for (int k = 0; k < sizes[Out][i]; ++k) {
 				auto j = dataPtr[k];
-				min = std::min(min, (*weights)[j][i] - reductions[In][j]);
+				auto value = (*weights)[j][i] - reductions[In][j];
+				if (value < mins.second.value) {
+					if (value < mins.first.value) {
+						mins.second = mins.first;
+						mins.first = { k, value };
+					} else {
+						mins.second = { k, value };
+					}
+				}
 			}
 		} else {
 			auto& mPtr = (*weights)[i];
 			for (int k = 0; k < sizes[In][i]; ++k) {
 				auto j = dataPtr[k];
-				min = std::min(min, mPtr[j] - reductions[Out][j]);
+				auto value = mPtr[j] - reductions[Out][j];
+				if (value < mins.second.value) {
+					if (value < mins.first.value) {
+						mins.second = mins.first;
+						mins.first = { k, value };
+					} else {
+						mins.second = { k, value };
+					}
+				}
 			}
 		}
-		return min - reductions[d][i];
+		return { mins.first.index, mins.second.index };
 	}
 
-	float reduce(Direction d, int i) {
+	int reduce(Direction d, int i) {
 		auto min = getMin(d, i);
 		reductions[d][i] += min;
+		if (min > 0) {
+			auto* dataPtr = &data[d][i * n()];
+			for (int k = 0; k < sizes[d][i]; ++k) {
+				auto j = dataPtr[k];
+				auto od = Direction(!d); // other direction
+				if (valueAt(od, j, i) < valueAt(od, j, data[od][j * n() + 0])) {
+					std::swap(data[od][j * n() + 0], data[od][j * n() + 1]);
+					for (int z = 2; z < sizes[od][j]; ++z) {
+						if (data[od][j * n() + z] == i) {
+							std::swap(data[od][j * n() + z], data[od][j * n() + 0]);
+							break;
+						}
+					}
+				} else if (valueAt(od, j, i) < valueAt(od, j, data[od][j * n() + 1])) {
+					for (int z = 2; z < sizes[od][j]; ++z) {
+						if (data[od][j * n() + z] == i) {
+							std::swap(data[od][j * n() + z], data[od][j * n() + 1]);
+							break;
+						}
+					}
+				}
+			}
+		}
 		return min;
 	}
 
 	Edge getPivot() {
-		float bestIncrease = 0;
+		int bestIncrease = 0;
 		Edge bestPivot = NullEdge;
 
 		for (int i = 0; i < sizes[0].size(); ++i) {
 			for (int k = 0; k < sizes[Out][i]; ++k) {
 				int j = data[Out][i * n() + k];
-				if (std::abs(valueAt(Out, i, j)) <= 0.01) {
-					auto oldValue = (*weights)[j][i];
-					(*weights)[j][i] = Inf;
-					auto outMin = getMin(Out, i);
-					auto inMin = getMin(In, j);
-					float increase = outMin + inMin;
+				if (valueAt(Out, i, j) == 0) {
+					int increase = getMin2(Out, i) + getMin2(In, j);
 					if (increase > bestIncrease) {
 						bestIncrease = increase;
 						bestPivot = Edge(i, j);
 					}
-					(*weights)[j][i] = oldValue;
 				}
 			}
 		}
@@ -139,8 +193,7 @@ struct AdjList {
 		return bestPivot;
 	}
 
-
-	float valueAt(Direction d, int i, int j) {
+	int valueAt(Direction d, int i, int j) {
 		if (d == Out) {
 			return (*weights)[j][i] - reductions[Out][i] - reductions[In][j];
 		} else {
@@ -148,14 +201,33 @@ struct AdjList {
 		}
 	}
 	void add(Direction d, int i, int j) {
-		data[d][i * n() + sizes[d][i]] = j;
+		int newElementIndex = sizes[d][i];
+		data[d][i * n() + newElementIndex] = j;
 		sizes[d][i] += 1;
+
+		if (sizes[d][i] >= 3) {
+			if (valueAt(d, i, j) < valueAt(d, i, data[d][i * n() + 1])) {
+				std::swap(data[d][i * n() + newElementIndex], data[d][i * n() + 1]);
+				newElementIndex = 1;
+			}
+		}
+		if (sizes[d][i] >= 2) {
+			if (valueAt(d, i, j) < valueAt(d, i, data[d][i * n() + 0])) {
+				std::swap(data[d][i * n() + newElementIndex], data[d][i * n() + 0]);
+			}
+		}
 	}
 	bool removeEdge(Direction d, int i, int j) {
 		for (int k = 0; k < sizes[d][i]; ++k) {
 			if (data[d][i * n() + k] == j) {
 				sizes[d][i] -= 1;
 				std::swap(data[d][i * n() + k], data[d][i * n() + sizes[d][i]]);
+				if (k == 0 && sizes[d][i] >= 2) { // was minimum and there are at least 2 elements left
+					std::swap(data[d][i * n()], data[d][i * n() + 1]);
+					std::swap(data[d][i * n() + 1], data[d][i * n() + getMinIndex(d, i).second]);
+				} else if (k == 1 && sizes[d][i] >= 3) { // was 2nd minimum and there are at least 3 elements left
+					std::swap(data[d][i * n() + 1], data[d][i * n() + getMinIndex(d, i).second]);
+				}
 				return true;
 			}
 		}
@@ -174,66 +246,39 @@ struct PartialSolution {
 		return lowerBound > other.lowerBound;
 	}
 
-	struct SavedState {
-		float time;
-		float lowerBound;
-		std::array<FreeListVector<float, 256>, 2> reductions;
-		std::array<FreeListVector<int, 256>, 2> edges;
+	void addEdge(Edge pivot, const std::vector<std::vector<int>>& A) {
 		FreeListVector<Edge, RemovedEdgesSize> removedEdges;
-	};
-
-	SavedState saveState() {
-		return SavedState{ time, lowerBound, adjList.reductions, edges };
-	}
-	void restoreState(SavedState& state) {
-		time = state.time;
-		lowerBound = state.lowerBound;
-		adjList.reductions = state.reductions;
-		edges = state.edges;
-		for (auto [i, j] : state.removedEdges) {
-			adjList.add(i, j);
-		}
-	}
-
-	SavedState addEdge(Edge pivot, const std::vector<std::vector<float>>& A) {
-		auto savedState = saveState();
 
 		auto i = pivot.first;
 		auto j = pivot.second;
 		time += A[j][i];
-		adjList.setNecessaryEdge(i, j, savedState.removedEdges);
+		adjList.setNecessaryEdge(i, j, removedEdges);
 		edges[Out][i] = j;
 		edges[In][j] = i;
 
 		auto subpathTo = traverseSubPath(i, Out);
 		auto subpathFrom = traverseSubPath(i, In);
 		if (subpathTo.size() + subpathFrom.size() - 1 != n) {
-			adjList.removeEdge(subpathTo.back(), subpathFrom.back(), &savedState.removedEdges);
+			adjList.removeEdge(subpathTo.back(), subpathFrom.back(), &removedEdges);
 		}
 
-		for (auto [k, m] : savedState.removedEdges) {
-			if (std::abs(adjList.valueAt(Out, k, m)) <= 0.01) {
+		for (auto [k, m] : removedEdges) {
+			if (adjList.valueAt(Out, k, m) == 0) {
 				if (k != i) reduceMatrix(Out, k);
 				if (m != j) reduceMatrix(In, m);
 			}
 		}
-
-		return savedState;
 	}
 
-	SavedState removeEdge(Edge pivot) {
-		auto savedState = saveState();
-
+	void removeEdge(Edge pivot) {
 		auto i = pivot.first;
 		auto j = pivot.second;
 
-		adjList.removeEdge(i, j, &savedState.removedEdges);
-		if (std::abs(adjList.valueAt(Out, i, j)) <= 0.01) {
+		adjList.removeEdge(i, j, nullptr);
+		if (adjList.valueAt(Out, i, j) == 0) {
 			reduceMatrix(Out, i);
 			reduceMatrix(In, j);
 		}
-
-		return savedState;
 	}
 
 	Edge choosePivotEdge() {
@@ -280,12 +325,12 @@ struct PartialSolution {
 	}
 
 	int n;
-	float time = Inf;
-	float lowerBound = 0;
+	int time = Inf;
+	int lowerBound = 0;
 	AdjList adjList;
 	std::array<FreeListVector<int, 256>, 2> edges;
 
-	PartialSolution(const std::vector<std::vector<float>>& A, AdjList adjList, float ignoredValue) : n(A.size()), adjList(adjList) {
+	PartialSolution(const std::vector<std::vector<int>>& A, AdjList adjList, int ignoredValue) : n(A.size()), adjList(adjList) {
 		time = 0;
 		
 		edges[0].resize(n);
@@ -311,7 +356,7 @@ struct PartialSolution {
 
 struct SolutionConfig {
 	SolutionConfig(
-		const std::vector<std::vector<float>>& weights, int maxSolutionCount, float& limit,
+		const std::vector<std::vector<int>>& weights, int maxSolutionCount, int& limit,
 		ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec, 
 		const std::string& appendFileName, const std::string& outputFileName,
 		const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, 
@@ -323,9 +368,9 @@ struct SolutionConfig {
 		partialSolutionCount(partialSolutionCount), taskWasCanceled(taskWasCanceled)
 	{}
 
-	std::vector<std::vector<float>> weights;
+	std::vector<std::vector<int>> weights;
 	int maxSolutionCount;
-	float& limit;
+	int& limit;
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec;
 	std::vector<std::pair<std::vector<int16_t>, float>> bestSolutions;
 	const std::string& appendFileName;
@@ -333,6 +378,7 @@ struct SolutionConfig {
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix;
 	std::atomic<int>& partialSolutionCount;
 	std::atomic<bool>& taskWasCanceled;
+	bool useAbros = false;
 };
 
 
@@ -343,36 +389,42 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::pair<std::vec
 
 	if (config.bestSolutions.size() < config.maxSolutionCount) {
 		config.bestSolutions.push_back(solution);
-	} else if (solution.second < config.limit) {
+	} else if (solution.second < config.limit / 10.0f) {
 		config.bestSolutions.back() = solution;
 	}
 	if (config.bestSolutions.size() >= config.maxSolutionCount) {
 		std::sort(config.bestSolutions.begin(), config.bestSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
-		config.limit = config.bestSolutions.back().second;
+		config.limit = config.bestSolutions.back().second * 10;
 	}
 }
 
-void findSolutions(SolutionConfig& config, PartialSolution& currentSolution) {
+void findSolutions(SolutionConfig& config, PartialSolution& currentSolution, int depth = 0) {
 	config.partialSolutionCount += 1;
 	if (config.taskWasCanceled)
 		return;
+
+	if (depth % 20 == 0) {
+		currentSolution.adjList.shrinkToSize();
+	}
+
 	if (currentSolution.isComplete()) {
-		auto solution = std::make_pair(currentSolution.getPath(), currentSolution.time);
+		auto solution = std::make_pair(currentSolution.getPath(), currentSolution.time / 10.0f);
 		saveSolutionAndUpdateLimit(config, solution);
 	} else if (currentSolution.lowerBound < config.limit) {
 		auto pivot = currentSolution.choosePivotEdge();
 		if (pivot != NullEdge) {
-			auto savedState = currentSolution.addEdge(pivot, config.weights);
+			auto savedSolution = currentSolution;
+			currentSolution.addEdge(pivot, config.weights);
 			if (currentSolution.lowerBound < config.limit) {
-				findSolutions(config, currentSolution);
+				findSolutions(config, currentSolution, depth + 1);
 			}
-			currentSolution.restoreState(savedState);
+			currentSolution = savedSolution;
 
-			savedState = currentSolution.removeEdge(pivot);
+			currentSolution.removeEdge(pivot);
 			if (currentSolution.lowerBound < config.limit) {
-				findSolutions(config, currentSolution);
+				findSolutions(config, currentSolution, depth + 1);
 			}
-			currentSolution.restoreState(savedState);
+			currentSolution = savedSolution;
 		}
 	}
 }
@@ -456,6 +508,18 @@ int countRepeatNodeEdges(const std::vector<std::vector<float>>& A, float ignored
 	return repeatEdgesCount;
 }
 
+std::vector<std::vector<int>> createIntAtspMatrixFromInput(const std::vector<std::vector<float>>& weights) {
+	std::vector<std::vector<int>> intWeights(weights.size(), std::vector<int>(weights.size()));
+
+	for (int i = 0; i < weights.size(); ++i) {
+		for (int j = 0; j < weights.size(); ++j) {
+			intWeights[i][j] = weights[i][j] * 10;
+		}
+	}
+
+	intWeights[0].back() = 0;
+	return intWeights;
+}
 
 void runAlgorithm(
 	const std::vector<std::vector<float>>& A_, int maxSolutionCount, float limit, float ignoredValue, 
@@ -464,8 +528,8 @@ void runAlgorithm(
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix,
 	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
-	auto A = A_;
-	A[0].back() = 0;
+	std::vector<std::vector<int>> A = createIntAtspMatrixFromInput(A_);
+	int limitInt = limit * 10;
 	
 	AdjList adjList(&A, A.size());
 
@@ -477,12 +541,12 @@ void runAlgorithm(
 
 	PartialSolution root = PartialSolution(A, adjList, ignoredValue);
 	root.addEdge(Edge(A.size() - 1, 0), A);
-	SolutionConfig config(A, maxSolutionCount, limit, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+	SolutionConfig config(A, maxSolutionCount, limitInt, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 	findSolutions(config, root);
 }
 
 
-std::pair<std::vector<int16_t>, float> runHlk(SolutionConfig& config, std::vector<std::vector<float>> weights, LkhSharedMemoryManager& sharedMemory, const char* programPath, std::mutex& fileWriteMutex) {
+std::pair<std::vector<int16_t>, float> runHlk(SolutionConfig& config, std::vector<std::vector<int>> weights, LkhSharedMemoryManager& sharedMemory, const char* programPath, std::mutex& fileWriteMutex) {
 	auto solution = runLkhInChildProcess(sharedMemory, weights, config.taskWasCanceled);
 	if (solution.empty()) {
 		return { {}, 0 };
@@ -492,6 +556,7 @@ std::pair<std::vector<int16_t>, float> runHlk(SolutionConfig& config, std::vecto
 	for (int i = 1; i < solution.size(); ++i) {
 		time += weights[solution[i]][solution[i - 1]];
 	}
+	time /= 10.0;
 	solution.erase(solution.begin());
 	if (std::find(solution.begin(), solution.end(), 0) != solution.end()) {
 		int x = 0;
@@ -510,7 +575,7 @@ std::pair<std::vector<int16_t>, float> runHlk(SolutionConfig& config, std::vecto
 	return { solution, time };
 }
 
-void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<float>> weights, ThreadPool& threadPool, std::vector<LkhSharedMemoryManager>& sharedMemory, const char* programPath, std::mutex& writeFileMutex, float ignoredValue, int maxDepth, int currentDepth=0) {
+void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weights, ThreadPool& threadPool, std::vector<LkhSharedMemoryManager>& sharedMemory, const char* programPath, std::mutex& writeFileMutex, float ignoredValue, int maxDepth, int currentDepth=0) {
 	if (config.taskWasCanceled)
 		return;
 	
@@ -562,11 +627,11 @@ void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* prog
 	const std::string& appendFile, const std::string& outputFile, float ignoredValue, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec,
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
-	auto A = A_;
-	A[0].back() = 0;
+	std::vector<std::vector<int>> A = createIntAtspMatrixFromInput(A_);
+	int limitInt = limit * 10;
 
 	int threadCount = 16;
-	auto config = SolutionConfig(A, maxSolutionCount, limit, solutionsVec, appendFile, outputFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+	auto config = SolutionConfig(A, maxSolutionCount, limitInt, solutionsVec, appendFile, outputFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 	ThreadPool threadPool(threadCount, 1000);
 	std::mutex writeFileMutex;
 	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, A.size()); // +1 for main thread

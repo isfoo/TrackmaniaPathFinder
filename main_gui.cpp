@@ -293,7 +293,7 @@ int main(int argc, char** argv) {
 			for (int j = clipper.DisplayStart; j < clipper.DisplayEnd; ++j) {
 				auto& [B_, time] = bestFoundSolutions[j];
 				auto solStr = createSolutionString(B_, repeatNodeMatrix);
-				ImGui::Text("%.2f", time);
+				ImGui::Text("%.1f", time);
 				ImGui::SameLine();
 				ImGui::SetNextItemWidth(-1);
 				ImGui::InputText(("##solution" + std::to_string(j)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);

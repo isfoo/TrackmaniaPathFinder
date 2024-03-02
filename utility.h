@@ -138,10 +138,15 @@ public:
 #define COMPILER_GCC
 #endif
 
-template<int Size, int Alignment> struct FreeList {
+template<int Alignment> struct FreeList {
 	std::vector<void*> list;
+	int size;
 
-	FreeList() {}
+	FreeList(int size) : size(size) {}
+	FreeList(FreeList&& other) {
+		list.swap(other.list);
+		std::swap(size, other.size);
+	}
 	FreeList(const FreeList&) = delete;
 	FreeList& operator=(const FreeList&) = delete;
 	~FreeList() {
@@ -162,9 +167,9 @@ template<int Size, int Alignment> struct FreeList {
 			return ptr;
 		}
 		#if defined(COMPILER_MSVC) || defined(COMPILER_CLANG)
-		return _aligned_malloc(Size, Alignment);
+		return _aligned_malloc(size, Alignment);
 		#else
-		return std::aligned_alloc(Alignment, Size);
+		return std::aligned_alloc(Alignment, size);
 		#endif
 	}
 	void deallocate(void* ptr) {
@@ -174,7 +179,7 @@ template<int Size, int Alignment> struct FreeList {
 };
 
 template<typename T, int Size> struct FreeListVector {
-	static inline FreeList<sizeof(T) * Size, alignof(T)> allocator;
+	static inline FreeList<alignof(T)> allocator = FreeList<alignof(T)>(sizeof(T) * Size);
 	T* data;
 	int size_ = 0;
 
@@ -218,6 +223,57 @@ template<typename T, int Size> struct FreeListVector {
 	void resize(int size) { size_ = size; }
 	void clear() { size_ = 0; }
 };
+
+
+template<typename T> struct FreeListArray {
+	static inline std::unordered_map<int, FreeList<alignof(T)>> Allocators;
+	
+	FreeList<alignof(T)>& allocator() {
+		auto it = Allocators.find(size_);
+		if (it != Allocators.end()) {
+			return it->second;
+		}
+		return Allocators.emplace(size_, FreeList<alignof(T)>(size_)).first->second;
+	}
+
+	T* data;
+	int size_ = 0;
+
+	FreeListArray(int size) : size_(size) {
+		data = (T*)allocator().allocate();
+	}
+	FreeListArray(FreeListArray&& other) : data(other.data), size_(other.size_) {
+		other.data = nullptr;
+		other.size_ = 0;
+	}
+	FreeListArray& operator=(FreeListArray&& other) {
+		std::swap(data, other.data);
+		std::swap(size_, other.size_);
+		return *this;
+	}
+	FreeListArray(const FreeListArray& other) {
+		size_ = other.size_;
+		data = (T*)allocator().allocate();
+		std::memcpy(data, other.data, size_ * sizeof(T));
+	}
+	FreeListArray& operator=(const FreeListArray& other) {
+		size_ = other.size_;
+		std::memcpy(data, other.data, size_ * sizeof(T));
+		return *this;
+	}
+	~FreeListArray() {
+		if (size_ > 0)
+			allocator().deallocate(data);
+	}
+
+	T* begin() { return &data[0]; }
+	T* end()   { return &data[size_]; }
+	T& back()  { return data[size_ - 1]; }
+	T& operator[](int i) { return data[i]; }
+	int size()   { return size_; }
+	void clear() { size_ = 0; }
+};
+
 
 struct DynamicBitset {
 	using IntType = uint64_t;
