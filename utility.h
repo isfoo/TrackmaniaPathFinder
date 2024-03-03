@@ -257,7 +257,11 @@ template<typename T> struct FreeListArray {
 		std::memcpy(data, other.data, size_ * sizeof(T));
 	}
 	FreeListArray& operator=(const FreeListArray& other) {
-		size_ = other.size_;
+		if (size_ != other.size_) {
+			allocator().deallocate(data);
+			size_ = other.size_;
+			data = (T*)allocator().allocate();
+		}
 		std::memcpy(data, other.data, size_ * sizeof(T));
 		return *this;
 	}

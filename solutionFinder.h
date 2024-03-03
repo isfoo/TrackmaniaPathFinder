@@ -95,7 +95,7 @@ struct AdjList {
 					memcpy(&newData[d][i * newN], &data[d][i * n()], newN * sizeof(data[0][0]));
 				}
 			}
-			data = newData;
+			data = std::move(newData);
 			n_ = newN;
 		}
 	}
@@ -424,7 +424,7 @@ void findSolutions(SolutionConfig& config, PartialSolution& currentSolution, int
 			if (currentSolution.lowerBound < config.limit) {
 				findSolutions(config, currentSolution, depth + 1);
 			}
-			currentSolution = savedSolution;
+			currentSolution = std::move(savedSolution);
 		}
 	}
 }
