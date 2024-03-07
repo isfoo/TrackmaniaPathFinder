@@ -66,8 +66,10 @@ void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t
 	solutionsFile << createSolutionString(solution, repeatNodeMatrix) << '\n';
 }
 void writeSolutionToFile(const std::string& outputFileName, const std::vector<int16_t>& solution, float time, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
-	std::ofstream solutionsFile(outputFileName, std::ios::app);
-	writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix);
+	if (!outputFileName.empty()) {
+		std::ofstream solutionsFile(outputFileName, std::ios::app);
+		writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix);
+	}
 }
 
 void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsView, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {

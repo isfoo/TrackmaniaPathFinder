@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
 
 	char inputDataFile[1024] = { 0 };
 	char appendDataFile[1024] = { 0 };
-	strcpy(appendDataFile, "append_out.txt");
+	strcpy(appendDataFile, "");
 	char outputDataFile[1024] = { 0 };
 	strcpy(outputDataFile, "out.txt");
 
@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
 		}
 		ImGui::Text("output append data file:");
 		ImGui::SameLine();
-		HelpMarker("Every time candidate route is found it's saved to this file.\nThe data will be added to the end of the file\nwithout removing what was there before.\n\nYou have to sort that list yourself to find best routes.");
+		HelpMarker("Every time candidate route is found it's saved to this file.\nThe data will be added to the end of the file\nwithout removing what was there before.\n\nYou have to sort that list yourself to find best routes.\n\nBy default it's empty so it's turned off");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
 		
 		ImGui::Text("output data file:");
 		ImGui::SameLine();
-		HelpMarker("Every time candidate route is found it's saved to this file.\nThe data replaces whatever existed in that file beforehand.\n\nAt the end the file is again updated with sorted list of \ntop \"max number of routes\" found.");
+		HelpMarker("After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
