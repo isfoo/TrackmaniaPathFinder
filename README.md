@@ -12,7 +12,7 @@ If you have any questions / feature requests the best way is to contact me throu
 
 ## Program screenshot
 
-![screenshot](https://github.com/isfoo/TrackmaniaPathFinder/assets/128239594/304e99a3-bab5-4d0f-9532-40e6e5208549)
+![screenshot](https://github.com/isfoo/TrackmaniaPathFinder/assets/128239594/53fb4730-fa6a-497c-bab2-ea2ecd14148a)
 
 ## Input spreadsheet
 
@@ -83,7 +83,7 @@ Here's a basic explaination of the options:
 
 **heuristic search depth** - see [Advanced program usage](#advanced-program-usage)
 
-**output append data file** - path to the output file that will contain information about all the runs you performed and all the candidate routes found in the order they were found. Typically you won't be interested in this file, it's mostly there so that you can easily come back to earlier results for example if you accidently overwrite the **output data file**.
+**output append data file** - path to the output file that will contain information about all the runs you performed and all the candidate routes found in the order they were found. Typically you won't be interested in this file, it's mostly there so that you can easily come back to earlier results for example if you accidently overwrite the **output data file**. By default this field is empty which means no file will be created or written to.
 
 **output data file** - path to the output file which after completing running the algorithm will contain sorted list of top **max number of routes** found.
 
@@ -111,7 +111,7 @@ If you followed the instructions and clicked **Run exact algorithm** and the pro
 
 2. Decrease **max route time**. You should set it something closer to the expected time the fastests routes should take. Of course you might not know that value, but if you set it to something too low the worst thing that can happen is the program will end without finding any route which will tell you that there are no possible routes with that time or lower and you can try increasing this value.
 
-3. If you set **allowed repeat CPs** and set **max connections to add** to high value (say above 100) then try decreasing that. If you care about those repeat CPs go to step 4.
+3. If you set **allowed repeat CPs** and set **max connections to add** to high value (say above 1000) then try decreasing that. If you care about those repeat CPs go to step 4.
 
 4. If none of the above works you should switch to **run heuristic algorithm**. You can adjust **heuristic search depth** to increase how deep the search will go. With this algorithm almost for sure the very first solution found will be optimal, however in general there are no guarantees on solution quality. That is, unlike with **exact** algorithm, for example the 10th best solution the **heuristic** algortithm finds might actually only be 1000th best solution. Most of the time in practice it should work very well, however because it could miss some paths this algorithm should be last resort only when **exact** algorithm is too slow.
 
@@ -141,7 +141,7 @@ This means the route is: Start -> CP8 -> CP5 -> CP9 -> CP3 ->(go through CP5)-> 
 | [World of Wampus 6](https://trackmania.exchange/maps/111213/world-of-wampus-6) | 100 | [spreadsheet](example%20input%20data/World%20of%20Wampus%206.csv) | Lars_tm |
 | [World of Wampus 7](https://trackmania.exchange/maps/138791/world-of-wampus-7) | 100 | [spreadsheet](example%20input%20data/World%20of%20Wampus%207.csv) | Lars_tm |
 
-Note that the 100+ CP Lars spreadsheets are crazy so they are hard to calculate.
+Note that even the 100+ CP Lars spreadsheets are easily processed using exact algorithm.
 
 ## Implementation details
 
@@ -173,18 +173,14 @@ So here's how the algorithm works. Note that it's only a rough description of ge
 
 Input: `N` by `N` matrix with edge costs; `K` - number of best solutions to find.
 
-0. set **LowerBound** to 0
-1. Perform step of **Hungarian method** - subtract minimal value in each row from all values in a that row and do the same for columns. The sum of those minimum values tnat we used for subtracting is added to our **LowerBound** 
+1. Solve assignment problem using **Hungarian method** and save minimal cost of assignment as **LowerBound**.
 2. If **LowerBound** is bigger than the cost of already found top `K` solutions then **return** (early stopping)
-3. Otherwise choose the most promising edge `E` (one that most probably will be included in the solution). We do this by going through the zeros in our matrix and checking how much **LowerBound** would increase if we were to remove this edge. The edge without which the **LowerBound** would increase the most is our chosen edge.
+3. Otherwise choose the most promising edge `E` (one that most probably will be included in the solution). We do this by going through the edges used in optimal assignment and estimating how much **LowerBound** would increase if we were to remove this edge. The edge without which the **LowerBound** would increase the most is our chosen edge.
 4. Fork into 2 possible recursive paths:
-    1. Lock-in edge `E` - We remove the row and column from our matrix. Go to step 1. 
-    2. Remove edge `E` - We set the value of that edge to infinity. Go to step 1.
+    1. Lock-in edge `E` - Remove all edges that cannot be part of the solution together with this edge. Go to step 1. 
+    2. Remove edge `E` - Set the value of that edge to infinity. Go to step 1.
 
-Since the algorithm tries for each edge to either include it at step 4.1 or exclude it at step 4.2 we are guaranteed to go through all possible combinations. However because at each step we calculate current **LowerBound** on minimal cost of assignment we will be able to relatively quickly realize there is no point in recursing futher and can skip tons of routes.
-
-Although this algorithm is ok and I would say my implementation is pretty well optimized, it's nowhere close state of the art.
-It's because there are other relaxations methods and also best solvers use extension of **Branch and Bound** method called **Branch and Cut**. I wasn't able to find any good simple description of those algorithms or any reasonably short and understandable implementation I could adapt. Maybe if I find some time and motivation I will sit down and implement this.
+Since the algorithm tries for each edge to either include it at step 4.1 or exclude it at step 4.2 we are guaranteed to go through all possible combinations. However because at each step we calculate current **LowerBound** on minimal cost of the solution we will be able to relatively quickly realize there is no point in recursing futher and can skip tons of routes.
 
 ### Heuristic algorithm
 
