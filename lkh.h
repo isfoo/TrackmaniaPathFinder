@@ -169,7 +169,6 @@ namespace LKH {
     }
     void ReadProblem(Array2dView<int32_t>& inputMatrix) {
         int i, K;
-        char* Line, * Keyword;
 
         FreeStructures();
         FirstNode = 0;
@@ -321,7 +320,6 @@ namespace LKH {
                 /* Genetic algorithm */
                 int i;
                 for (i = 0; i < PopulationSize; i++) {
-                    GainType OldCost = Cost;
                     Cost = MergeTourWithIndividual(i);
                 }
                 if (!HasFitness(Cost)) {
@@ -434,7 +432,7 @@ class LkhSharedMemoryManager {
 
     LkhSharedMemoryManager() {}
     LkhSharedMemoryManager(const LkhSharedMemoryManager&) = delete;
-    LkhSharedMemoryManager& operator=(LkhSharedMemoryManager&) = delete;
+    LkhSharedMemoryManager& operator=(const LkhSharedMemoryManager&) = delete;
 
     bool createMapView() {
         if (hMapFile == nullptr) {
@@ -515,7 +513,7 @@ void lkhChildWorkerProcess(int argc, char** argv) {
     if (!sharedMemSize)
         return;
 
-    auto memMgr = LkhSharedMemoryManager::Open(argv[0], *sharedMemSize);
+    auto memMgr = LkhSharedMemoryManager::Open(argv[0], int(*sharedMemSize));
     if (!memMgr)
         return;
     auto mem = memMgr->memory();

@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
 	timer.stop();
 
 	MyImGui::Run([&] {
-		ImGui::GetIO().FontGlobalScale = fontSize / 10.0;
+		ImGui::GetIO().FontGlobalScale = fontSize / 10.0f;
 
 		constexpr int LongestLineLength = 29;
 		constexpr int FontPixelSize = 7;
@@ -194,16 +194,16 @@ int main(int argc, char** argv) {
 			ImGui::SetCursorPosX(boxValuePosX);
 			ImGui::SetNextItemWidth(-1);
 			if (ImGui::InputText("##turned off repeat nodes", inputTurnedOffRepeatNodes, sizeof(inputTurnedOffRepeatNodes))) {
-				auto nodes = splitToFloats(inputTurnedOffRepeatNodes, ignoredValue);
+				auto nodes = splitToFloats(inputTurnedOffRepeatNodes, float(ignoredValue));
 				repeatNodesTurnedOff.clear();
 				for (auto node : nodes) {
 					if (node != ignoredValue)
-						repeatNodesTurnedOff.push_back(node);
+						repeatNodesTurnedOff.push_back(int(node));
 				}
 			}
 
 			if (ImGui::Button("Count repeat connections")) {
-				foundRepeatNodesCount = countRepeatNodeEdges(loadCsvData(inputDataFile, ignoredValue, errorMsg), ignoredValue, repeatNodesTurnedOff);
+				foundRepeatNodesCount = countRepeatNodeEdges(loadCsvData(inputDataFile, float(ignoredValue), errorMsg), float(ignoredValue), repeatNodesTurnedOff);
 			}
 			if (foundRepeatNodesCount != -1) {
 				ImGui::SameLine();
@@ -227,9 +227,9 @@ int main(int argc, char** argv) {
 				taskWasCanceled = false;
 				partialSolutionCount = 0;
 				repeatNodeMatrix.clear();
-				auto A = loadCsvData(inputDataFile, ignoredValue, errorMsg);
+				auto A = loadCsvData(inputDataFile, float(ignoredValue), errorMsg);
 				if (allowRepeatNodes) {
-					repeatNodeMatrix = addRepeatNodeEdges(A, ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
+					repeatNodeMatrix = addRepeatNodeEdges(A, float(ignoredValue), maxRepeatNodesToAdd, repeatNodesTurnedOff);
 				}
 				if (errorMsg.empty()) {
 					bestFoundSolutions.clear();
@@ -290,14 +290,14 @@ int main(int argc, char** argv) {
 		ImGui::Text("Candidate routes found: %d", solutionsView.size());
 
 		if (solutionsView.size() > bestFoundSolutions.size()) {
-			for (int i = bestFoundSolutions.size(); i < solutionsView.size(); ++i) {
+			for (int i = int(bestFoundSolutions.size()); i < solutionsView.size(); ++i) {
 				bestFoundSolutions.push_back(solutionsView[i]);
 			}
 			std::sort(bestFoundSolutions.begin(), bestFoundSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 		}
 
 		ImGuiListClipper clipper;
-		clipper.Begin(std::min<int>(bestFoundSolutions.size(), maxSolutionCount));
+		clipper.Begin(std::min<int>(int(bestFoundSolutions.size()), maxSolutionCount));
 		while (clipper.Step()) {
 			for (int j = clipper.DisplayStart; j < clipper.DisplayEnd; ++j) {
 				auto& [B_, time] = bestFoundSolutions[j];

@@ -216,7 +216,7 @@ template<typename T> struct ThreadSafeVec {
 			size_ += 1;
 			return;
 		}
-		int bitPos = mostSignificantBitPosition(size_);
+		int bitPos = int(mostSignificantBitPosition(size_));
 		int blockId = std::max(0, bitPos - smallestPower2 + 1);
 		if (blockId >= blocks.size()) {
 			while (blockId >= blocks.size()) {
@@ -235,7 +235,7 @@ template<typename T> struct ThreadSafeVec {
 	const T& operator[](int i) const {
 		if (i == 0)
 			return (*blocks[0])[0];
-		int bitPos = mostSignificantBitPosition(i);
+		int bitPos = int(mostSignificantBitPosition(i));
 		int blockId = std::max(0, bitPos - smallestPower2 + 1);
 		int posInBlock = (blockId == 0) ? i : (i - (1 << bitPos));
 		return (*blocks[blockId])[posInBlock];
@@ -257,8 +257,8 @@ std::optional<float> parseFloat(const std::string& s) {
 	if (s.empty())
 		return std::nullopt;
 	if (s[0] == '0')
-		return 0;
-	auto result = atof(s.c_str());
+		return 0.f;
+	float result = float(atof(s.c_str()));
 	return result != 0 ? std::optional{ result } : std::nullopt;
 }
 

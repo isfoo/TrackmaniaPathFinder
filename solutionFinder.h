@@ -31,7 +31,7 @@ struct SolutionConfig {
 		: 
 		weights(weights), maxSolutionCount(maxSolutionCount), limit(limit), 
 		solutionsVec(solutionsVec),
-		outputFileName(outputFileName), appendFileName(appendFileName), repeatNodeMatrix(repeatNodeMatrix),
+		appendFileName(appendFileName), outputFileName(outputFileName), repeatNodeMatrix(repeatNodeMatrix),
 		partialSolutionCount(partialSolutionCount), taskWasCanceled(taskWasCanceled)
 	{}
 
@@ -178,7 +178,7 @@ std::vector<std::vector<int>> createIntAtspMatrixFromInput(const std::vector<std
 
 	for (int i = 0; i < weights.size(); ++i) {
 		for (int j = 0; j < weights.size(); ++j) {
-			intWeights[i][j] = weights[i][j] * 10;
+			intWeights[i][j] = int(weights[i][j] * 10);
 		}
 	}
 
@@ -207,10 +207,10 @@ template<typename T> struct ArrayWithSize {
 	void push_back(const T& val) { data[size_++] = val; }
 	void erase(int i)            { data[i] = data[--size_]; }
 	T& operator[](int i) { return data[i]; }
-	void clear() { size_ = 0; }
-	int size()   { return size_; }
-	T* begin()   { return data; }
-	T* end()     { return data + size_; }
+	void clear()     { size_ = 0; }
+	int size() const { return size_; }
+	T* begin()       { return data; }
+	T* end()         { return data + size_; }
 };
 
 struct AdjList2 {
@@ -266,8 +266,8 @@ struct AdjList2 {
 	}
 
 	void init(const std::vector<std::vector<EdgeCostType>>& costMatrix, EdgeCostType ignoredValue, bool transpose = false) {
-		data_.size_ = costMatrix.size();
-		stride_ = costMatrix.size() + 1;
+		data_.size_ = int(costMatrix.size());
+		stride_ = int(costMatrix.size()) + 1;
 		for (int i = 0; i < costMatrix.size(); ++i) {
 			(*this)[i].ptr_->size_ = 0;
 		}
@@ -287,7 +287,7 @@ struct AdjList2 {
 	ArrayView operator[](int i) {
 		return ArrayView((ArrayViewData*)(data_.data + stride_ * i));
 	}
-	int size() {
+	int size() const {
 		return int(data_.size());
 	}
 };
@@ -442,7 +442,7 @@ struct AssignmentSolution {
 		return RequiredAllocationSize(problemSize, problemSize + 1);
 	}
 	
-	int minimumAllocationSize() {
+	int minimumAllocationSize() const {
 		int size = InitializedSectionSize(problemSize) + UninitializedSectionSize(problemSize);
 		size += adjList.stride_* adjList.size() * sizeof(NodeType);
 		size += revAdjList.stride_* revAdjList.size() * sizeof(NodeType);
@@ -492,12 +492,12 @@ struct AssignmentSolution {
 		adjList.data_.data = memoryPool.assignNextMemory<NodeType>(adjListStride * problemSize);
 		revAdjList.data_.data = memoryPool.assignNextMemory<NodeType>(revAdjListStride * problemSize);
 	}
-	void copyInitializedDataSection(AssignmentSolution& other) {
+	void copyInitializedDataSection(const AssignmentSolution& other) {
 		std::memcpy(memoryPool.memory, other.memoryPool.memory, InitializedSectionSize(other.problemSize));
 		unassignedDstNodes.size_ = other.unassignedDstNodes.size();
 		partialRoutes.size_ = other.partialRoutes.size();
 	}
-	static void copyAdjList(AdjList2& dst, AdjList2& src) {
+	static void copyAdjList(AdjList2& dst, const AdjList2& src) {
 		dst.data_.size_ = src.data_.size_;
 		dst.stride_ = src.stride_;
 		std::memcpy(dst.data_.data, src.data_.data, src.stride_ * src.data_.size_ * sizeof(NodeType));
@@ -507,7 +507,7 @@ struct AssignmentSolution {
 		assignLooseVariables(other);
 		assignNonLooseVariables(other);
 	}
-	AssignmentSolution(AssignmentSolution& other) : memoryPool(other.memoryPool.allocators) {
+	AssignmentSolution(const AssignmentSolution& other) : memoryPool(other.memoryPool.allocators) {
 		memoryPool.allocate(other.minimumAllocationSize());
 		assignLooseVariables(other);
 		assignMemory(other.adjList.stride_, other.revAdjList.stride_);
@@ -523,12 +523,12 @@ struct AssignmentSolution {
 		assignNonLooseVariables(other);
 		return *this;
 	}
-	AssignmentSolution& operator=(AssignmentSolution&) = delete;
+	AssignmentSolution& operator=(const AssignmentSolution&) = delete;
 
 	AssignmentSolution(ArrayOfPoolAllocators& allocators, const std::vector<std::vector<EdgeCostType>>* costMatrix, EdgeCostType ignoredValue) :
 		memoryPool(allocators), costMatrix(costMatrix), ignoredValue(ignoredValue)
 	{
-		problemSize = costMatrix->size();
+		problemSize = int(costMatrix->size());
 		memoryPool.allocate(RequiredAllocationSize(problemSize));
 		assignMemory(problemSize + 1, problemSize + 1);
 
@@ -880,11 +880,11 @@ void findSolutions(SolutionConfig& config, AssignmentSolution& assignmentSolutio
 
 void findSolutionsPriority(SolutionConfig& config, int ignoredValue) {
 	ArrayOfPoolAllocators freeLists(1024, { 
-		AssignmentSolution::RequiredAllocationSize(config.weights.size()),
-		AssignmentSolution::RequiredAllocationSize(config.weights.size(), config.weights.size() / 2),
-		AssignmentSolution::RequiredAllocationSize(config.weights.size(), config.weights.size() / 4),
-		AssignmentSolution::RequiredAllocationSize(config.weights.size(), config.weights.size() / 8),
-		AssignmentSolution::RequiredAllocationSize(config.weights.size(), config.weights.size() / 16),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size())),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 2)),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 4)),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 8)),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 16)),
 	});
 	AssignmentSolution initialSolution(freeLists, &config.weights, ignoredValue);
 
@@ -976,9 +976,6 @@ std::pair<std::vector<int16_t>, float> runHlk(SolutionConfig& config, std::vecto
 	}
 	time /= 10.0;
 	solution.erase(solution.begin());
-	if (std::find(solution.begin(), solution.end(), 0) != solution.end()) {
-		int x = 0;
-	}
 
 	if (time < config.limit) {
 		std::scoped_lock l{ fileWriteMutex };
@@ -1014,7 +1011,7 @@ void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weigh
 		return;
 	}
 	if (solution.empty() || time > config.limit) {
-		config.partialSolutionCount += std::pow(config.weights.size() - 1, maxDepth - currentDepth);
+		config.partialSolutionCount += int(std::pow(config.weights.size() - 1, maxDepth - currentDepth));
 		return;
 	}
 
@@ -1046,13 +1043,13 @@ void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* prog
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
 	std::vector<std::vector<int>> A = createIntAtspMatrixFromInput(A_);
-	int limitInt = limit * 10;
+	int limitInt = int(limit * 10);
 
 	int threadCount = 16;
 	auto config = SolutionConfig(A, maxSolutionCount, limitInt, solutionsVec, appendFile, outputFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 	ThreadPool threadPool(threadCount, 1000);
 	std::mutex writeFileMutex;
-	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, A.size()); // +1 for main thread
+	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, int(A.size())); // +1 for main thread
 	auto processes = startChildProcesses(programPath, sharedMemInstances);
 	runHlkRecursive(config, A, threadPool, sharedMemInstances, programPath, writeFileMutex, ignoredValue * 10, searchDepth);
 	threadPool.wait();
