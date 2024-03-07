@@ -15,6 +15,16 @@
 #include <queue>
 #include <condition_variable>
 
+#if defined(__clang__)
+#define COMPILER_CLANG
+#elif defined(__INTEL_COMPILER)
+#define COMPILER_INTEL
+#elif defined(_MSC_VER)
+#define COMPILER_MSVC
+#elif defined(__GNUC__)
+#define COMPILER_GCC
+#endif
+
 class Timer {
 	std::chrono::time_point<std::chrono::steady_clock> startTime;
 	std::chrono::time_point<std::chrono::steady_clock> endTime;
@@ -127,183 +137,51 @@ public:
 	}
 };
 
+struct PoolAllocator {
+	std::vector<void*> freeList;
+	std::vector<char*> allocatedBlocks;
+	std::mutex m;
+	int elementSize;
+	int elementCount;
+	int indexInCurrentBlock;
 
-#if defined(__clang__)
-#define COMPILER_CLANG
-#elif defined(__INTEL_COMPILER)
-#define COMPILER_INTEL
-#elif defined(_MSC_VER)
-#define COMPILER_MSVC
-#elif defined(__GNUC__)
-#define COMPILER_GCC
-#endif
-
-template<int Alignment> struct FreeList {
-	std::vector<void*> list;
-	int size;
-
-	FreeList(int size) : size(size) {}
-	FreeList(FreeList&& other) {
-		list.swap(other.list);
-		std::swap(size, other.size);
+	PoolAllocator(int elementSize, int elementCount) : 
+		elementSize(elementSize), elementCount(elementCount), indexInCurrentBlock(elementCount)
+	{};
+	PoolAllocator(PoolAllocator&& other) {
+		freeList.swap(other.freeList);
+		allocatedBlocks.swap(other.allocatedBlocks);
+		elementSize = other.elementSize;
+		elementCount = other.elementCount;
+		indexInCurrentBlock = other.indexInCurrentBlock;
 	}
-	FreeList(const FreeList&) = delete;
-	FreeList& operator=(const FreeList&) = delete;
-	~FreeList() {
-		while (!list.empty()) {
-		#if defined(COMPILER_MSVC) || defined(COMPILER_CLANG)
-			_aligned_free(list.back());
-		#else
-			std::free(list.back());
-		#endif
-			list.pop_back();
+	PoolAllocator(const PoolAllocator&) = delete;
+	PoolAllocator operator=(const PoolAllocator&) = delete;
+
+	~PoolAllocator() {
+		for (auto& block : allocatedBlocks) {
+			free(block);
 		}
 	}
 
 	void* allocate() {
-		if (!list.empty()) {
-			auto ptr = list.back();
-			list.pop_back();
+		std::scoped_lock l{ m };
+		if (!freeList.empty()) {
+			auto ptr = freeList.back();
+			freeList.pop_back();
 			return ptr;
 		}
-		#if defined(COMPILER_MSVC) || defined(COMPILER_CLANG)
-		return _aligned_malloc(size, Alignment);
-		#else
-		return std::aligned_alloc(Alignment, size);
-		#endif
+		if (indexInCurrentBlock >= elementCount) {
+			allocatedBlocks.push_back((char*)malloc(elementSize * elementCount));
+			indexInCurrentBlock = 0;
+		}
+		return allocatedBlocks.back() + ((indexInCurrentBlock++) * elementSize);
 	}
+
 	void deallocate(void* ptr) {
+		std::scoped_lock l{ m };
 		if (ptr)
-			list.push_back(ptr);
-	}
-};
-
-template<typename T, int Size> struct FreeListVector {
-	static inline FreeList<alignof(T)> allocator = FreeList<alignof(T)>(sizeof(T) * Size);
-	T* data;
-	int size_ = 0;
-
-	FreeListVector() {
-		data = (T*)allocator.allocate();
-	}
-	FreeListVector(FreeListVector&& other) : data(other.data), size_(other.size_) {
-		other.data = nullptr;
-		other.size_ = 0;
-	}
-	FreeListVector& operator=(FreeListVector&& other) {
-		std::swap(data, other.data);
-		std::swap(size_, other.size_);
-		return *this;
-	}
-	FreeListVector(const FreeListVector& other) {
-		data = (T*)allocator.allocate();
-		size_ = other.size_;
-		std::memcpy(data, other.data, size_ * sizeof(T));
-	}
-	FreeListVector& operator=(const FreeListVector& other) {
-		size_ = other.size_;
-		std::memcpy(data, other.data, size_ * sizeof(T));
-		return *this;
-	}
-	~FreeListVector() {
-		allocator.deallocate(data);
-	}
-
-	void push_back(const T& val) {
-		static_assert(std::is_trivially_destructible_v<T>);
-		new (&data[size_]) T(val);
-		size_ += 1;
-	}
-
-	T* begin() { return &data[0]; }
-	T* end()   { return &data[size_]; }
-	T& back()  { return data[size_ - 1]; }
-	T& operator[](int i) { return data[i]; }
-	int size()   { return size_; }
-	void resize(int size) { size_ = size; }
-	void clear() { size_ = 0; }
-};
-
-
-template<typename T> struct FreeListArray {
-	static inline std::unordered_map<int, FreeList<alignof(T)>> Allocators;
-	
-	FreeList<alignof(T)>& allocator() {
-		auto it = Allocators.find(size_);
-		if (it != Allocators.end()) {
-			return it->second;
-		}
-		return Allocators.emplace(size_, FreeList<alignof(T)>(size_)).first->second;
-	}
-
-	T* data;
-	int size_ = 0;
-
-	FreeListArray(int size) : size_(size) {
-		data = (T*)allocator().allocate();
-	}
-	FreeListArray(FreeListArray&& other) : data(other.data), size_(other.size_) {
-		other.data = nullptr;
-		other.size_ = 0;
-	}
-	FreeListArray& operator=(FreeListArray&& other) {
-		std::swap(data, other.data);
-		std::swap(size_, other.size_);
-		return *this;
-	}
-	FreeListArray(const FreeListArray& other) {
-		size_ = other.size_;
-		data = (T*)allocator().allocate();
-		std::memcpy(data, other.data, size_ * sizeof(T));
-	}
-	FreeListArray& operator=(const FreeListArray& other) {
-		if (size_ != other.size_) {
-			allocator().deallocate(data);
-			size_ = other.size_;
-			data = (T*)allocator().allocate();
-		}
-		std::memcpy(data, other.data, size_ * sizeof(T));
-		return *this;
-	}
-	~FreeListArray() {
-		if (size_ > 0)
-			allocator().deallocate(data);
-	}
-
-	T* begin() { return &data[0]; }
-	T* end()   { return &data[size_]; }
-	T& back()  { return data[size_ - 1]; }
-	T& operator[](int i) { return data[i]; }
-	int size()   { return size_; }
-	void clear() { size_ = 0; }
-};
-
-
-struct DynamicBitset {
-	using IntType = uint64_t;
-	static constexpr int IntTypeBitSize = sizeof(IntType) * 8;
-	std::array<IntType, 10> bits;
-
-	DynamicBitset(int size = 0) {
-		std::fill(bits.begin(), bits.end(), 0);
-		for (int i = size % IntTypeBitSize; i < IntTypeBitSize; ++i) {
-			bits.back() |= singleBit(i);
-		}
-	}
-
-	bool test(int i) const {
-		return bits[i / IntTypeBitSize] & singleBit(i);
-	}
-	void set(int i) {
-		bits[i / IntTypeBitSize] |= singleBit(i);
-	}
-	void reset(int i) {
-		bits[i / IntTypeBitSize] &= ~singleBit(i);
-	}
-
-private:
-	IntType singleBit(int i) const {
-		return (1ull << (i % IntTypeBitSize));
+			freeList.push_back(ptr);
 	}
 };
 
