@@ -266,7 +266,10 @@ std::vector<int> splitLineOfFloatsToInts(std::string_view str, int ignoredValue,
 	constexpr auto PossiblyFloatChars = "0123456789.+-e";
 	std::vector<int> result;
 
-	str = str.substr(str.find_first_of(PossiblyFloatChars));
+	auto pos = str.find_first_of(PossiblyFloatChars);
+	if (pos == std::string::npos)
+		return result;
+	str = str.substr(pos);
 	while (true) {
 		auto pos = str.find_first_not_of(PossiblyFloatChars);
 		auto value = parseFloatAsInt(std::string(str.substr(0, pos)), multiplyFactor);
