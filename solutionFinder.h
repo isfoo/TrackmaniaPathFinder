@@ -98,11 +98,11 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::pair<std::vec
 struct RepeatEdgePath {
 	RepeatEdgePath(int k, int j, int i) : k(k), j(j), i(i) {}
 	int k, j, i;
-	float time(const std::vector<std::vector<float>>& A) const {
+	int time(const std::vector<std::vector<int>>& A) const {
 		return A[k][j] + A[j][i];
 	}
 };
-std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<float>>& A, float ignoredValue, std::vector<int> turnedOffRepeatNodes) {
+std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<int>>& A, int ignoredValue, std::vector<int> turnedOffRepeatNodes) {
 	std::vector<std::vector<int>> adjList(A.size());
 	for (int i = 0; i < A.size(); ++i) {
 		for (int j = 0; j < A[i].size(); ++j) {
@@ -130,7 +130,7 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<flo
 	return additionalPaths;
 }
 
-int addRepeatNodeEdges(std::vector<std::vector<float>>& A, std::vector<std::vector<std::vector<int>>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxEdgesToAdd) {
+int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxEdgesToAdd) {
 	auto ACopy = A;
 	int addedEdgesCount = 0;
 	for (int m = 0; m < additionalPaths.size() && addedEdgesCount < maxEdgesToAdd; ++m) {
@@ -147,7 +147,7 @@ int addRepeatNodeEdges(std::vector<std::vector<float>>& A, std::vector<std::vect
 	return addedEdgesCount;
 }
 
-std::vector<std::vector<std::vector<int>>> addRepeatNodeEdges(std::vector<std::vector<float>>& A, float ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
+std::vector<std::vector<std::vector<int>>> addRepeatNodeEdges(std::vector<std::vector<int>>& A, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
 	std::vector<std::vector<std::vector<int>>> repeatEdgeMatrix(A.size(), std::vector<std::vector<int>>(A.size()));
 	for (int i = 0; i < 5; ++i) {
 		auto repeatEdges = getRepeatNodeEdges(A, ignoredValue, turnedOffRepeatNodes);
@@ -157,7 +157,7 @@ std::vector<std::vector<std::vector<int>>> addRepeatNodeEdges(std::vector<std::v
 	return repeatEdgeMatrix;
 }
 
-int countRepeatNodeEdges(const std::vector<std::vector<float>>& A, float ignoredValue, std::vector<int> turnedOffRepeatNodes) {
+int countRepeatNodeEdges(const std::vector<std::vector<int>>& A, int ignoredValue, std::vector<int> turnedOffRepeatNodes) {
 	std::vector<std::vector<std::vector<int>>> repeatEdgeMatrix(A.size(), std::vector<std::vector<int>>(A.size()));
 	auto A_ = A;
 	for (int i = 0; i < 5; ++i) {
@@ -173,17 +173,10 @@ int countRepeatNodeEdges(const std::vector<std::vector<float>>& A, float ignored
 	return repeatEdgesCount;
 }
 
-std::vector<std::vector<int>> createIntAtspMatrixFromInput(const std::vector<std::vector<float>>& weights) {
-	std::vector<std::vector<int>> intWeights(weights.size(), std::vector<int>(weights.size()));
-
-	for (int i = 0; i < weights.size(); ++i) {
-		for (int j = 0; j < weights.size(); ++j) {
-			intWeights[i][j] = int(weights[i][j] * 10);
-		}
-	}
-
-	intWeights[0].back() = 0;
-	return intWeights;
+std::vector<std::vector<int>> createAtspMatrixFromInput(const std::vector<std::vector<int>>& weights) {
+	auto copy = weights;
+	copy[0].back() = 0;
+	return copy;
 }
 
 
@@ -951,16 +944,16 @@ void findSolutionsPriority(SolutionConfig& config, int ignoredValue) {
 }
 
 void runAlgorithm(
-	const std::vector<std::vector<float>>& A_, int maxSolutionCount, float limit, int ignoredValue, 
+	const std::vector<std::vector<int>>& A_, int maxSolutionCount, float limit, int ignoredValue, 
 	ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec,
 	const std::string& appendFileName, const std::string& outputFileName,
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix,
 	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
-	std::vector<std::vector<int>> A = createIntAtspMatrixFromInput(A_);
+	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);
 	int limitInt = int(limit * 10);
 	SolutionConfig config(A, maxSolutionCount, limitInt, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
-	findSolutionsPriority(config, ignoredValue * 10);
+	findSolutionsPriority(config, ignoredValue);
 }
 
 
@@ -1038,11 +1031,11 @@ void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weigh
 	}
 }
 
-void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* programPath, int searchDepth,
+void runAlgorithmHlk(const std::vector<std::vector<int>>& A_, const char* programPath, int searchDepth,
 	const std::string& appendFile, const std::string& outputFile, int ignoredValue, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec,
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
-	std::vector<std::vector<int>> A = createIntAtspMatrixFromInput(A_);
+	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);
 	int limitInt = int(limit * 10);
 
 	int threadCount = 16;
@@ -1051,7 +1044,7 @@ void runAlgorithmHlk(const std::vector<std::vector<float>>& A_, const char* prog
 	std::mutex writeFileMutex;
 	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, int(A.size())); // +1 for main thread
 	auto processes = startChildProcesses(programPath, sharedMemInstances);
-	runHlkRecursive(config, A, threadPool, sharedMemInstances, programPath, writeFileMutex, ignoredValue * 10, searchDepth);
+	runHlkRecursive(config, A, threadPool, sharedMemInstances, programPath, writeFileMutex, ignoredValue, searchDepth);
 	threadPool.wait();
 	stopChildProcesses(processes, sharedMemInstances);
 }

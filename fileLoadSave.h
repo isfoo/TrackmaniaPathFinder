@@ -6,17 +6,17 @@
 #include <string>
 #include <charconv>
 
-std::vector<std::vector<float>> loadCsvData(const std::string& inputFileName, float ignoredValue, std::string& errorMsg) {
+std::vector<std::vector<int>> loadCsvData(const std::string& inputFileName, int ignoredValue, std::string& errorMsg) {
 	std::ifstream inFile(inputFileName);
 	if (!inFile) {
 		errorMsg = "Couldn't open input file";
 		return {};
 	}
-	std::vector<std::vector<float>> A;
+	std::vector<std::vector<int>> A;
 	A.emplace_back(); // first row to be filled later
 	std::string line;
 	while (std::getline(inFile, line)) {
-		A.push_back(splitToFloats(line, ignoredValue));
+		A.push_back(splitLineOfFloatsToInts(line, ignoredValue, 10));
 		A.back().push_back(ignoredValue);
 	}
 	if (A.size() <= 1) {

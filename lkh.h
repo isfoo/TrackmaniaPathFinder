@@ -509,7 +509,7 @@ void lkhChildWorkerProcess(int argc, char** argv) {
     if (argc <= 1)
         return;
 
-    auto sharedMemSize = parseFloat(argv[1]);
+    auto sharedMemSize = parseFloatAsInt(argv[1]);
     if (!sharedMemSize)
         return;
 

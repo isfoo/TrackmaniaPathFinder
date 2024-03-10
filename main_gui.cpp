@@ -29,7 +29,8 @@ int main(int argc, char** argv) {
 
 	MyImGui::Init(u"Trackmania Path Finder");
 
-	int ignoredValue = 600;
+	int ignoredValueInput = 600;
+	int ignoredValue = ignoredValueInput * 10;
 	float limitValue = 100'000;
 	int maxSolutionCount = 100;
 	int maxRepeatNodesToAdd = 100;
@@ -101,8 +102,9 @@ int main(int argc, char** argv) {
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
-		if (ImGui::InputInt("##max node value threshold", &ignoredValue)) {
-			ignoredValue = std::clamp(ignoredValue, 1, 100'000);
+		if (ImGui::InputInt("##max node value threshold", &ignoredValueInput)) {
+			ignoredValueInput = std::clamp(ignoredValueInput, 1, 100'000);
+			ignoredValue = ignoredValueInput * 10;
 		}
 		ImGui::Text("max route time:");
 		ImGui::SameLine();
@@ -194,16 +196,16 @@ int main(int argc, char** argv) {
 			ImGui::SetCursorPosX(boxValuePosX);
 			ImGui::SetNextItemWidth(-1);
 			if (ImGui::InputText("##turned off repeat nodes", inputTurnedOffRepeatNodes, sizeof(inputTurnedOffRepeatNodes))) {
-				auto nodes = splitToFloats(inputTurnedOffRepeatNodes, float(ignoredValue));
+				auto nodes = splitLineOfFloatsToInts(inputTurnedOffRepeatNodes, ignoredValue);
 				repeatNodesTurnedOff.clear();
 				for (auto node : nodes) {
 					if (node != ignoredValue)
-						repeatNodesTurnedOff.push_back(int(node));
+						repeatNodesTurnedOff.push_back(node);
 				}
 			}
 
 			if (ImGui::Button("Count repeat connections")) {
-				foundRepeatNodesCount = countRepeatNodeEdges(loadCsvData(inputDataFile, float(ignoredValue), errorMsg), float(ignoredValue), repeatNodesTurnedOff);
+				foundRepeatNodesCount = countRepeatNodeEdges(loadCsvData(inputDataFile, ignoredValue, errorMsg), ignoredValue, repeatNodesTurnedOff);
 			}
 			if (foundRepeatNodesCount != -1) {
 				ImGui::SameLine();
@@ -227,9 +229,9 @@ int main(int argc, char** argv) {
 				taskWasCanceled = false;
 				partialSolutionCount = 0;
 				repeatNodeMatrix.clear();
-				auto A = loadCsvData(inputDataFile, float(ignoredValue), errorMsg);
+				auto A = loadCsvData(inputDataFile, ignoredValue, errorMsg);
 				if (allowRepeatNodes) {
-					repeatNodeMatrix = addRepeatNodeEdges(A, float(ignoredValue), maxRepeatNodesToAdd, repeatNodesTurnedOff);
+					repeatNodeMatrix = addRepeatNodeEdges(A, ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
 				}
 				if (errorMsg.empty()) {
 					bestFoundSolutions.clear();

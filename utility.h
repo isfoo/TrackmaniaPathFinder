@@ -253,23 +253,23 @@ private:
 };
 
 
-std::optional<float> parseFloat(const std::string& s) {
+std::optional<int> parseFloatAsInt(const std::string& s, int multiplyFactor=1) {
 	if (s.empty())
 		return std::nullopt;
 	if (s[0] == '0')
-		return 0.f;
-	float result = float(atof(s.c_str()));
+		return 0;
+	auto result = int(atof(s.c_str()) * multiplyFactor);
 	return result != 0 ? std::optional{ result } : std::nullopt;
 }
 
-std::vector<float> splitToFloats(std::string_view str, float ignoredValue) {
+std::vector<int> splitLineOfFloatsToInts(std::string_view str, int ignoredValue, int multiplyFactor=1) {
 	constexpr auto PossiblyFloatChars = "0123456789.+-e";
-	std::vector<float> result;
+	std::vector<int> result;
 
 	str = str.substr(str.find_first_of(PossiblyFloatChars));
 	while (true) {
 		auto pos = str.find_first_not_of(PossiblyFloatChars);
-		auto value = parseFloat(std::string(str.substr(0, pos)));
+		auto value = parseFloatAsInt(std::string(str.substr(0, pos)), multiplyFactor);
 		if (value)
 			result.emplace_back(*value);
 		else
