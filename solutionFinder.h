@@ -24,7 +24,7 @@
 struct SolutionConfig {
 	SolutionConfig(
 		const std::vector<std::vector<int>>& weights, int maxSolutionCount, int& limit,
-		ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec, 
+		ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec, 
 		const std::string& appendFileName, const std::string& outputFileName,
 		const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, 
 		std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled)
@@ -36,18 +36,18 @@ struct SolutionConfig {
 	{}
 
 	struct BestSolution {
-		BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& solutionWithRepeats, float time) :
+		BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& solutionWithRepeats, int time) :
 			solution(solution), solutionWithRepeats(solutionWithRepeats), time(time) 
 		{}
 		std::vector<int16_t> solution;
 		std::vector<int16_t> solutionWithRepeats;
-		float time;
+		int time;
 	};
 
 	std::vector<std::vector<int>> weights;
 	int maxSolutionCount;
 	int& limit;
-	ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec;
+	ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec;
 	std::vector<BestSolution> bestSolutions;
 	const std::string& appendFileName;
 	const std::string& outputFileName;
@@ -70,8 +70,8 @@ std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& sol
 	}
 	return solutionWithRepeats;
 }
-void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::pair<std::vector<int16_t>, float>& solution) {
-	if (solution.second > config.limit / 10.0f)
+void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::pair<std::vector<int16_t>, int>& solution) {
+	if (solution.second > config.limit)
 		return;
 
 	auto solutionWithRepeats = solutionWithExplicitRepeats(solution.first, config.repeatNodeMatrix);
@@ -91,7 +91,7 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::pair<std::vec
 	} else {
 		config.bestSolutions.back() = SolutionConfig::BestSolution(solution.first, solutionWithRepeats, solution.second);
 		std::sort(config.bestSolutions.begin(), config.bestSolutions.end(), [](auto& a, auto& b) { return a.time < b.time; });
-		config.limit = int(config.bestSolutions.back().time * 10);
+		config.limit = config.bestSolutions.back().time;
 	}
 }
 
@@ -118,7 +118,7 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<int
 			for (int k : adjList[j]) {
 				if (i == k)
 					continue;
-				float time = A[k][j] + A[j][i];
+				auto time = A[k][j] + A[j][i];
 				if (time < A[k][i]) {
 					if (std::find(turnedOffRepeatNodes.begin(), turnedOffRepeatNodes.end(), j) == turnedOffRepeatNodes.end())
 						additionalPaths.emplace_back(k, j, i);
@@ -849,7 +849,7 @@ void findSolutions(SolutionConfig& config, AssignmentSolution& assignmentSolutio
 			solutionVec.push_back(assignmentSolution.solution[solutionVec.back()]);
 		}
 		solutionVec.erase(solutionVec.begin());
-		auto solution = std::make_pair(solutionVec, assignmentSolution.cost / 10.0f);
+		auto solution = std::make_pair(solutionVec, assignmentSolution.cost);
 		saveSolutionAndUpdateLimit(config, solution);
 	} else {
 		auto pivotEdge = assignmentSolution.findPivotEdge();
@@ -944,30 +944,28 @@ void findSolutionsPriority(SolutionConfig& config, int ignoredValue) {
 }
 
 void runAlgorithm(
-	const std::vector<std::vector<int>>& A_, int maxSolutionCount, float limit, int ignoredValue, 
-	ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec,
+	const std::vector<std::vector<int>>& A_, int maxSolutionCount, int limit, int ignoredValue, 
+	ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec,
 	const std::string& appendFileName, const std::string& outputFileName,
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix,
 	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
 	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);
-	int limitInt = int(limit * 10);
-	SolutionConfig config(A, maxSolutionCount, limitInt, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+	SolutionConfig config(A, maxSolutionCount, limit, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 	findSolutionsPriority(config, ignoredValue);
 }
 
 
-std::pair<std::vector<int16_t>, float> runHlk(SolutionConfig& config, std::vector<std::vector<int>> weights, LkhSharedMemoryManager& sharedMemory, const char* programPath, std::mutex& fileWriteMutex) {
+std::pair<std::vector<int16_t>, int> runHlk(SolutionConfig& config, std::vector<std::vector<int>> weights, LkhSharedMemoryManager& sharedMemory, const char* programPath, std::mutex& fileWriteMutex) {
 	auto solution = runLkhInChildProcess(sharedMemory, weights, config.taskWasCanceled);
 	if (solution.empty()) {
 		return { {}, 0 };
 	}
 
-	float time = 0;
+	int time = 0;
 	for (int i = 1; i < solution.size(); ++i) {
 		time += weights[solution[i]][solution[i - 1]];
 	}
-	time /= 10.0;
 	solution.erase(solution.begin());
 
 	if (time < config.limit) {
@@ -988,7 +986,7 @@ void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weigh
 		return;
 	
 	std::vector<int16_t> solution;
-	float time = 0;
+	int time = 0;
 	int tryCount = 0;
 	do {
 		auto [s, t] = runHlk(config, weights, sharedMemory.back(), programPath, writeFileMutex);
@@ -1032,14 +1030,13 @@ void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weigh
 }
 
 void runAlgorithmHlk(const std::vector<std::vector<int>>& A_, const char* programPath, int searchDepth,
-	const std::string& appendFile, const std::string& outputFile, int ignoredValue, int maxSolutionCount, float limit, ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsVec,
+	const std::string& appendFile, const std::string& outputFile, int ignoredValue, int maxSolutionCount, int limit, ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec,
 	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
 	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);
-	int limitInt = int(limit * 10);
 
 	int threadCount = 16;
-	auto config = SolutionConfig(A, maxSolutionCount, limitInt, solutionsVec, appendFile, outputFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+	auto config = SolutionConfig(A, maxSolutionCount, limit, solutionsVec, appendFile, outputFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
 	ThreadPool threadPool(threadCount, 1000);
 	std::mutex writeFileMutex;
 	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, int(A.size())); // +1 for main thread

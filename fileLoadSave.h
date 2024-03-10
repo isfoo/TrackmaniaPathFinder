@@ -37,12 +37,12 @@ std::vector<std::vector<int>> loadCsvData(const std::string& inputFileName, int 
 	return A;
 }
 
-void writeSolutionFileProlog(const std::string& outputFileName, const std::string& inputFileName, float limit, bool isExactAlgorithm, bool allowRepeatNodes, const std::vector<int>& repeatNodesTurnedOff) {
+void writeSolutionFileProlog(const std::string& outputFileName, const std::string& inputFileName, int limit, bool isExactAlgorithm, bool allowRepeatNodes, const std::vector<int>& repeatNodesTurnedOff) {
 	std::ofstream solutionsFile(outputFileName, std::ios::app);
 	solutionsFile << "\nSTART\n";
 	solutionsFile << "Input file:            \"" << inputFileName << "\"\n";
 	solutionsFile << "Algorithm:             " << (isExactAlgorithm ? "Exact (BnB Assignment Relaxation)" : "Heuristic (LKH)") << "\n";
-	solutionsFile << "Max route time:        " << limit << "\n";
+	solutionsFile << "Max route time:        " << limit / 10.0 << "\n";
 	solutionsFile << "allow repeat CPs:      " << (allowRepeatNodes ? "Yes" : "No") << "\n";
 	solutionsFile << "turned off repeat CPs: [";
 	if (!repeatNodesTurnedOff.empty()) {
@@ -60,20 +60,20 @@ void writeSolutionFileEpilog(const std::string& outputFileName, std::atomic<bool
 	solutionsFile << "END " << (taskWasCanceled ? "(Canceled)" : "(Completed)") << "\n";
 }
 
-void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t>& solution, float time, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
+void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t>& solution, int time, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
 	solutionsFile << std::fixed << std::setprecision(1);
-	solutionsFile << std::setw(8) << time << " ";
+	solutionsFile << std::setw(8) << time / 10.0 << " ";
 	solutionsFile << createSolutionString(solution, repeatNodeMatrix) << '\n';
 }
-void writeSolutionToFile(const std::string& outputFileName, const std::vector<int16_t>& solution, float time, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
+void writeSolutionToFile(const std::string& outputFileName, const std::vector<int16_t>& solution, int time, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
 	if (!outputFileName.empty()) {
 		std::ofstream solutionsFile(outputFileName, std::ios::app);
 		writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix);
 	}
 }
 
-void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<std::pair<std::vector<int16_t>, float>>& solutionsView, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
-	std::vector<std::pair<std::vector<int16_t>, float>> sortedSolutions;
+void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsView, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
+	std::vector<std::pair<std::vector<int16_t>, int>> sortedSolutions;
 	for (int i = 0; i < solutionsView.size(); ++i) {
 		sortedSolutions.push_back(solutionsView[i]);
 	}

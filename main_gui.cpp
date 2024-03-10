@@ -31,7 +31,8 @@ int main(int argc, char** argv) {
 
 	int ignoredValueInput = 600;
 	int ignoredValue = ignoredValueInput * 10;
-	float limitValue = 100'000;
+	float inputLimitValue = 100'000;
+	int limitValue = inputLimitValue * 10;
 	int maxSolutionCount = 100;
 	int maxRepeatNodesToAdd = 100;
 	int heuristicSearchDepth = 2;
@@ -41,8 +42,8 @@ int main(int argc, char** argv) {
 	constexpr int MaxFontSize = 30;
 	int fontSize = 15;
 	std::vector<std::vector<std::vector<int>>> repeatNodeMatrix;
-	ThreadSafeVec<std::pair<std::vector<int16_t>, float>> solutionsView;
-	std::vector<std::pair<std::vector<int16_t>, float>> bestFoundSolutions;
+	ThreadSafeVec<std::pair<std::vector<int16_t>, int>> solutionsView;
+	std::vector<std::pair<std::vector<int16_t>, int>> bestFoundSolutions;
 	std::atomic<int> partialSolutionCount = 0;
 
 	char inputDataFile[1024] = { 0 };
@@ -110,8 +111,9 @@ int main(int argc, char** argv) {
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
-		if (ImGui::InputFloat("##max solution length", &limitValue)) {
-			limitValue = std::clamp(limitValue, 1.0f, 100'000.0f);
+		if (ImGui::InputFloat("##max solution length", &inputLimitValue)) {
+			inputLimitValue = std::clamp(inputLimitValue, 1.0f, 100'000.0f);
+			limitValue = inputLimitValue * 10;
 		}
 		ImGui::Text("max number of routes:");
 		ImGui::SameLine();
@@ -304,7 +306,7 @@ int main(int argc, char** argv) {
 			for (int j = clipper.DisplayStart; j < clipper.DisplayEnd; ++j) {
 				auto& [B_, time] = bestFoundSolutions[j];
 				auto solStr = createSolutionString(B_, repeatNodeMatrix);
-				ImGui::Text("%.1f", time);
+				ImGui::Text("%.1f", time / 10.0);
 				ImGui::SameLine();
 				ImGui::SetNextItemWidth(-1);
 				ImGui::InputText(("##solution" + std::to_string(j)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
