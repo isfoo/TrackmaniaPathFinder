@@ -41,8 +41,8 @@ int main(int argc, char** argv) {
 	constexpr int MinFontSize = 8;
 	constexpr int MaxFontSize = 30;
 	int fontSize = 15;
-	std::vector<std::vector<std::vector<std::vector<uint8_t>>>> repeatNodeMatrix;
-	std::vector<std::vector<std::vector<bool>>> useRespawnMatrix;
+	Vector3d<FastSmallVector<uint8_t>> repeatNodeMatrix(0);
+	Vector3d<Bool> useRespawnMatrix(0);
 	ThreadSafeVec<std::pair<std::vector<int16_t>, int>> solutionsView;
 	std::vector<std::pair<std::vector<int16_t>, int>> bestFoundSolutions;
 	std::atomic<int> partialSolutionCount = 0;
@@ -249,10 +249,7 @@ int main(int argc, char** argv) {
 					repeatNodeMatrix = addRepeatNodeEdges(A, B, ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
 				}
 
-				useRespawnMatrix = std::vector<std::vector<std::vector<bool>>>(B.size());
-				for (auto& v : useRespawnMatrix) {
-					v.resize(B.size(), std::vector<bool>(B.size(), false));
-				}
+				useRespawnMatrix = Vector3d<Bool>(int(B.size()));
 				for (auto ringCp : ringCps) {
 					if (ringCp >= B.size())
 						continue;

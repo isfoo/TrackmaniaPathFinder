@@ -28,8 +28,8 @@ struct SolutionConfig {
 		int maxSolutionCount, int& limit,
 		ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec, 
 		const std::string& appendFileName, const std::string& outputFileName,
-		const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix,
-		const std::vector<std::vector<std::vector<bool>>>& useRespawnMatrix,
+		const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix,
+		const Vector3d<Bool>& useRespawnMatrix,
 		std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled)
 		: 
 		weights(weights), condWeights(condWeights), maxSolutionCount(maxSolutionCount), limit(limit),
@@ -55,14 +55,14 @@ struct SolutionConfig {
 	std::vector<BestSolution> bestSolutions;
 	const std::string& appendFileName;
 	const std::string& outputFileName;
-	const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix;
-	const std::vector<std::vector<std::vector<bool>>>& useRespawnMatrix;
+	const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix;
+	const Vector3d<Bool>& useRespawnMatrix;
 	std::atomic<int>& partialSolutionCount;
 	std::atomic<bool>& taskWasCanceled;
 	bool useAbros = false;
 };
 
-std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& solution, const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix) {
+std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& solution, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix) {
 	auto B = solution;
 	B.insert(B.begin(), int16_t(repeatNodeMatrix.size() - 1));
 	std::vector<int16_t> solutionWithRepeats;
@@ -137,7 +137,7 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<int
 	return additionalPaths;
 }
 
-int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxEdgesToAdd) {
+int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, Vector3d<FastSmallVector<uint8_t>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxEdgesToAdd) {
 	auto ACopy = A;
 	auto BCopy = B;
 	int addedEdgesCount = 0;
@@ -149,10 +149,11 @@ int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector
 		for (int z = 0; z < B.size(); ++z) {
 			auto newTime = B[k][j][i] + B[j][i][z];
 			if (newTime < BCopy[k][i][z]) {
-				repeatEdgeMatrix[k][i][z] = repeatEdgeMatrix[j][i][z];
-				repeatEdgeMatrix[k][i][z].push_back(j);
-				repeatEdgeMatrix[k][i][z].insert(repeatEdgeMatrix[k][i][z].end(), repeatEdgeMatrix[k][j][i].begin(), repeatEdgeMatrix[k][j][i].end());
-				BCopy[k][i][z] = newTime;
+				auto combined = FastSmallVector<uint8_t>::Combine(repeatEdgeMatrix[j][i][z], j, repeatEdgeMatrix[k][i][z]);
+				if (combined) {
+					repeatEdgeMatrix[k][i][z] = *combined;
+					BCopy[k][i][z] = newTime;
+				}
 			}
 		}
 		ACopy[k][i] = additionalPaths[m].time(A);
@@ -162,12 +163,9 @@ int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector
 	return addedEdgesCount;
 }
 
-std::vector<std::vector<std::vector<std::vector<uint8_t>>>> addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
-	auto repeatEdgeMatrix = std::vector<std::vector<std::vector<std::vector<uint8_t>>>>(B.size());
-	for (auto& v : repeatEdgeMatrix) {
-		v.resize(A.size(), std::vector<std::vector<uint8_t>>(A.size()));
-	}
-	for (int i = 0; i < 2; ++i) {
+Vector3d<FastSmallVector<uint8_t>> addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
+	auto repeatEdgeMatrix = Vector3d<FastSmallVector<uint8_t>>(B.size());
+	for (int i = 0; i < 3; ++i) {
 		auto repeatEdges = getRepeatNodeEdges(A, ignoredValue, turnedOffRepeatNodes);
 		auto edgesAdded = addRepeatNodeEdges(A, B, repeatEdgeMatrix, repeatEdges, maxEdgesToAdd);
 		maxEdgesToAdd = std::max<int>(0, maxEdgesToAdd - edgesAdded);
@@ -1010,8 +1008,8 @@ void runAlgorithm(
 	const std::vector<std::vector<int>>& A_, const std::vector<std::vector<std::vector<int>>>& B_, int maxSolutionCount, int limit, int ignoredValue, 
 	ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec,
 	const std::string& appendFileName, const std::string& outputFileName,
-	const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix,
-	const std::vector<std::vector<std::vector<bool>>>& userRespawnMatrix,
+	const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix,
+	const Vector3d<Bool>& userRespawnMatrix,
 	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
 	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);
@@ -1101,7 +1099,7 @@ void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weigh
 
 void runAlgorithmHlk(const std::vector<std::vector<int>>& A_, const char* programPath, int searchDepth,
 	const std::string& appendFile, const std::string& outputFile, int ignoredValue, int maxSolutionCount, int limit, ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec,
-	const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix, const std::vector<std::vector<std::vector<bool>>>& userRespawnMatrix,
+	const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& userRespawnMatrix,
 	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
 	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);

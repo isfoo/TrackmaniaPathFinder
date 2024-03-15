@@ -3,6 +3,8 @@
 #include <string>
 #include <cstdint>
 
+using Bool = int8_t;
+
 struct ConditionalCost {
 	int cost;
 	uint8_t srcNode;
@@ -14,7 +16,7 @@ struct ConditionalCost {
 	}
 };
 
-std::string createSolutionString(const std::vector<int16_t>& solution, const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix, const std::vector<std::vector<std::vector<bool>>>& useRespawnMatrix) {
+std::string createSolutionString(const std::vector<int16_t>& solution, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
 	auto B = solution;
 	B.insert(B.begin(), 0); // Explicit start node
 	B.insert(B.begin(), int16_t(useRespawnMatrix.size() - 1)); // Added for convenience for useRespawnMatrix and repeatNodeMatrix

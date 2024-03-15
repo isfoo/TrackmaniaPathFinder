@@ -293,3 +293,57 @@ std::vector<int> splitLineOfFloatsToInts(std::string_view str, int ignoredValue,
 		str = str.substr(pos2);
 	}
 }
+
+template<typename T> struct VectorView {
+	T* data; int size;
+	VectorView(T* data, int size) : data(data), size(size) {}
+	T& operator[](int i) { return data[i]; }
+	T& back() { return (*this)[size - 1]; }
+};
+template<typename T> struct ConstVectorView {
+	const T* data; int size;
+	ConstVectorView(const T* data, int size) : data(data), size(size) {}
+	const T& operator[](int i) const { return data[i]; }
+	const T& back() const { return (*this)[size - 1]; }
+};
+template<typename T> struct VectorView2d {
+	T* data; int size;
+	VectorView2d(T* data, int size) : data(data), size(size) {}
+	VectorView<T> operator[](int i) { return VectorView<T>(&data[i * size], size); }
+};
+template<typename T> struct ConstVectorView2d {
+	const T* data; int size;
+	ConstVectorView2d(const T* data, int size) : data(data), size(size) {}
+	const ConstVectorView<T> operator[](int i) const  { return ConstVectorView<T>(&data[i * size], size); }
+};
+template<typename T> struct Vector3d {
+	std::vector<T> data; int size_;
+	Vector3d(int size) : data(size * size * size), size_(size) {}
+	VectorView2d<T> operator[](int i)            { return VectorView2d<T>(&data[size_ * size_ * i], size_); }
+	ConstVectorView2d<T> operator[](int i) const { return ConstVectorView2d<T>(&data[size_ * size_ * i], size_); }
+	bool empty() const { return size() == 0; }
+	int size() const   { return size_; }
+	void clear()       { data.clear(); size_ = 0; }
+};
+
+template<typename T> struct FastSmallVector {
+	constexpr static int MaxSize = 12;
+	std::array<T, MaxSize> data;
+	int size_ = 0;
+	FastSmallVector() {}
+	static std::optional<FastSmallVector> Combine(const FastSmallVector& a, const T& val, const FastSmallVector& b) {
+		if (a.size() + b.size() + 1 > MaxSize)
+			return std::nullopt;
+		FastSmallVector result;
+		int i = 0;
+		for (; i < a.size(); ++i)
+			result.data[i] = a[i];
+		result.data[i++] = val;
+		for (; i < b.size(); ++i)
+			result.data[i] = b[i - (a.size() - 1)];
+		return result;
+	}
+	int size() const { return size_; }
+	bool empty() const { return size() == 0; }
+	const T& operator[](int i) const { return data[i]; }
+};

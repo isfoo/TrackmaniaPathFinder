@@ -145,19 +145,19 @@ void writeSolutionFileEpilog(const std::string& outputFileName, std::atomic<bool
 	solutionsFile << "END " << (taskWasCanceled ? "(Canceled)" : "(Completed)") << "\n";
 }
 
-void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t>& solution, int time, const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix, const std::vector<std::vector<std::vector<bool>>>& useRespawnMatrix) {
+void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t>& solution, int time, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
 	solutionsFile << std::fixed << std::setprecision(1);
 	solutionsFile << std::setw(8) << time / 10.0 << " ";
 	solutionsFile << createSolutionString(solution, repeatNodeMatrix, useRespawnMatrix) << '\n';
 }
-void writeSolutionToFile(const std::string& outputFileName, const std::vector<int16_t>& solution, int time, const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix, const std::vector<std::vector<std::vector<bool>>>& useRespawnMatrix) {
+void writeSolutionToFile(const std::string& outputFileName, const std::vector<int16_t>& solution, int time, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
 	if (!outputFileName.empty()) {
 		std::ofstream solutionsFile(outputFileName, std::ios::app);
 		writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix, useRespawnMatrix);
 	}
 }
 
-void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsView, const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix, const std::vector<std::vector<std::vector<bool>>>& useRespawnMatrix) {
+void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsView, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
 	std::vector<std::pair<std::vector<int16_t>, int>> sortedSolutions;
 	for (int i = 0; i < solutionsView.size(); ++i) {
 		sortedSolutions.push_back(solutionsView[i]);
