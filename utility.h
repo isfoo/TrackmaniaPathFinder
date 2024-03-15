@@ -253,6 +253,14 @@ private:
 };
 
 
+std::optional<int> parseInt(const std::string& s) {
+	if (s.empty())
+		return std::nullopt;
+	if (s[0] == '0')
+		return 0;
+	auto result = atoi(s.c_str());
+	return result != 0 ? std::optional{ result } : std::nullopt;
+}
 std::optional<int> parseFloatAsInt(const std::string& s, int multiplyFactor=1) {
 	if (s.empty())
 		return std::nullopt;

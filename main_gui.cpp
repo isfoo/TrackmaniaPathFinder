@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
 
 	int ignoredValueInput = 600;
 	int ignoredValue = ignoredValueInput * 10;
-	float inputLimitValue = 100'000;
+	int inputLimitValue = 100'000;
 	int limitValue = inputLimitValue * 10;
 	int maxSolutionCount = 100;
 	int maxRepeatNodesToAdd = 100;
@@ -41,7 +41,8 @@ int main(int argc, char** argv) {
 	constexpr int MinFontSize = 8;
 	constexpr int MaxFontSize = 30;
 	int fontSize = 15;
-	std::vector<std::vector<std::vector<int>>> repeatNodeMatrix;
+	std::vector<std::vector<std::vector<std::vector<uint8_t>>>> repeatNodeMatrix;
+	std::vector<std::vector<std::vector<bool>>> useRespawnMatrix;
 	ThreadSafeVec<std::pair<std::vector<int16_t>, int>> solutionsView;
 	std::vector<std::pair<std::vector<int16_t>, int>> bestFoundSolutions;
 	std::atomic<int> partialSolutionCount = 0;
@@ -58,6 +59,9 @@ int main(int argc, char** argv) {
 
 	std::vector<int> repeatNodesTurnedOff;
 	char inputTurnedOffRepeatNodes[1024] = { 0 };
+
+	std::vector<int> ringCps;
+	char inputRingCps[1024] = { 0 };
 
 	bool isHeuristicAlgorithm = false;
 
@@ -111,8 +115,8 @@ int main(int argc, char** argv) {
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
-		if (ImGui::InputFloat("##max solution length", &inputLimitValue)) {
-			inputLimitValue = std::clamp(inputLimitValue, 1.0f, 100'000.0f);
+		if (ImGui::InputInt("##max solution length", &inputLimitValue)) {
+			inputLimitValue = std::clamp(inputLimitValue, 1, 100'000);
 			limitValue = inputLimitValue * 10;
 		}
 		ImGui::Text("max number of routes:");
@@ -177,6 +181,21 @@ int main(int argc, char** argv) {
 			foundRepeatNodesCount = -1;
 		}
 
+		ImGui::Text("Ring CPs:");
+		ImGui::SameLine();
+		HelpMarker("List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP\n\nWARNING: This has huge impact on algorithm performance");
+		ImGui::SameLine();
+		ImGui::SetCursorPosX(boxValuePosX);
+		ImGui::SetNextItemWidth(-1);
+		if (ImGui::InputText("##ring cps", inputRingCps, sizeof(inputRingCps))) {
+			auto nodes = splitLineOfFloatsToInts(inputRingCps, ignoredValue);
+			ringCps.clear();
+			for (auto node : nodes) {
+				if (node != ignoredValue)
+					ringCps.push_back(node);
+			}
+		}
+
 		ImGui::Text("allow repeat CPs:");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
@@ -205,15 +224,6 @@ int main(int argc, char** argv) {
 						repeatNodesTurnedOff.push_back(node);
 				}
 			}
-
-			if (ImGui::Button("Count repeat connections")) {
-				foundRepeatNodesCount = countRepeatNodeEdges(loadCsvData(inputDataFile, ignoredValue, errorMsg), ignoredValue, repeatNodesTurnedOff);
-			}
-			if (foundRepeatNodesCount != -1) {
-				ImGui::SameLine();
-				ImGui::SetCursorPosX(boxValuePosX);
-				ImGui::Text("Found %d repeat repeat connections.", foundRepeatNodesCount);
-			}
 		} else {
 			foundRepeatNodesCount = -1;
 			maxRepeatNodesToAdd = 100;
@@ -231,23 +241,55 @@ int main(int argc, char** argv) {
 				taskWasCanceled = false;
 				partialSolutionCount = 0;
 				repeatNodeMatrix.clear();
-				auto A = loadCsvData(inputDataFile, ignoredValue, errorMsg);
+				bestFoundSolutions.clear();
+				solutionsView.clear();
+				auto [A, B] = loadCsvData(inputDataFile, ignoredValue, errorMsg);
+
 				if (allowRepeatNodes) {
-					repeatNodeMatrix = addRepeatNodeEdges(A, ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
+					repeatNodeMatrix = addRepeatNodeEdges(A, B, ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
 				}
+
+				useRespawnMatrix = std::vector<std::vector<std::vector<bool>>>(B.size());
+				for (auto& v : useRespawnMatrix) {
+					v.resize(B.size(), std::vector<bool>(B.size(), false));
+				}
+				for (auto ringCp : ringCps) {
+					if (ringCp >= B.size())
+						continue;
+					for (int i = 0; i < B.size(); ++i) {
+						if (std::find(ringCps.begin(), ringCps.end(), i) != ringCps.end())
+							continue;
+						for (int j = 0; j < B.size(); ++j) {
+							if (j == ringCp)
+								continue;
+							if (A[ringCp][i] < ignoredValue && B[j][i].back() < B[j][ringCp][i]) {
+								// faster to respawn from ringCp to i then go from i to j, then to directly go from ring to j
+								B[j][ringCp][i] = B[j][i].back();
+								useRespawnMatrix[j][ringCp][i] = true;
+								if (!repeatNodeMatrix.empty()) {
+									repeatNodeMatrix[j][ringCp][i] = repeatNodeMatrix[j][i].back();
+								}
+								A[j][ringCp] = std::min(A[j][ringCp], B[j][i].back());
+							}
+						}
+					}
+				}
+
+				if (!isExactAlgorithm && isUsingExtendedMatrix(B)) {
+					errorMsg = "Cannot use heuristic algorithm with sequence dependent input data or ring CPs";
+				}
+
 				if (errorMsg.empty()) {
-					bestFoundSolutions.clear();
-					solutionsView.clear();
 					timer = Timer();
 					clearFile(outputDataFile);
 					writeSolutionFileProlog(appendDataFile, inputDataFile, limitValue, isExactAlgorithm, allowRepeatNodes, repeatNodesTurnedOff);
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, appendDataFile, outputDataFile, A, ignoredValue, limitValue, maxSolutionCount, programPath, heuristicSearchDepth]() mutable {
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, &useRespawnMatrix, appendDataFile, outputDataFile, A, B, ignoredValue, limitValue, maxSolutionCount, programPath, heuristicSearchDepth]() mutable {
 						if (isExactAlgorithm)
-							runAlgorithm(A, maxSolutionCount, limitValue, ignoredValue, solutionsView, appendDataFile, outputDataFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+							runAlgorithm(A, B, maxSolutionCount, limitValue, ignoredValue, solutionsView, appendDataFile, outputDataFile, repeatNodeMatrix, useRespawnMatrix, partialSolutionCount, taskWasCanceled);
 						else
-							runAlgorithmHlk(A, programPath, heuristicSearchDepth, appendDataFile, outputDataFile, ignoredValue, maxSolutionCount, limitValue, solutionsView, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+							runAlgorithmHlk(A, programPath, heuristicSearchDepth, appendDataFile, outputDataFile, ignoredValue, maxSolutionCount, limitValue, solutionsView, repeatNodeMatrix, useRespawnMatrix, partialSolutionCount, taskWasCanceled);
 						writeSolutionFileEpilog(appendDataFile, taskWasCanceled);
-						overwriteFileWithSortedSolutions(outputDataFile, maxSolutionCount, solutionsView, repeatNodeMatrix);
+						overwriteFileWithSortedSolutions(outputDataFile, maxSolutionCount, solutionsView, repeatNodeMatrix, useRespawnMatrix);
 						timer.stop();
 					});
 				}
@@ -305,7 +347,7 @@ int main(int argc, char** argv) {
 		while (clipper.Step()) {
 			for (int j = clipper.DisplayStart; j < clipper.DisplayEnd; ++j) {
 				auto& [B_, time] = bestFoundSolutions[j];
-				auto solStr = createSolutionString(B_, repeatNodeMatrix);
+				auto solStr = createSolutionString(B_, repeatNodeMatrix, useRespawnMatrix);
 				ImGui::Text("%.1f", time / 10.0);
 				ImGui::SameLine();
 				ImGui::SetNextItemWidth(-1);

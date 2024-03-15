@@ -23,15 +23,18 @@
 
 struct SolutionConfig {
 	SolutionConfig(
-		const std::vector<std::vector<int>>& weights, int maxSolutionCount, int& limit,
+		const std::vector<std::vector<int>>& weights, 
+		const std::vector<std::vector<std::vector<int>>> condWeights,
+		int maxSolutionCount, int& limit,
 		ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec, 
 		const std::string& appendFileName, const std::string& outputFileName,
-		const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, 
+		const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix,
+		const std::vector<std::vector<std::vector<bool>>>& useRespawnMatrix,
 		std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled)
 		: 
-		weights(weights), maxSolutionCount(maxSolutionCount), limit(limit), 
+		weights(weights), condWeights(condWeights), maxSolutionCount(maxSolutionCount), limit(limit),
 		solutionsVec(solutionsVec),
-		appendFileName(appendFileName), outputFileName(outputFileName), repeatNodeMatrix(repeatNodeMatrix),
+		appendFileName(appendFileName), outputFileName(outputFileName), repeatNodeMatrix(repeatNodeMatrix), useRespawnMatrix(useRespawnMatrix),
 		partialSolutionCount(partialSolutionCount), taskWasCanceled(taskWasCanceled)
 	{}
 
@@ -45,28 +48,32 @@ struct SolutionConfig {
 	};
 
 	std::vector<std::vector<int>> weights;
+	std::vector<std::vector<std::vector<int>>> condWeights;
 	int maxSolutionCount;
 	int& limit;
 	ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec;
 	std::vector<BestSolution> bestSolutions;
 	const std::string& appendFileName;
 	const std::string& outputFileName;
-	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix;
+	const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix;
+	const std::vector<std::vector<std::vector<bool>>>& useRespawnMatrix;
 	std::atomic<int>& partialSolutionCount;
 	std::atomic<bool>& taskWasCanceled;
 	bool useAbros = false;
 };
 
-std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& solution, const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix) {
+std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& solution, const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix) {
+	auto B = solution;
+	B.insert(B.begin(), int16_t(repeatNodeMatrix.size() - 1));
 	std::vector<int16_t> solutionWithRepeats;
-	for (int i = 0; i < solution.size(); ++i) {
-		if (i > 0 && !repeatNodeMatrix.empty() && !repeatNodeMatrix[solution[i]][solution[i - 1]].empty()) {
-			auto& repeatNodes = repeatNodeMatrix[solution[i]][solution[i - 1]];
+	for (int i = 1; i < B.size(); ++i) {
+		if (i > 1 && !repeatNodeMatrix.empty() && !repeatNodeMatrix[B[i]][B[i - 1]][B[i - 2]].empty()) {
+			auto& repeatNodes = repeatNodeMatrix[B[i]][B[i - 1]][B[i - 2]];
 			for (int i = 0; i < repeatNodes.size(); ++i) {
 				solutionWithRepeats.push_back(repeatNodes[i]);
 			}
 		}
-		solutionWithRepeats.push_back(solution[i]);
+		solutionWithRepeats.push_back(B[i]);
 	}
 	return solutionWithRepeats;
 }
@@ -84,7 +91,7 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::pair<std::vec
 	}
 
 	config.solutionsVec.push_back_not_thread_safe(solution);
-	writeSolutionToFile(config.appendFileName, solution.first, solution.second, config.repeatNodeMatrix);
+	writeSolutionToFile(config.appendFileName, solution.first, solution.second, config.repeatNodeMatrix, config.useRespawnMatrix);
 
 	if (config.bestSolutions.size() < config.maxSolutionCount) {
 		config.bestSolutions.emplace_back(solution.first, solutionWithRepeats, solution.second);
@@ -119,7 +126,7 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<int
 				if (i == k)
 					continue;
 				auto time = A[k][j] + A[j][i];
-				if (time < A[k][i]) {
+				if (time < A[k][i] && time < ignoredValue) {
 					if (std::find(turnedOffRepeatNodes.begin(), turnedOffRepeatNodes.end(), j) == turnedOffRepeatNodes.end())
 						additionalPaths.emplace_back(k, j, i);
 				}
@@ -130,47 +137,42 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<int
 	return additionalPaths;
 }
 
-int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxEdgesToAdd) {
+int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxEdgesToAdd) {
 	auto ACopy = A;
+	auto BCopy = B;
 	int addedEdgesCount = 0;
 	for (int m = 0; m < additionalPaths.size() && addedEdgesCount < maxEdgesToAdd; ++m) {
 		auto k = additionalPaths[m].k;
 		auto j = additionalPaths[m].j;
 		auto i = additionalPaths[m].i;
-		addedEdgesCount += repeatEdgeMatrix[k][i].empty();
-		repeatEdgeMatrix[k][i] = repeatEdgeMatrix[j][i];
-		repeatEdgeMatrix[k][i].push_back(j);
-		repeatEdgeMatrix[k][i].insert(repeatEdgeMatrix[k][i].end(), repeatEdgeMatrix[k][j].begin(), repeatEdgeMatrix[k][j].end());
+		addedEdgesCount += repeatEdgeMatrix[k][i].back().empty();
+		for (int z = 0; z < B.size(); ++z) {
+			auto newTime = B[k][j][i] + B[j][i][z];
+			if (newTime < BCopy[k][i][z]) {
+				repeatEdgeMatrix[k][i][z] = repeatEdgeMatrix[j][i][z];
+				repeatEdgeMatrix[k][i][z].push_back(j);
+				repeatEdgeMatrix[k][i][z].insert(repeatEdgeMatrix[k][i][z].end(), repeatEdgeMatrix[k][j][i].begin(), repeatEdgeMatrix[k][j][i].end());
+				BCopy[k][i][z] = newTime;
+			}
+		}
 		ACopy[k][i] = additionalPaths[m].time(A);
 	}
 	A = ACopy;
+	B = BCopy;
 	return addedEdgesCount;
 }
 
-std::vector<std::vector<std::vector<int>>> addRepeatNodeEdges(std::vector<std::vector<int>>& A, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
-	std::vector<std::vector<std::vector<int>>> repeatEdgeMatrix(A.size(), std::vector<std::vector<int>>(A.size()));
-	for (int i = 0; i < 5; ++i) {
+std::vector<std::vector<std::vector<std::vector<uint8_t>>>> addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
+	auto repeatEdgeMatrix = std::vector<std::vector<std::vector<std::vector<uint8_t>>>>(B.size());
+	for (auto& v : repeatEdgeMatrix) {
+		v.resize(A.size(), std::vector<std::vector<uint8_t>>(A.size()));
+	}
+	for (int i = 0; i < 2; ++i) {
 		auto repeatEdges = getRepeatNodeEdges(A, ignoredValue, turnedOffRepeatNodes);
-		auto edgesAdded = addRepeatNodeEdges(A, repeatEdgeMatrix, repeatEdges, maxEdgesToAdd);
+		auto edgesAdded = addRepeatNodeEdges(A, B, repeatEdgeMatrix, repeatEdges, maxEdgesToAdd);
 		maxEdgesToAdd = std::max<int>(0, maxEdgesToAdd - edgesAdded);
 	}
 	return repeatEdgeMatrix;
-}
-
-int countRepeatNodeEdges(const std::vector<std::vector<int>>& A, int ignoredValue, std::vector<int> turnedOffRepeatNodes) {
-	std::vector<std::vector<std::vector<int>>> repeatEdgeMatrix(A.size(), std::vector<std::vector<int>>(A.size()));
-	auto A_ = A;
-	for (int i = 0; i < 5; ++i) {
-		auto repeatEdges = getRepeatNodeEdges(A_, ignoredValue, turnedOffRepeatNodes);
-		addRepeatNodeEdges(A_, repeatEdgeMatrix, repeatEdges, std::numeric_limits<int>::max());
-	}
-	int repeatEdgesCount = 0;
-	for (int i = 0; i < A.size(); ++i) {
-		for (int j = 0; j < A.size(); ++j) {
-			repeatEdgesCount += !repeatEdgeMatrix[i][j].empty();
-		}
-	}
-	return repeatEdgesCount;
 }
 
 std::vector<std::vector<int>> createAtspMatrixFromInput(const std::vector<std::vector<int>>& weights) {
@@ -379,9 +381,11 @@ struct AssignmentSolution {
 
 	// loose variables - normal assignment copy
 	const std::vector<std::vector<EdgeCostType>>* costMatrix;
+	const std::vector<std::vector<std::vector<EdgeCostType>>>* costMatrixEx;
 	int problemSize = 0;
 	EdgeCostType ignoredValue;
 	EdgeCostType cost = 0;
+	bool useExtendedMatrix;
 
 	// initialized data (do full copy)
 	Array<EdgeCostType> inReductions;
@@ -393,6 +397,7 @@ struct AssignmentSolution {
 	ArrayWithSize<NodeType> unassignedDstNodes;
 	Array<bool> unassignedDstNodesSet;
 	ArrayWithSize<PartialRoute> partialRoutes;
+	Array<uint16_t> costIncreases;
 
 	// uninitialized data (don't copy, just assign memory)
 	Array<EdgeCostType> minFrom;
@@ -404,7 +409,7 @@ struct AssignmentSolution {
 	AdjList2 adjList;
 	AdjList2 revAdjList;
 
-	static int InitializedSectionSize(int problemSize) {
+	static int InitializedSectionSize(int problemSize, bool useExtendedMatrix) {
 		int size = 0;
 		size += (problemSize + 1) * sizeof(EdgeCostType); // inReductions
 		size += (problemSize + 1) * sizeof(EdgeCostType); // outReductions
@@ -415,6 +420,9 @@ struct AssignmentSolution {
 		size += (problemSize + 1) * sizeof(NodeType); // unassignedDstNodes
 		size += (problemSize + 1) * sizeof(bool); // unassignedDstNodesSet
 		size += (problemSize + 1) * sizeof(PartialRoute); // partialRoutes
+		if (useExtendedMatrix) {
+			size += problemSize * problemSize * sizeof(uint16_t); // costIncreases
+		}
 		return size;
 	}
 	static int UninitializedSectionSize(int problemSize) {
@@ -425,18 +433,18 @@ struct AssignmentSolution {
 		size += (problemSize + 1) * sizeof(NodeType); // nodesInZ
 		return size;
 	}
-	static int RequiredAllocationSize(int problemSize, int strideSize) {
-		int requiredSize = InitializedSectionSize(problemSize) + UninitializedSectionSize(problemSize);
+	static int RequiredAllocationSize(int problemSize, int strideSize, bool useExtendedMatrix) {
+		int requiredSize = InitializedSectionSize(problemSize, useExtendedMatrix) + UninitializedSectionSize(problemSize);
 		requiredSize += strideSize * problemSize * sizeof(NodeType); // adjList
 		requiredSize += strideSize * problemSize * sizeof(NodeType); // revAdjList
 		return requiredSize;
 	}
-	static int RequiredAllocationSize(int problemSize) {
-		return RequiredAllocationSize(problemSize, problemSize + 1);
+	static int RequiredAllocationSize(int problemSize, bool useExtendedMatrix) {
+		return RequiredAllocationSize(problemSize, problemSize + 1, useExtendedMatrix);
 	}
 	
 	int minimumAllocationSize() const {
-		int size = InitializedSectionSize(problemSize) + UninitializedSectionSize(problemSize);
+		int size = InitializedSectionSize(problemSize, useExtendedMatrix) + UninitializedSectionSize(problemSize);
 		size += adjList.stride_* adjList.size() * sizeof(NodeType);
 		size += revAdjList.stride_* revAdjList.size() * sizeof(NodeType);
 		return size;
@@ -444,8 +452,10 @@ struct AssignmentSolution {
 	
 	void assignLooseVariables(const AssignmentSolution& other) {
 		costMatrix = other.costMatrix;
+		costMatrixEx = other.costMatrixEx;
 		problemSize = other.problemSize;
 		ignoredValue = other.ignoredValue;
+		useExtendedMatrix = other.useExtendedMatrix;
 		cost = other.cost;
 	}
 	void assignNonLooseVariables(const AssignmentSolution& other) {
@@ -458,6 +468,7 @@ struct AssignmentSolution {
 		unassignedDstNodes = other.unassignedDstNodes;
 		unassignedDstNodesSet = other.unassignedDstNodesSet;
 		partialRoutes = other.partialRoutes;
+		costIncreases = other.costIncreases;
 		minFrom = other.minFrom;
 		prv = other.prv;
 		inZ = other.inZ;
@@ -478,6 +489,9 @@ struct AssignmentSolution {
 		assignMemory(unassignedDstNodes);
 		assignMemory(unassignedDstNodesSet);
 		assignMemory(partialRoutes);
+		if (useExtendedMatrix) {
+			costIncreases.data = memoryPool.assignNextMemory<uint16_t>(problemSize * problemSize);
+		}
 		assignMemory(minFrom);
 		assignMemory(prv);
 		assignMemory(inZ);
@@ -486,7 +500,7 @@ struct AssignmentSolution {
 		revAdjList.data_.data = memoryPool.assignNextMemory<NodeType>(revAdjListStride * problemSize);
 	}
 	void copyInitializedDataSection(const AssignmentSolution& other) {
-		std::memcpy(memoryPool.memory, other.memoryPool.memory, InitializedSectionSize(other.problemSize));
+		std::memcpy(memoryPool.memory, other.memoryPool.memory, InitializedSectionSize(other.problemSize, other.useExtendedMatrix));
 		unassignedDstNodes.size_ = other.unassignedDstNodes.size();
 		partialRoutes.size_ = other.partialRoutes.size();
 	}
@@ -518,11 +532,12 @@ struct AssignmentSolution {
 	}
 	AssignmentSolution& operator=(const AssignmentSolution&) = delete;
 
-	AssignmentSolution(ArrayOfPoolAllocators& allocators, const std::vector<std::vector<EdgeCostType>>* costMatrix, EdgeCostType ignoredValue) :
-		memoryPool(allocators), costMatrix(costMatrix), ignoredValue(ignoredValue)
+	AssignmentSolution(ArrayOfPoolAllocators& allocators, const std::vector<std::vector<EdgeCostType>>* costMatrix, 
+		const std::vector<std::vector<std::vector<EdgeCostType>>>* costMatrixEx, EdgeCostType ignoredValue, bool useExtendedMatrix) :
+		memoryPool(allocators), costMatrix(costMatrix), costMatrixEx(costMatrixEx), ignoredValue(ignoredValue), useExtendedMatrix(useExtendedMatrix)
 	{
 		problemSize = int(costMatrix->size());
-		memoryPool.allocate(RequiredAllocationSize(problemSize));
+		memoryPool.allocate(RequiredAllocationSize(problemSize, useExtendedMatrix));
 		assignMemory(problemSize + 1, problemSize + 1);
 
 		std::fill(inReductions.data, inReductions.data + problemSize + 1, 0);
@@ -533,6 +548,9 @@ struct AssignmentSolution {
 		std::fill(lockedInEdges.data, lockedInEdges.data + problemSize + 1, -1);
 		std::fill(unassignedDstNodesSet.data, unassignedDstNodesSet.data + problemSize + 1, true);
 		std::iota(unassignedDstNodes.data, unassignedDstNodes.data + problemSize, 0);
+		if (useExtendedMatrix) {
+			std::fill(costIncreases.data, costIncreases.data + problemSize * problemSize, 0);
+		}
 		unassignedDstNodes.size_ = problemSize;
 		partialRoutes.size_ = 0;
 
@@ -628,6 +646,13 @@ struct AssignmentSolution {
 			return false;
 		}
 
+		if (useExtendedMatrix) {
+			for (int m = 0; m < adjList[edge.second].size(); ++m) {
+				int i = adjList[edge.second][m];
+				costIncreases[i * size() + edge.second] = (*costMatrixEx)[i][edge.second][edge.first] - (*costMatrix)[i][edge.second];
+			}
+		}
+
 		return true;
 	}
 	bool removeOutEdge(Edge edge) {
@@ -661,6 +686,19 @@ struct AssignmentSolution {
 			return false;
 		if (inEdgeToLock != NullEdge && !lockEdge(In, inEdgeToLock))
 			return false;
+
+		if (useExtendedMatrix) {
+			for (int m = 0; m < adjList[edge.second].size(); ++m) {
+				int i = adjList[edge.second][m];
+				int minRemainingValue = Inf;
+				for (int k = 0; k < revAdjList[edge.second].size(); ++k) {
+					auto j = revAdjList[edge.second][k];
+					minRemainingValue = std::min(minRemainingValue, (*costMatrixEx)[i][edge.second][j]);
+				}
+				costIncreases[i * size() + edge.second] = minRemainingValue - (*costMatrix)[i][edge.second];
+			}
+		}
+
 		return true;
 	}
 	bool removeOutEdgeIfExists(Edge edge) {
@@ -716,7 +754,7 @@ struct AssignmentSolution {
 		return adjList.size();
 	}
 	int valueAt(NodeType i, NodeType j) {
-		return (*costMatrix)[j][i] - outReductions[i] - inReductions[j];
+		return (*costMatrix)[j][i] - outReductions[i] - inReductions[j] + (useExtendedMatrix ? costIncreases[j * size() + i] : 0);
 	}
 	int operator()(NodeType i, NodeType j) {
 		return valueAt(i, j);
@@ -845,11 +883,16 @@ void findSolutions(SolutionConfig& config, AssignmentSolution& assignmentSolutio
 	if (assignmentSolution.isComplete()) {
 		std::scoped_lock l{ solutionMutex };
 		std::vector<int16_t> solutionVec = { 0 };
+
 		for (int i = 0; i < assignmentSolution.size() - 1; ++i) {
 			solutionVec.push_back(assignmentSolution.solution[solutionVec.back()]);
 		}
+		int realCost = 0;
+		for (int i = 1; i < solutionVec.size(); ++i) {
+			realCost += config.condWeights[solutionVec[i]][solutionVec[i - 1]][i > 1 ? solutionVec[i - 2] : 0];
+		}
 		solutionVec.erase(solutionVec.begin());
-		auto solution = std::make_pair(solutionVec, assignmentSolution.cost);
+		auto solution = std::make_pair(solutionVec, realCost);
 		saveSolutionAndUpdateLimit(config, solution);
 	} else {
 		auto pivotEdge = assignmentSolution.findPivotEdge();
@@ -871,15 +914,15 @@ void findSolutions(SolutionConfig& config, AssignmentSolution& assignmentSolutio
 	}
 }
 
-void findSolutionsPriority(SolutionConfig& config, int ignoredValue) {
+void findSolutionsPriority(SolutionConfig& config, int ignoredValue, bool useExtendedMatrix) {
 	ArrayOfPoolAllocators freeLists(1024, { 
-		AssignmentSolution::RequiredAllocationSize(int(config.weights.size())),
-		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 2)),
-		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 4)),
-		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 8)),
-		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 16)),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), useExtendedMatrix),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 2), useExtendedMatrix),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 4), useExtendedMatrix),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 8), useExtendedMatrix),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 16), useExtendedMatrix),
 	});
-	AssignmentSolution initialSolution(freeLists, &config.weights, ignoredValue);
+	AssignmentSolution initialSolution(freeLists, &config.weights, &config.condWeights, ignoredValue, useExtendedMatrix);
 
 	initialSolution.shrinkToFit();
 	hungarianMethod(initialSolution);
@@ -889,6 +932,9 @@ void findSolutionsPriority(SolutionConfig& config, int ignoredValue) {
 	const int ThreadCount = (std::thread::hardware_concurrency() > 0) ? std::thread::hardware_concurrency() : 1;
 
 	PriorityQueue<AssignmentSolution> assignmentQueue([](auto& a, auto& b) { return a.cost > b.cost; });
+
+	if (config.weights.size() >= 30 || (useExtendedMatrix && config.weights.size() >= 15))
+		assignmentQueue.heap.reserve(MaxQueueSize); // reserve only if not trivial problem
 
 	assignmentQueue.push(std::move(initialSolution));
 	std::atomic<int> lastCleanupCount = 0;
@@ -925,6 +971,7 @@ void findSolutionsPriority(SolutionConfig& config, int ignoredValue) {
 				auto assignmentSolution = assignmentQueue.pop();
 				if (!assignmentSolution)
 					continue;
+
 				{
 					// Could be the case that old possible solutions can be discarded early, because they
 					// cost more than updated max solution time limit. This will free up some space for queue.
@@ -943,22 +990,45 @@ void findSolutionsPriority(SolutionConfig& config, int ignoredValue) {
 	delete[] threadIsWaiting;
 }
 
+bool isUsingExtendedMatrix(std::vector<std::vector<std::vector<int>>> B) {
+	std::fill(B[0].back().begin(), B[0].back().end(), 0);
+	bool useExtendedMatrix = false;
+	for (int i = 0; i < B.size(); ++i) {
+		for (int j = 0; j < B.size(); ++j) {
+			auto val = B[i][j][0];
+			for (int k = 0; k < B.size(); ++k) {
+				if (B[i][j][k] != val) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
 void runAlgorithm(
-	const std::vector<std::vector<int>>& A_, int maxSolutionCount, int limit, int ignoredValue, 
+	const std::vector<std::vector<int>>& A_, const std::vector<std::vector<std::vector<int>>>& B_, int maxSolutionCount, int limit, int ignoredValue, 
 	ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec,
 	const std::string& appendFileName, const std::string& outputFileName,
-	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix,
+	const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix,
+	const std::vector<std::vector<std::vector<bool>>>& userRespawnMatrix,
 	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
 	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);
-	SolutionConfig config(A, maxSolutionCount, limit, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
-	findSolutionsPriority(config, ignoredValue);
+	auto B = B_;
+	std::fill(B[0].back().begin(), B[0].back().end(), 0);
+	auto useExtendedMatrix = isUsingExtendedMatrix(B_);
+	SolutionConfig config(A, B, maxSolutionCount, limit, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, userRespawnMatrix, partialSolutionCount, taskWasCanceled);
+	findSolutionsPriority(config, ignoredValue, useExtendedMatrix);
 }
 
 
 std::pair<std::vector<int16_t>, int> runHlk(SolutionConfig& config, std::vector<std::vector<int>> weights, LkhSharedMemoryManager& sharedMemory, const char* programPath, std::mutex& fileWriteMutex) {
 	auto solution = runLkhInChildProcess(sharedMemory, weights, config.taskWasCanceled);
 	if (solution.empty()) {
+		return { {}, 0 };
+	}
+	if (std::find(solution.begin(), solution.end() - 1, solution.size() - 1) != solution.end() - 1) {
 		return { {}, 0 };
 	}
 
@@ -1031,12 +1101,13 @@ void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weigh
 
 void runAlgorithmHlk(const std::vector<std::vector<int>>& A_, const char* programPath, int searchDepth,
 	const std::string& appendFile, const std::string& outputFile, int ignoredValue, int maxSolutionCount, int limit, ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec,
-	const std::vector<std::vector<std::vector<int>>>& repeatNodeMatrix, std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
+	const std::vector<std::vector<std::vector<std::vector<uint8_t>>>>& repeatNodeMatrix, const std::vector<std::vector<std::vector<bool>>>& userRespawnMatrix,
+	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
 ) {
 	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);
 
 	int threadCount = 16;
-	auto config = SolutionConfig(A, maxSolutionCount, limit, solutionsVec, appendFile, outputFile, repeatNodeMatrix, partialSolutionCount, taskWasCanceled);
+	auto config = SolutionConfig(A, {}, maxSolutionCount, limit, solutionsVec, appendFile, outputFile, repeatNodeMatrix, userRespawnMatrix, partialSolutionCount, taskWasCanceled);
 	ThreadPool threadPool(threadCount, 1000);
 	std::mutex writeFileMutex;
 	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, int(A.size())); // +1 for main thread
