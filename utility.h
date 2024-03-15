@@ -341,6 +341,7 @@ template<typename T> struct FastSmallVector {
 		result.data[i++] = val;
 		for (; i < b.size(); ++i)
 			result.data[i] = b[i - (a.size() - 1)];
+		result.size_ = a.size() + b.size() + 1;
 		return result;
 	}
 	int size() const { return size_; }
