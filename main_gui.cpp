@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
 			foundRepeatNodesCount = -1;
 		}
 
-		ImGui::Text("Ring CPs:");
+		ImGui::Text("ring CPs:");
 		ImGui::SameLine();
 		HelpMarker("List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP\n\nWARNING: This has huge impact on algorithm performance");
 		ImGui::SameLine();
