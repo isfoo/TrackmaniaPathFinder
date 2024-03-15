@@ -172,7 +172,7 @@ Note that even the 100+ CP Lars spreadsheets are easily processed using exact al
 
 ## Implementation details
 
-The problem solved by this program can be most accurately described as finding the top N lowest weight hamiltonian paths in directed graph. Since problem of finding minimum weight hamiltonian path is a relaxed version of traveling salesman problem, generally in literature the algorithms are made and decsribed for the latter. Thus the algorithms used are made for finding top N solutions to ATSP (Asymmetric Traveling Salesman Problem).
+The problem solved by this program can be most accurately described as finding the top N lowest weight hamiltonian paths in directed graph with sequence dependent weights. Since problem of finding minimum weight hamiltonian path is a relaxed version of traveling salesman problem, generally in literature the algorithms are made and decsribed for the latter. Thus the algorithms used are made for finding top N solutions to SDATSP (Sequence Dependent Asymmetric Traveling Salesman Problem).
 
 Although You will find online some efficient programs that solve TSP there are a couple of problems: 
 1. It's hard to find a program that is fast and easy to use - most good solvers are using command line interface or are just an API in some programming language.
@@ -209,6 +209,12 @@ Input: `N` by `N` matrix with edge costs; `K` - number of best solutions to find
     2. Remove edge `E` - Set the value of that edge to infinity. Go to step 1.
 
 Since the algorithm tries for each edge to either include it at step 4.1 or exclude it at step 4.2 we are guaranteed to go through all possible combinations. However because at each step we calculate current **LowerBound** on minimal cost of the solution we will be able to relatively quickly realize there is no point in recursing futher and can skip tons of routes.
+
+#### Sequence dependence
+
+The program supports different weights depending on previous node in path. Note that this allows to model the speed/angle of entry by proxy, but also partially model ring CPs. Let's say I have a connection from CP 2 to CP 3 and from CP 2 to CP 4. If CP 3 is a ring CP this simply means that I can add a connection between CP 3 and CP 4 with the same cost as going from CP 2 to CP 4, as long as CP 2 was preceding CP 3, otherwise this connection doesn't exist.
+
+The desribed above algorithm doesn't natively support such sequence dependent weights. What we do is we create a graph that for each conditional connection takes its lowest possible value. That is we assume each connection will happen to end up in a best case scenario. We use this new graph for the above algorithm. During the algorithm when some connection is removed we can update the graph weights if after removing a connection the minimum weight has increased.
 
 ### Heuristic algorithm
 
