@@ -577,6 +577,14 @@ struct AssignmentSolution {
 		return partialRoutes.size() == 1 && partialRoutes[0].size == size() - 1;
 	}
 
+	void addUnassignedDstNode(NodeType node) {
+		if (!unassignedDstNodesSet[node]) {
+			unassignedDstNodesSet[node] = true;
+			unassignedDstNodes.push_back(node);
+			solution[revSolution[node]] = NullNode;
+		}
+	}
+
 	bool lockOutEdge(Edge edge) {
 		/*
 			Locking edge A -> B means:
@@ -647,18 +655,18 @@ struct AssignmentSolution {
 		if (useExtendedMatrix) {
 			for (int m = 0; m < adjList[edge.second].size(); ++m) {
 				int i = adjList[edge.second][m];
-				costIncreases[i * size() + edge.second] = (*costMatrixEx)[i][edge.second][edge.first] - (*costMatrix)[i][edge.second];
+				auto newCostIncrease = (*costMatrixEx)[i][edge.second][edge.first] - (*costMatrix)[i][edge.second];
+				if (newCostIncrease > costIncreases[i * size() + edge.second]) {
+					costIncreases[i * size() + edge.second] = newCostIncrease;
+					addUnassignedDstNode(i);
+				}
 			}
 		}
 
 		return true;
 	}
 	bool removeOutEdge(Edge edge) {
-		if (!unassignedDstNodesSet[edge.second]) {
-			unassignedDstNodesSet[edge.second] = true;
-			unassignedDstNodes.push_back(edge.second);
-			solution[revSolution[edge.second]] = NullNode;
-		}
+		addUnassignedDstNode(edge.second);
 
 		if (adjList[edge.first].size() <= 1)
 			return false;
@@ -693,7 +701,11 @@ struct AssignmentSolution {
 					auto j = revAdjList[edge.second][k];
 					minRemainingValue = std::min(minRemainingValue, (*costMatrixEx)[i][edge.second][j]);
 				}
-				costIncreases[i * size() + edge.second] = minRemainingValue - (*costMatrix)[i][edge.second];
+				auto newCostIncrease = minRemainingValue - (*costMatrix)[i][edge.second];
+				if (newCostIncrease > costIncreases[i * size() + edge.second]) {
+					costIncreases[i * size() + edge.second] = newCostIncrease;
+					addUnassignedDstNode(i);
+				}
 			}
 		}
 
