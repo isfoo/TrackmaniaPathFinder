@@ -12,7 +12,7 @@ If you have any questions / feature requests the best way is to contact me throu
 
 ## Program screenshot
 
-![screenshot](https://github.com/isfoo/TrackmaniaPathFinder/assets/128239594/53fb4730-fa6a-497c-bab2-ea2ecd14148a)
+![screenshot](https://github.com/isfoo/TrackmaniaPathFinder/assets/128239594/9b9eb375-df4d-4c8e-a796-f4f8b663f578)
 
 ## Input spreadsheet
 
@@ -68,6 +68,22 @@ Currently the implementation only takes into account the first significant digit
 
 Note that the decimal part of a number uses decimal point and not a comma - that is important to keep in mind, because if you export your data from somewhere it might save those values with commas instead of decimal points and then the program won't be able to read the values correctly.
 
+### Extended input spreadsheet - sequence dependence
+
+Often how long it takes to go from CP `A` to CP `B` depends on from which way and at what speed you took CP `A` from. The program cannot understand entry angle or speed as it's highly track dependent, however this mostly depends on what CP was taken before CP `A`. 
+
+That is imagine that going from CP `A` to CP `B` takes 10 seconds if we came from CP `D`, but same connection takes 13 seconds if we came from CP `E`, because in the first case we could carry the speed through CP `A` and in the second case we had to stop and turn around.
+
+In order to input that data into spreadsheet we would write for connection from `A` to `B`: `10(D)13(E)` where D and E would be CP numbers. For start we use number 0. At the end of such chain it's also worth adding the time it would take to go from `A` to `B` when using standing-respawn. So if we say in that case it takes 14 seconds it would look like this: `10(D)13(E)14`. Additionally we can add multiple CPs in the brackets. Say the connection from `A` to `B` also takes 10 seconds when coming from CP `G`. In that case we have: `10(D,G)13(E)14`. 
+
+Typically when using this system I found myself having one conditional cost for going with speed from one side, and second unconditional cost for turning around/standing respawn as it's mostly the same.
+
+That this system is also useful for specifying if some connection is only possible from limited set of previous CPs. For example if connection from CP `A` to CP `B` takes 8 seconds, but can only be reasonably done with a lot of speed which can only be done if we came to CP `A` from CP `H` or `J` we would have in that case: `8(H,J)`.
+
+You can see a full real example spreadsheet using this system [here](example%20input%20data/%5BRPG%5D%20Evergreen.csv)
+
+Note that this system has significant impact on performance so abusing it will lead to increased search time for routes. For smaller maps, say up to 20-30 CPs probably can fully use it, but for larger maps you should limit it to only some connections. What you could do is first don't use this system and then after you find solutions update some of the used connections in the best solutions that would be impacted the most by previous CPs.
+
 ## Basic program usage
 
 First you need to download the program [TmPathFinder.exe](https://github.com/isfoo/TrackmaniaPathFinder/releases/latest/download/TmPathFinder.exe "TmPathFinder.exe").
@@ -89,6 +105,8 @@ Here's a basic explaination of the options:
 
 **input data file** - input file in CSV format with inserted connections as described in [Input spreadsheet](#input-spreadsheet) section. You can use **Find file** button to open windows explorer to pick the file or manually insert relative or absolute path to the file in the box to the right.
 
+**ring CPs** - Comma separated list of CP numbers that are rings. This will allow the program to also include routes where you standing-respawn after taking ring CP. In output such respawn is denoted with letter `R`. There are 3 limitations of this system. First it only finds routes, where the previously taken CP was not a ring. That is if you take normal CP then ring CP then another ring CP - it will not find the route that respawns after second ring CP to go back to the normal CP. Second limitation is performance. Using this for larger maps will significantly slow down searching for the routes. Lastly it can sometimes produce impossible routes when in combination with repeat CPs (which are explained below), however it's track dependent so it's impossible for the program to know if the route is possible or not. I won't explain when this problematic situtation happens, but if you will be unfortunate enough to stumble upon it you will easily understand it.
+
 **allow repeat CPs** - best way to understand repeat CPs is by example. Say in my spreadsheet I wrote that going from CP1 to CP2 takes 12 seconds and going from CP2 to CP3 takes 5 seconds. I didn't write anything for CP1 to CP3 connection, because I couldn't find anything good. However actually if you go through CP2 you can get from CP1 to CP3 in 12+5=17 seconds. It might actually be the case that going through CP2 multiple times is worth it and required for the optimal route. Allowing this option it would find routes with that repeated CP2. Initially you might think it's rare for such connections to be useful, but that is not the case. Usually routes end up having key CPs like for example ones with easy access to reactor boost that let you go quickly to many points of the map that otherwise would take much longer. Also it means you don't have to manually input such connections in the input spreadsheet as this program will do it for you.
 
 if you allow for repeat CPs you get additional options:
@@ -96,8 +114,6 @@ if you allow for repeat CPs you get additional options:
 **max connections to add** - how many repeat connections should be added to input spreadsheet. You can set it to arbitrarily high number to find all such connections, however if you allow for too many it might significantly affect the search time.
 
 **turned off repeat CPs** - As nice as repeat CPs can be, sometime they might lead to routes that are too hard. Imagine I have CP that allows for great connections, but the set up for them is pretty difficult (say some hard reactor flight). Allowing the reoute to go through that CP more than once might be too hard, because with repeat connections you don't have the ability to respawn and try again quickly, but have to first get to that CP. In that case this allows you to set a list of CPs you don't want to be considered in repeat connections. The list is separated by commas/spaces.
-
-**Count repeat connections** - Clicking this button will calculate the max number of repeat connections that could be added.
 
 **Run exact algorithm** - After you set all parameters this is the button you want to press to find the fastests routes. Once it's completed you will see **Status** change to **Done** which means you can find sorted list of the solutions in the **output data file**. You can also see the solutions found in the GUI application. The solutions found are guaranteed to be optimal.
 
@@ -111,9 +127,13 @@ If you followed the instructions and clicked **Run exact algorithm** and the pro
 
 2. Decrease **max route time**. You should set it something closer to the expected time the fastests routes should take. Of course you might not know that value, but if you set it to something too low the worst thing that can happen is the program will end without finding any route which will tell you that there are no possible routes with that time or lower and you can try increasing this value.
 
-3. If you set **allowed repeat CPs** and set **max connections to add** to high value (say above 1000) then try decreasing that. If you care about those repeat CPs go to step 4.
+3. If you set **ring CPs** you should try removing some/all of them. Note that in that case it will simply find all routes that don't use standing respawn. If you think using standing respawn is faster, usually you will be able to tell when it's best to do it. In that case you can create second version of the input spreadsheet that doesn't contain ring CPs and use this program to find routes between normal CPs and just take ring CPs when it's fastests.
 
-4. If none of the above works you should switch to **run heuristic algorithm**. You can adjust **heuristic search depth** to increase how deep the search will go. With this algorithm almost for sure the very first solution found will be optimal, however in general there are no guarantees on solution quality. That is, unlike with **exact** algorithm, for example the 10th best solution the **heuristic** algortithm finds might actually only be 1000th best solution. Most of the time in practice it should work very well, however because it could miss some paths this algorithm should be last resort only when **exact** algorithm is too slow.
+4. If you used sequence dependent times in input spreadsheet try removing some/all of them.
+
+5. If you set **allowed repeat CPs** and set **max connections to add** to high value (say above 1000) then try decreasing that. If you care about those repeat CPs go to step 4.
+
+6. If none of the above works you should switch to **run heuristic algorithm**. You can adjust **heuristic search depth** to increase how deep the search will go. With this algorithm almost for sure the very first solution found will be optimal, however in general there are no guarantees on solution quality. That is, unlike with **exact** algorithm, for example the 10th best solution the **heuristic** algortithm finds might actually only be 1000th best solution. Most of the time in practice it should work very well, however because it could miss some paths this algorithm should be last resort only when **exact** algorithm is too slow.
 
 ## Output format
 
@@ -129,11 +149,18 @@ In case of repeat CPs the repeated CPs are shown in brackets ```()```. For examp
 
 This means the route is: Start -> CP8 -> CP5 -> CP9 -> CP3 ->(go through CP5)-> CP4 ->(go through CP9 then CP3)-> CP1 -> CP2 -> CP6 -> CP7 -> Finish
 
+In case of ring CPs the standing respawn is shown as letter `R`. For example:
+
+```74.0 [Start,7,4,R,1-3,R,5-6,Finish]```
+
+This means CP4 and CP3 are ring checkpoints and the route is: Start -> CP7 -> CP4 ->(standing-respawn at CP7)-> CP1 -> CP2 -> CP3 ->(standing-respawn at CP2)-> CP5 -> CP6 -> Finish
+
 ## Examples of real data used for reroutes
 
 | **Map** | **CP count** | **Spreadsheet** | **Spreadsheet creator** |
 |-------------|-----------|---------|---------|
 | [Macopolis RPG](https://trackmania.exchange/maps/112275/macopolis-rpg) | 25 | [spreadsheet](example%20input%20data/Macopolis%20RPG.csv) | isfoo |
+| [[RPG] Evergreen](https://trackmania.exchange/maps/156959/rpg-evergreen) | 22 | [spreadsheet](example%20input%20data/%5BRPG%5D%20Evergreen.csv) | isfoo |
 | [MTC - Castle of Confusion](https://tm.mania-exchange.com/maps/121329/mtc-castle-of-confusion) | 18 | [spreadsheet](example%20input%20data/MTC%20-%20Castle%20of%20Confusion.csv) | Lars_tm
 | [Sobekite Eternal 2020](https://tm.mania-exchange.com/maps/182399/sobekite-eternal-2020) | 25 | [spreadsheet](example%20input%20data/Sobekite%20Eternal%202020.csv) | Lars_tm
 | [[RPG] Biozone](https://trackmania.exchange/maps/85912/rpg-biozone) | 25 | [spreadsheet](example%20input%20data/%5BRPG%5D%20Biozone.csv) | Lars_tm
@@ -152,6 +179,7 @@ Although You will find online some efficient programs that solve TSP there are a
 2. Many solvers don't natively support Asymmetric versions of TSP. For example [Concorde](https://www.math.uwaterloo.ca/tsp/concorde.html) which is consider one the best exact solvers doesn't support ATSP. Note that it's possible to convert ATSP to TSP problems by creating dummy nodes which is desribed well [here](https://www.linkedin.com/posts/andreas-beham-004279b_optimizing-asymmetric-travelling-salesperson-activity-7107809854215323648-FfuJ).
 3. No support for control over repeat nodes (aka repeat CPs)
 4. No ability to find top N solutions and not just a single one. This is a big one, because it's an important feature. There is a lot of hidden heuristic knowledge only the player generating solution has that can ultimatley decide which routes are truly the best, but to do that in practice one has to see a list of solutions. The factors are things like number of hard CPs in route and where the connections are (It's usually best to have hard connections first and easy connections last). I can also say from experience that once you have a list of routes you start to piece together a better picture of the map and it makes you realise which additional connections would be good and it leads you to finding new great connections.
+5. No support for sequence dependence (that includes ring CPs)
 
 Here's how the current implementations work:
 
