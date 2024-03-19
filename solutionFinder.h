@@ -150,7 +150,7 @@ int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector
 		for (int z = 0; z < B.size(); ++z) {
 			auto newTime = B[k][j][i] + B[j][i][z];
 			if (newTime < BCopy[k][i][z]) {
-				auto combined = FastSmallVector<uint8_t>::Combine(repeatEdgeMatrix[j][i][z], j, repeatEdgeMatrix[k][i][z]);
+				auto combined = FastSmallVector<uint8_t>::Combine(repeatEdgeMatrix[j][i][z], j, repeatEdgeMatrix[k][j][i]);
 				if (combined) {
 					repeatEdgeMatrix[k][i][z] = *combined;
 					BCopy[k][i][z] = newTime;

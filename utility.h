@@ -335,12 +335,9 @@ template<typename T> struct FastSmallVector {
 		if (a.size() + b.size() + 1 > MaxSize)
 			return std::nullopt;
 		FastSmallVector result;
-		int i = 0;
-		for (; i < a.size(); ++i)
-			result.data[i] = a[i];
-		result.data[i++] = val;
-		for (; i < b.size(); ++i)
-			result.data[i] = b[i - (a.size() - 1)];
+		std::copy(&a.data[0], &a.data[a.size_], &result.data[0]);
+		result.data[a.size()] = val;
+		std::copy(&b.data[0], &b.data[b.size_], &result.data[a.size() + 1]);
 		result.size_ = a.size() + b.size() + 1;
 		return result;
 	}
