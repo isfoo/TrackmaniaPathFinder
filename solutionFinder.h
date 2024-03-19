@@ -64,10 +64,11 @@ struct SolutionConfig {
 
 std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& solution, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix) {
 	auto B = solution;
+	B.insert(B.begin(), 0);
 	B.insert(B.begin(), int16_t(repeatNodeMatrix.size() - 1));
 	std::vector<int16_t> solutionWithRepeats;
-	for (int i = 1; i < B.size(); ++i) {
-		if (i > 1 && !repeatNodeMatrix.empty() && !repeatNodeMatrix[B[i]][B[i - 1]][B[i - 2]].empty()) {
+	for (int i = 2; i < B.size(); ++i) {
+		if (!repeatNodeMatrix.empty() && !repeatNodeMatrix[B[i]][B[i - 1]][B[i - 2]].empty()) {
 			auto& repeatNodes = repeatNodeMatrix[B[i]][B[i - 1]][B[i - 2]];
 			for (int i = 0; i < repeatNodes.size(); ++i) {
 				solutionWithRepeats.push_back(repeatNodes[i]);
