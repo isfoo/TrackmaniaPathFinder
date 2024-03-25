@@ -350,3 +350,144 @@ template<typename T> struct FastSmallVector {
 	bool empty() const { return size() == 0; }
 	const T& operator[](int i) const { return data[i]; }
 };
+
+struct XorShift64 {
+	using result_type = uint64_t;
+	static constexpr result_type min() { return 0; }
+	static constexpr result_type max() { return std::numeric_limits<result_type>::max(); }
+
+	XorShift64() {
+		state = 0x12345678;
+		xorShift64();
+	}
+	result_type operator()() {
+		xorShift64();
+		return state;
+	}
+private:
+	void xorShift64() {
+		state ^= state << 13;
+		state ^= state >> 7;
+		state ^= state << 17;
+	}
+	result_type state;
+};
+
+struct DynamicBitset {
+	using IntType = uint64_t;
+	static constexpr int IntTypeBitSize = sizeof(IntType) * 8;
+	std::array<IntType, 4> bits;
+
+	DynamicBitset() { std::fill(bits.begin(), bits.end(), 0); }
+	bool test(int i) const { return bits[i / IntTypeBitSize] & singleBit(i); }
+	void set(int i)        { bits[i / IntTypeBitSize] |= singleBit(i); }
+	void reset(int i)      { bits[i / IntTypeBitSize] &= ~singleBit(i); }
+
+private:
+	IntType singleBit(int i) const { return (1ull << (i % IntTypeBitSize)); }
+};
+
+namespace std {
+	template <> struct hash<std::vector<NodeType>> {
+		std::size_t operator()(const std::vector<NodeType>& k) const {
+			uint64_t hash = 5381;
+			for (int i = 0; i < k.size(); ++i) {
+				hash = hash * 33 + k[i];
+			}
+			return hash;
+		}
+	};
+}
+
+template<typename T> class FastThreadSafeishHashSet {
+	struct Node {
+		Node(const T& value) { new (&value_) T(value); }
+		~Node() { value().~T(); }
+		Node(const Node&) = delete;
+		Node& operator=(const Node&) = delete;
+		T& value() { return *(T*)value_; }
+		Node* next = nullptr;
+	private:
+		alignas(T) char value_[sizeof(T)];
+	};
+	
+	Node** data;
+	int capacity_;
+	PoolAllocator allocator;
+
+	Node*& node(int index) { return data[index]; }
+	int capacity() { return capacity_; }
+
+	Node** allocData(int size) {
+		auto x = (Node**)::operator new(size * sizeof(Node*), std::align_val_t(alignof(Node*)));
+		memset(x, 0, size * sizeof(Node*));
+		return x;
+	}
+	void deallocData(Node** data) {
+		::operator delete(data, capacity_ * sizeof(Node*), std::align_val_t(alignof(Node*)));
+	}
+	Node* allocNode(T&& value) {
+		auto node = (Node*)allocator.allocate();
+		new (node) Node(std::move(value));
+		return node;
+	}
+	Node* allocNode(const T& value) {
+		allocNode(T(value));
+	}
+	void deallocNode(Node* node) {
+		node->~Node();
+		allocator.deallocate(node);
+	}
+	std::size_t hash(const T& value) {
+		return std::hash<T>{}(value);
+	}
+	std::size_t modIndex(std::size_t index) {
+		return index & (capacity_ - 1);
+	}
+	std::size_t getIndex(const T& value) {
+		return modIndex(hash(value));
+	}
+
+public:
+	FastThreadSafeishHashSet(int power2Capacity = 8) : allocator(sizeof(Node), 8192), data(allocData(1 << power2Capacity)), capacity_(1 << power2Capacity) {}
+
+	T* find(const T& value) {
+		Node* n = node(getIndex(value));
+		while (n) {
+			if (n->value() == value)
+				return &n->value();
+			n = n->next;
+		}
+		return nullptr;
+	}
+	void emplace(T&& value) {
+		// This is not thread safe, but good enough in practice.
+		// worst case what happens is I will add into same location twice which will result in orphan node which won't be findable,
+		// or it will add duplicate of the same node.
+		// however niether is a big problem, because orphan pointers are going to get deallocated anyway and having some duplicates
+		// is not a problem.
+		auto i = getIndex(value);
+		auto n = node(i);
+		Node* allocatedNode = allocNode(std::move(value));
+		if (!n) {
+			node(i) = allocatedNode;
+			return;
+		}
+		while (n->next) {
+			n = n->next;
+		};
+		n->next = allocatedNode;
+	}
+	void insert(T value) {
+		emplace(std::move(value));
+	}
+};
+
+template<typename T, int Size=256> struct FixedStackVector {
+	alignas(T) char data[sizeof(T) * Size];
+	int size_ = 0;
+	template<typename... Args> void emplace_back(Args&&... args) { new (&data[sizeof(T) * size_++]) T(std::forward<Args>(args)...); }
+	int size() { return size_; }
+	T* begin() { return (T*)&data[0]; }
+	T* end()   { return (T*)&data[sizeof(T) * size_]; }
+};
