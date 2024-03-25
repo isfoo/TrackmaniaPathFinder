@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <filesystem>
 #include <numeric>
-#include "lkh.h"
 
 struct SolutionConfig {
 	SolutionConfig(
@@ -1320,99 +1319,4 @@ void runAlgorithmHeuristic(
 	auto useExtendedMatrix = isUsingExtendedMatrix(B_);
 	SolutionConfig config(A, B, maxSolutionCount, limit, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, userRespawnMatrix, partialSolutionCount, taskWasCanceled);
 	findSolutionsHeuristic(config, ignoredValue, maxTime, useExtendedMatrix);
-}
-
-
-std::pair<std::vector<int16_t>, int> runHlk(SolutionConfig& config, std::vector<std::vector<int>> weights, LkhSharedMemoryManager& sharedMemory, const char* programPath, std::mutex& fileWriteMutex) {
-	auto solution = runLkhInChildProcess(sharedMemory, weights, config.taskWasCanceled);
-	if (solution.empty()) {
-		return { {}, 0 };
-	}
-	if (std::find(solution.begin(), solution.end() - 1, solution.size() - 1) != solution.end() - 1) {
-		return { {}, 0 };
-	}
-
-	int time = 0;
-	for (int i = 1; i < solution.size(); ++i) {
-		time += weights[solution[i]][solution[i - 1]];
-	}
-	solution.erase(solution.begin());
-
-	if (time < config.limit) {
-		std::scoped_lock l{ fileWriteMutex };
-		for (int i = 0; i < config.solutionsVec.size(); ++i) {
-			auto& vec = config.solutionsVec[i].first;
-			if (solution == vec) {
-				return { {}, time };
-			}
-		}
-		saveSolutionAndUpdateLimit(config, std::make_pair(solution, time));
-	}
-	return { solution, time };
-}
-
-void runHlkRecursive(SolutionConfig& config, std::vector<std::vector<int>> weights, ThreadPool& threadPool, std::vector<LkhSharedMemoryManager>& sharedMemory, const char* programPath, std::mutex& writeFileMutex, int ignoredValue, int maxDepth, int currentDepth=0) {
-	if (config.taskWasCanceled)
-		return;
-	
-	std::vector<int16_t> solution;
-	int time = 0;
-	int tryCount = 0;
-	do {
-		auto [s, t] = runHlk(config, weights, sharedMemory.back(), programPath, writeFileMutex);
-		solution = s;
-		time = t;
-		if (!solution.empty() && time <= config.limit)
-			break;
-		tryCount += 1;
-	} while ((solution.empty() || time > config.limit) && tryCount < 3);
-	config.partialSolutionCount += 1;
-	
-	if (currentDepth >= maxDepth) {
-		return;
-	}
-	if (solution.empty() || time > config.limit) {
-		config.partialSolutionCount += int(std::pow(config.weights.size() - 1, maxDepth - currentDepth));
-		return;
-	}
-
-	solution.insert(solution.begin(), 0);
-	for (int i = 1; i < solution.size(); ++i) {
-		if (config.taskWasCanceled)
-			return;
-		if (currentDepth >= maxDepth - 1) {
-			threadPool.addTask([&config, &writeFileMutex, weights=weights, solution, i, programPath, ignoredValue, &sharedMemory](int id) mutable {
-				if (config.taskWasCanceled)
-					return;
-				auto oldValue = weights[solution[i]][solution[i - 1]];
-				weights[solution[i]][solution[i - 1]] = ignoredValue;
-				runHlk(config, weights, sharedMemory[id], programPath, writeFileMutex);
-				config.partialSolutionCount += 1;
-				weights[solution[i]][solution[i - 1]] = oldValue;
-			});
-		} else {
-			auto oldValue = weights[solution[i]][solution[i - 1]];
-			weights[solution[i]][solution[i - 1]] = ignoredValue;
-			runHlkRecursive(config, weights, threadPool, sharedMemory, programPath, writeFileMutex, ignoredValue, maxDepth, currentDepth + 1);
-			weights[solution[i]][solution[i - 1]] = oldValue;
-		}
-	}
-}
-
-void runAlgorithmHlk(const std::vector<std::vector<int>>& A_, const char* programPath, int searchDepth,
-	const std::string& appendFile, const std::string& outputFile, int ignoredValue, int maxSolutionCount, int limit, ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec,
-	const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& userRespawnMatrix,
-	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
-) {
-	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);
-
-	int threadCount = 16;
-	auto config = SolutionConfig(A, {}, maxSolutionCount, limit, solutionsVec, appendFile, outputFile, repeatNodeMatrix, userRespawnMatrix, partialSolutionCount, taskWasCanceled);
-	ThreadPool threadPool(threadCount, 1000);
-	std::mutex writeFileMutex;
-	auto sharedMemInstances = createLkhSharedMemoryInstances(threadCount + 1, int(A.size())); // +1 for main thread
-	auto processes = startChildProcesses(programPath, sharedMemInstances);
-	runHlkRecursive(config, A, threadPool, sharedMemInstances, programPath, writeFileMutex, ignoredValue, searchDepth);
-	threadPool.wait();
-	stopChildProcesses(processes, sharedMemInstances);
 }

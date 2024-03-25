@@ -5,7 +5,6 @@
 #include "common.h"
 #include "fileLoadSave.h"
 #include "imgui_directX11.h"
-#include "lkh.h"
 
 namespace fs = std::filesystem;
 
@@ -21,12 +20,6 @@ void HelpMarker(const char* desc) {
 }
 
 int main(int argc, char** argv) {
-	if (argc >= 1 && !strcmp(argv[0], "LKH")) {
-		lkhChildWorkerProcess(argc - 1, &argv[1]);
-		return  0;
-	}
-	const char* programPath = argv[0];
-
 	MyImGui::Init(u"Trackmania Path Finder");
 
 	int ignoredValueInput = 600;
@@ -35,7 +28,6 @@ int main(int argc, char** argv) {
 	int limitValue = inputLimitValue * 10;
 	int maxSolutionCount = 100;
 	int maxRepeatNodesToAdd = 100;
-	int heuristicSearchDepth = 2;
 	int maxTime = 10;
 	int foundRepeatNodesCount = -1;
 	bool allowRepeatNodes = false;
@@ -65,7 +57,6 @@ int main(int argc, char** argv) {
 	char inputRingCps[1024] = { 0 };
 
 	bool isHeuristicAlgorithm = false;
-	bool isLkhAlgorithm = false;
 
 	auto timer = Timer();
 	timer.stop();
@@ -128,14 +119,14 @@ int main(int argc, char** argv) {
 		if (ImGui::InputInt("##max number of routes", &maxSolutionCount)) {
 			maxSolutionCount = std::clamp(maxSolutionCount, 1, 100'000);
 		}
-		ImGui::Text("heuristic search depth:");
+		ImGui::Text("heuristic search time:");
 		ImGui::SameLine();
-		HelpMarker("Heuristic search first finds initial route (likely optimal)\nThen it tries to remove each connection from that route to see what it finds.\nThis process continues recursively and this value decides how deep it goes.\n\nfor 100 CP it means that:\ndepth = 0: 1 run\ndepth = 1: 100 runs\ndepth = 2: 10000 runs\ndepth = 3: 1000000 runs\n\nThe algorithm does early stopping depending on max route time\nso if it's low then the number of actual runs will be much lower");
+		HelpMarker("Max time in seconds you want heuristic algorithm to run for.\nFor most even hard problems 10sec should be enough to find most or all top100 solutions,\nbut might need to increase it for some problems - you have to experiment yourself.");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
-		if (ImGui::InputInt("##heuristic search depth", &heuristicSearchDepth)) {
-			heuristicSearchDepth = std::clamp(heuristicSearchDepth, 0, 5);
+		if (ImGui::InputInt("##heuristic search time", &maxTime)) {
+			maxTime = std::clamp(maxTime, 1, 10'000);
 		}
 		ImGui::Text("output append data file:");
 		ImGui::SameLine();
@@ -274,23 +265,15 @@ int main(int argc, char** argv) {
 					}
 				}
 
-				//if (!isExactAlgorithm && isUsingExtendedMatrix(B)) {
-				//	errorMsg = "Cannot use heuristic algorithm with sequence dependent input data or ring CPs";
-				//}
-
 				if (errorMsg.empty()) {
 					timer = Timer();
 					clearFile(outputDataFile);
 					writeSolutionFileProlog(appendDataFile, inputDataFile, limitValue, isExactAlgorithm, allowRepeatNodes, repeatNodesTurnedOff);
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, isLkhAlgorithm, &timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, &useRespawnMatrix, appendDataFile, outputDataFile, A, B, ignoredValue, limitValue, maxSolutionCount, maxTime, programPath, heuristicSearchDepth]() mutable {
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, &useRespawnMatrix, appendDataFile, outputDataFile, A, B, ignoredValue, limitValue, maxSolutionCount, maxTime]() mutable {
 						if (isExactAlgorithm)
 							runAlgorithm(A, B, maxSolutionCount, limitValue, ignoredValue, solutionsView, appendDataFile, outputDataFile, repeatNodeMatrix, useRespawnMatrix, partialSolutionCount, taskWasCanceled);
 						else {
-							if (isLkhAlgorithm) {
-								runAlgorithmHlk(A, programPath, heuristicSearchDepth, appendDataFile, outputDataFile, ignoredValue, maxSolutionCount, limitValue, solutionsView, repeatNodeMatrix, useRespawnMatrix, partialSolutionCount, taskWasCanceled);
-							} else {
-								runAlgorithmHeuristic(A, B, maxSolutionCount, limitValue, ignoredValue, maxTime, solutionsView, appendDataFile, outputDataFile, repeatNodeMatrix, useRespawnMatrix, partialSolutionCount, taskWasCanceled);
-							}
+							runAlgorithmHeuristic(A, B, maxSolutionCount, limitValue, ignoredValue, maxTime, solutionsView, appendDataFile, outputDataFile, repeatNodeMatrix, useRespawnMatrix, partialSolutionCount, taskWasCanceled);
 						}
 						writeSolutionFileEpilog(appendDataFile, taskWasCanceled);
 						overwriteFileWithSortedSolutions(outputDataFile, maxSolutionCount, solutionsView, repeatNodeMatrix, useRespawnMatrix);
@@ -308,13 +291,6 @@ int main(int argc, char** argv) {
 		ImGui::SameLine();
 		if (ImGui::Button("Run heuristic algorithm")) {
 			isHeuristicAlgorithm = true;
-			isLkhAlgorithm = false;
-			startAlgorithm(false);
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("Run LKH algorithm")) {
-			isHeuristicAlgorithm = true;
-			isLkhAlgorithm = true;
 			startAlgorithm(false);
 		}
 
