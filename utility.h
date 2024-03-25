@@ -327,7 +327,7 @@ template<typename T> struct Vector3d {
 };
 
 template<typename T> struct FastSmallVector {
-	constexpr static int MaxSize = 12;
+	constexpr static int MaxSize = 5;
 	std::array<T, MaxSize> data;
 	int size_ = 0;
 	FastSmallVector() {}

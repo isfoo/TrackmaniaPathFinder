@@ -139,8 +139,6 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<int
 }
 
 int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, Vector3d<FastSmallVector<uint8_t>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxEdgesToAdd) {
-	auto ACopy = A;
-	auto BCopy = B;
 	int addedEdgesCount = 0;
 	for (int m = 0; m < additionalPaths.size() && addedEdgesCount < maxEdgesToAdd; ++m) {
 		auto k = additionalPaths[m].k;
@@ -149,24 +147,24 @@ int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector
 		addedEdgesCount += repeatEdgeMatrix[k][i].back().empty();
 		for (int z = 0; z < B.size(); ++z) {
 			auto newTime = B[k][j][i] + B[j][i][z];
-			if (newTime < BCopy[k][i][z]) {
+			if (newTime < B[k][i][z]) {
 				auto combined = FastSmallVector<uint8_t>::Combine(repeatEdgeMatrix[j][i][z], j, repeatEdgeMatrix[k][j][i]);
 				if (combined) {
 					repeatEdgeMatrix[k][i][z] = *combined;
-					BCopy[k][i][z] = newTime;
+					B[k][i][z] = newTime;
+					if (newTime < A[k][i]) {
+						A[k][i] = newTime;
+					}
 				}
 			}
 		}
-		ACopy[k][i] = additionalPaths[m].time(A);
 	}
-	A = ACopy;
-	B = BCopy;
 	return addedEdgesCount;
 }
 
 Vector3d<FastSmallVector<uint8_t>> addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
 	auto repeatEdgeMatrix = Vector3d<FastSmallVector<uint8_t>>(B.size());
-	for (int i = 0; i < 3; ++i) {
+	for (int i = 0; i < 2; ++i) {
 		auto repeatEdges = getRepeatNodeEdges(A, ignoredValue, turnedOffRepeatNodes);
 		auto edgesAdded = addRepeatNodeEdges(A, B, repeatEdgeMatrix, repeatEdges, maxEdgesToAdd);
 		maxEdgesToAdd = std::max<int>(0, maxEdgesToAdd - edgesAdded);
