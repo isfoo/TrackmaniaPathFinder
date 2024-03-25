@@ -78,6 +78,9 @@ std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& sol
 	}
 	return solutionWithRepeats;
 }
+template<typename T, typename Pred> void insertSorted(std::vector<T>& vec, const T& val, Pred pred) {
+	vec.insert(std::upper_bound(vec.begin(), vec.end(), val, pred), val);
+}
 void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::pair<std::vector<int16_t>, int>& solution) {
 	if (solution.second > config.limit)
 		return;
@@ -90,17 +93,29 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::pair<std::vec
 			}
 		}
 	}
-
 	config.solutionsVec.push_back_not_thread_safe(solution);
 	writeSolutionToFile(config.appendFileName, solution.first, solution.second, config.repeatNodeMatrix, config.useRespawnMatrix);
 
-	if (config.bestSolutions.size() < config.maxSolutionCount) {
-		config.bestSolutions.emplace_back(solution.first, solutionWithRepeats, solution.second);
-	} else {
-		config.bestSolutions.back() = SolutionConfig::BestSolution(solution.first, solutionWithRepeats, solution.second);
-		std::sort(config.bestSolutions.begin(), config.bestSolutions.end(), [](auto& a, auto& b) { return a.time < b.time; });
+	if (config.bestSolutions.size() >= config.maxSolutionCount) {
 		config.limit = config.bestSolutions.back().time;
+		config.bestSolutions.pop_back();
 	}
+	insertSorted(config.bestSolutions, SolutionConfig::BestSolution(solution.first, solutionWithRepeats, solution.second), [](auto& a, auto& b) {
+		return a.time < b.time;
+	});
+}
+void saveSolution(SolutionConfig& config, const std::vector<NodeType>& solution, std::mutex& solutionMutex) {
+	std::vector<int16_t> solutionVec = { 0 };
+	for (int i = 0; i < solution.size() - 1; ++i) {
+		solutionVec.push_back(solution[solutionVec.back()]);
+	}
+	int realCost = 0;
+	for (int i = 1; i < solutionVec.size(); ++i) {
+		realCost += config.condWeights[solutionVec[i]][solutionVec[i - 1]][i > 1 ? solutionVec[i - 2] : 0];
+	}
+	solutionVec.erase(solutionVec.begin());
+	std::scoped_lock l{ solutionMutex };
+	saveSolutionAndUpdateLimit(config, std::make_pair(solutionVec, realCost));
 }
 
 struct RepeatEdgePath {
@@ -178,10 +193,6 @@ std::vector<std::vector<int>> createAtspMatrixFromInput(const std::vector<std::v
 	return copy;
 }
 
-
-using EdgeCostType = int32_t;
-using NodeType = uint8_t;
-using Edge = std::pair<NodeType, NodeType>;
 
 enum Direction { Out, In };
 constexpr NodeType NullNode = NodeType(-1);
@@ -890,19 +901,7 @@ void findSolutions(SolutionConfig& config, AssignmentSolution& assignmentSolutio
 		return;
 
 	if (assignmentSolution.isComplete()) {
-		std::scoped_lock l{ solutionMutex };
-		std::vector<int16_t> solutionVec = { 0 };
-
-		for (int i = 0; i < assignmentSolution.size() - 1; ++i) {
-			solutionVec.push_back(assignmentSolution.solution[solutionVec.back()]);
-		}
-		int realCost = 0;
-		for (int i = 1; i < solutionVec.size(); ++i) {
-			realCost += config.condWeights[solutionVec[i]][solutionVec[i - 1]][i > 1 ? solutionVec[i - 2] : 0];
-		}
-		solutionVec.erase(solutionVec.begin());
-		auto solution = std::make_pair(solutionVec, realCost);
-		saveSolutionAndUpdateLimit(config, solution);
+		saveSolution(config, std::vector<NodeType>(assignmentSolution.solution.data, assignmentSolution.solution.data + assignmentSolution.size()), solutionMutex);
 	} else {
 		auto pivotEdge = assignmentSolution.findPivotEdge();
 		if (pivotEdge == NullEdge)

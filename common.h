@@ -2,8 +2,7 @@
 #include <vector>
 #include <string>
 #include <cstdint>
-
-using Bool = int8_t;
+#include "utility.h"
 
 struct ConditionalCost {
 	int cost;

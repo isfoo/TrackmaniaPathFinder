@@ -15,6 +15,11 @@
 #include <queue>
 #include <condition_variable>
 
+using Bool = int8_t;
+using EdgeCostType = int32_t;
+using NodeType = uint8_t;
+using Edge = std::pair<NodeType, NodeType>;
+
 #if defined(__clang__)
 #define COMPILER_CLANG
 #elif defined(__INTEL_COMPILER)
