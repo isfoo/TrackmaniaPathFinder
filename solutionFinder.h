@@ -276,6 +276,8 @@ struct AdjList2 {
 		}
 		for (int i = 0; i < costMatrix.size(); ++i) {
 			for (int j = 0; j < costMatrix.size(); ++j) {
+				if (i == j)
+					continue;
 				if (costMatrix[j][i] < ignoredValue) {
 					if (transpose) {
 						(*this)[j].push_back(i);
