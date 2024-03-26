@@ -140,9 +140,9 @@ void writeSolutionFileProlog(const std::string& outputFileName, const std::strin
 
 }
 
-void writeSolutionFileEpilog(const std::string& outputFileName, std::atomic<bool>& taskWasCanceled) {
+void writeSolutionFileEpilog(const std::string& outputFileName, bool taskWasCanceled, bool endedWithTimeout) {
 	std::ofstream solutionsFile(outputFileName, std::ios::app);
-	solutionsFile << "END " << (taskWasCanceled ? "(Canceled)" : "(Completed)") << "\n";
+	solutionsFile << "END " << (endedWithTimeout ? "(Timeout)" : (taskWasCanceled ? "(Canceled)" : "(Completed)")) << "\n";
 }
 
 void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t>& solution, int time, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {

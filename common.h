@@ -15,6 +15,32 @@ struct ConditionalCost {
 	}
 };
 
+struct SolutionConfig {
+	struct BestSolution {
+		BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& solutionWithRepeats, int time) :
+			solution(solution), solutionWithRepeats(solutionWithRepeats), time(time)
+		{}
+		std::vector<int16_t> solution;
+		std::vector<int16_t> solutionWithRepeats;
+		int time;
+	};
+
+	std::vector<std::vector<int>> weights;
+	std::vector<std::vector<std::vector<int>>> condWeights;
+	int maxSolutionCount;
+	int limit;
+	int ignoredValue;
+	bool useExtendedMatrix;
+	ThreadSafeVec<std::pair<std::vector<int16_t>, int>> solutionsVec;
+	std::vector<BestSolution> bestSolutions;
+	std::string appendFileName;
+	std::string outputFileName;
+	Vector3d<FastSmallVector<uint8_t>> repeatNodeMatrix;
+	Vector3d<Bool> useRespawnMatrix;
+	std::atomic<int64_t> partialSolutionCount;
+	std::atomic<bool> stopWorking;
+};
+
 std::string createSolutionString(const std::vector<int16_t>& solution, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
 	auto B = solution;
 	B.insert(B.begin(), 0); // Explicit start node

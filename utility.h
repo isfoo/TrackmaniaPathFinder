@@ -323,7 +323,7 @@ template<typename T> struct ConstVectorView2d {
 };
 template<typename T> struct Vector3d {
 	std::vector<T> data; int size_;
-	Vector3d(int size) : data(size * size * size), size_(size) {}
+	Vector3d(int size=0) : data(size * size * size), size_(size) {}
 	VectorView2d<T> operator[](int i)            { return VectorView2d<T>(&data[size_ * size_ * i], size_); }
 	ConstVectorView2d<T> operator[](int i) const { return ConstVectorView2d<T>(&data[size_ * size_ * i], size_); }
 	bool empty() const { return size() == 0; }
@@ -415,7 +415,7 @@ template<typename T> class FastThreadSafeishHashSet {
 	int capacity_;
 	PoolAllocator allocator;
 
-	Node*& node(int index) { return data[index]; }
+	Node*& node(std::size_t index) { return data[index]; }
 	int capacity() { return capacity_; }
 
 	Node** allocData(int size) {

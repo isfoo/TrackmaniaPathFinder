@@ -20,47 +20,6 @@
 #include <filesystem>
 #include <numeric>
 
-struct SolutionConfig {
-	SolutionConfig(
-		const std::vector<std::vector<int>>& weights, 
-		const std::vector<std::vector<std::vector<int>>> condWeights,
-		int maxSolutionCount, int& limit,
-		ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec, 
-		const std::string& appendFileName, const std::string& outputFileName,
-		const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix,
-		const Vector3d<Bool>& useRespawnMatrix,
-		std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled)
-		: 
-		weights(weights), condWeights(condWeights), maxSolutionCount(maxSolutionCount), limit(limit),
-		solutionsVec(solutionsVec),
-		appendFileName(appendFileName), outputFileName(outputFileName), repeatNodeMatrix(repeatNodeMatrix), useRespawnMatrix(useRespawnMatrix),
-		partialSolutionCount(partialSolutionCount), taskWasCanceled(taskWasCanceled)
-	{}
-
-	struct BestSolution {
-		BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& solutionWithRepeats, int time) :
-			solution(solution), solutionWithRepeats(solutionWithRepeats), time(time) 
-		{}
-		std::vector<int16_t> solution;
-		std::vector<int16_t> solutionWithRepeats;
-		int time;
-	};
-
-	std::vector<std::vector<int>> weights;
-	std::vector<std::vector<std::vector<int>>> condWeights;
-	int maxSolutionCount;
-	int& limit;
-	ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec;
-	std::vector<BestSolution> bestSolutions;
-	const std::string& appendFileName;
-	const std::string& outputFileName;
-	const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix;
-	const Vector3d<Bool>& useRespawnMatrix;
-	std::atomic<int>& partialSolutionCount;
-	std::atomic<bool>& taskWasCanceled;
-	bool useAbros = false;
-};
-
 std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& solution, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix) {
 	auto B = solution;
 	B.insert(B.begin(), 0);
@@ -110,7 +69,10 @@ void saveSolution(SolutionConfig& config, const std::vector<NodeType>& solution,
 	}
 	int realCost = 0;
 	for (int i = 1; i < solutionVec.size(); ++i) {
-		realCost += config.condWeights[solutionVec[i]][solutionVec[i - 1]][i > 1 ? solutionVec[i - 2] : 0];
+		auto connectionCost = config.condWeights[solutionVec[i]][solutionVec[i - 1]][i > 1 ? solutionVec[i - 2] : 0];
+		if (connectionCost >= config.ignoredValue)
+			return;
+		realCost += connectionCost;
 	}
 	solutionVec.erase(solutionVec.begin());
 	std::scoped_lock l{ solutionMutex };
@@ -177,7 +139,7 @@ int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector
 }
 
 Vector3d<FastSmallVector<uint8_t>> addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
-	auto repeatEdgeMatrix = Vector3d<FastSmallVector<uint8_t>>(B.size());
+	auto repeatEdgeMatrix = Vector3d<FastSmallVector<uint8_t>>(int(B.size()));
 	for (int i = 0; i < 2; ++i) {
 		auto repeatEdges = getRepeatNodeEdges(A, ignoredValue, turnedOffRepeatNodes);
 		auto edgesAdded = addRepeatNodeEdges(A, B, repeatEdgeMatrix, repeatEdges, maxEdgesToAdd);
@@ -889,7 +851,7 @@ template<typename T> struct PriorityQueue {
 
 void findSolutions(SolutionConfig& config, AssignmentSolution& assignmentSolution, PriorityQueue<AssignmentSolution>& assignmentQueue, std::mutex& solutionMutex, int maxQueueSize) {
 	config.partialSolutionCount += 1;
-	if (config.taskWasCanceled)
+	if (config.stopWorking)
 		return;
 
 	if (assignmentSolution.cost > config.limit)
@@ -923,15 +885,15 @@ void findSolutions(SolutionConfig& config, AssignmentSolution& assignmentSolutio
 	}
 }
 
-void findSolutionsPriority(SolutionConfig& config, int ignoredValue, bool useExtendedMatrix) {
+void findSolutionsPriority(SolutionConfig& config) {
 	ArrayOfPoolAllocators freeLists(1024, { 
-		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), useExtendedMatrix),
-		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 2), useExtendedMatrix),
-		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 4), useExtendedMatrix),
-		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 8), useExtendedMatrix),
-		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 16), useExtendedMatrix),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), config.useExtendedMatrix),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 2), config.useExtendedMatrix),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 4), config.useExtendedMatrix),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 8), config.useExtendedMatrix),
+		AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 16), config.useExtendedMatrix),
 	});
-	AssignmentSolution initialSolution(freeLists, &config.weights, &config.condWeights, ignoredValue, useExtendedMatrix);
+	AssignmentSolution initialSolution(freeLists, &config.weights, &config.condWeights, config.ignoredValue, config.useExtendedMatrix);
 
 	initialSolution.shrinkToFit();
 	hungarianMethod(initialSolution);
@@ -942,7 +904,7 @@ void findSolutionsPriority(SolutionConfig& config, int ignoredValue, bool useExt
 
 	PriorityQueue<AssignmentSolution> assignmentQueue([](auto& a, auto& b) { return a.cost > b.cost; });
 
-	if (config.weights.size() >= 30 || (useExtendedMatrix && config.weights.size() >= 15))
+	if (config.weights.size() >= 30 || (config.useExtendedMatrix && config.weights.size() >= 15))
 		assignmentQueue.heap.reserve(MaxQueueSize); // reserve only if not trivial problem
 
 	assignmentQueue.push(std::move(initialSolution));
@@ -972,7 +934,7 @@ void findSolutionsPriority(SolutionConfig& config, int ignoredValue, bool useExt
 						if (!stillWorking)
 							return;
 					}
-					if (config.taskWasCanceled)
+					if (config.stopWorking)
 						return;
 					std::this_thread::sleep_for(std::chrono::milliseconds(1));
 				}
@@ -986,7 +948,7 @@ void findSolutionsPriority(SolutionConfig& config, int ignoredValue, bool useExt
 					// cost more than updated max solution time limit. This will free up some space for queue.
 					std::scoped_lock l{ assignmentQueue.m };
 					if (config.partialSolutionCount > lastCleanupCount + MaxQueueSize) {
-						lastCleanupCount.store(config.partialSolutionCount);
+						lastCleanupCount.store(int(config.partialSolutionCount));
 						assignmentQueue.removeAll([&config](auto& a) { return a.cost > config.limit; });
 					}
 				}
@@ -1000,7 +962,6 @@ void findSolutionsPriority(SolutionConfig& config, int ignoredValue, bool useExt
 }
 
 bool isUsingExtendedMatrix(std::vector<std::vector<std::vector<int>>> B) {
-	std::fill(B[0].back().begin(), B[0].back().end(), 0);
 	bool useExtendedMatrix = false;
 	for (int i = 0; i < B.size(); ++i) {
 		for (int j = 0; j < B.size(); ++j) {
@@ -1015,23 +976,7 @@ bool isUsingExtendedMatrix(std::vector<std::vector<std::vector<int>>> B) {
 	return false;
 }
 
-void runAlgorithm(
-	const std::vector<std::vector<int>>& A_, const std::vector<std::vector<std::vector<int>>>& B_, int maxSolutionCount, int limit, int ignoredValue, 
-	ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec,
-	const std::string& appendFileName, const std::string& outputFileName,
-	const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix,
-	const Vector3d<Bool>& userRespawnMatrix,
-	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
-) {
-	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);
-	auto B = B_;
-	std::fill(B[0].back().begin(), B[0].back().end(), 0);
-	auto useExtendedMatrix = isUsingExtendedMatrix(B_);
-	SolutionConfig config(A, B, maxSolutionCount, limit, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, userRespawnMatrix, partialSolutionCount, taskWasCanceled);
-	findSolutionsPriority(config, ignoredValue, useExtendedMatrix);
-}
-
-bool doubleBridge(SolutionConfig& config, std::vector<NodeType>& solution, std::vector<NodeType>& revSolution, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions, bool useExtendedMatrix) {
+bool doubleBridge(SolutionConfig& config, std::vector<NodeType>& solution, std::vector<NodeType>& revSolution, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions) {
 	auto& cost = config.weights;
 	auto& costEx = config.condWeights;
 	auto N = solution.size();
@@ -1046,20 +991,22 @@ bool doubleBridge(SolutionConfig& config, std::vector<NodeType>& solution, std::
 
 	auto newSolution = solution;
 	auto newRevSolution = revSolution;
-	for (int i_ = 0; i_ < N; ++i_) {
+	for (int i_ = 0; i_ < N - 1; ++i_) {
 		auto i = solutionVec[i_];
 		auto soli = solution[i];
 		int k_ = next(next(i_));
 		for (; k_ != prev(i_); k_ = next(k_)) {
 			auto k = solutionVec[k_];
 			auto solk = solution[k];
+			if (solk == 0)
+				continue;
 			EdgeCostType costChangeik = 0;
 
 			newSolution[i] = solution[k];
 			newSolution[k] = solution[i];
 			newRevSolution[newSolution[i]] = i;
 			newRevSolution[newSolution[k]] = k;
-			if (useExtendedMatrix) {
+			if (config.useExtendedMatrix) {
 				costChangeik -= costEx[soli][i][revSolution[i]] + costEx[solk][k][revSolution[k]];
 				costChangeik += costEx[newSolution[i]][i][newRevSolution[i]] + costEx[newSolution[k]][k][newRevSolution[k]];
 			} else {
@@ -1071,8 +1018,12 @@ bool doubleBridge(SolutionConfig& config, std::vector<NodeType>& solution, std::
 				for (int j_ = next(i_); j_ != prev(k_); j_ = next(j_)) {
 					auto j = solutionVec[j_];
 					auto solj = solution[j];
+					if (solj == 0)
+						continue;
 					for (int m_ = next(k_); m_ != prev(i_); m_ = next(m_)) {
 						auto m = solutionVec[m_];
+						if (solution[m] == 0)
+							continue;
 
 						newSolution[m] = solution[j];
 						newSolution[j] = solution[m];
@@ -1080,7 +1031,7 @@ bool doubleBridge(SolutionConfig& config, std::vector<NodeType>& solution, std::
 						newRevSolution[newSolution[m]] = m;
 
 						EdgeCostType costChange = costChangeik;
-						if (useExtendedMatrix) {
+						if (config.useExtendedMatrix) {
 							costChange -= costEx[solj][j][revSolution[j]] + costEx[solution[m]][m][revSolution[m]];
 							costChange += costEx[newSolution[j]][j][newRevSolution[j]] + costEx[newSolution[m]][m][newRevSolution[m]];
 							if (solution[i] != j) {
@@ -1124,14 +1075,14 @@ bool doubleBridge(SolutionConfig& config, std::vector<NodeType>& solution, std::
 	}
 	return false;
 }
-bool linKernighanRec(SolutionConfig& config, const std::vector<std::vector<NodeType>>& adjList, std::vector<NodeType>& solution, EdgeCostType costChange, NodeType curNode, NodeType endNode, int addedEdgesCount, DynamicBitset& bannedDstNodes, std::vector<NodeType>& revSolution, const std::vector<int>& maxSearchWidths, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions, std::atomic<bool>& stopWorking, bool useExtendedMatrix) {
+bool linKernighanRec(SolutionConfig& config, const std::vector<std::vector<NodeType>>& adjList, std::vector<NodeType>& solution, EdgeCostType costChange, NodeType curNode, NodeType endNode, int addedEdgesCount, DynamicBitset& bannedDstNodes, std::vector<NodeType>& revSolution, const std::vector<int>& maxSearchWidths, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions) {
 	auto& cost = config.weights;
 	auto& costEx = config.condWeights;
 	auto N = solution.size();
 
 	auto calculateCostChange = [&](NodeType newDstNode, NodeType curNode, NodeType oldSrcNode) {
 		EdgeCostType result = 0;
-		if (useExtendedMatrix) {
+		if (config.useExtendedMatrix) {
 			result += costEx[newDstNode][curNode][revSolution[curNode]];
 			result -= costEx[newDstNode][oldSrcNode][revSolution[oldSrcNode]];
 			result += costEx[solution[newDstNode]][newDstNode][curNode];
@@ -1179,11 +1130,11 @@ bool linKernighanRec(SolutionConfig& config, const std::vector<std::vector<NodeT
 			auto oldDstNode = solution[curNode];
 			solution[curNode] = newDstNode;
 			revSolution[newDstNode] = curNode;
-			if (linKernighanRec(config, adjList, solution, newCostChange, oldSrcNode, endNode, addedEdgesCount + 1, bannedDstNodes, revSolution, maxSearchWidths, processedSolutions, stopWorking, useExtendedMatrix)) {
+			if (linKernighanRec(config, adjList, solution, newCostChange, oldSrcNode, endNode, addedEdgesCount + 1, bannedDstNodes, revSolution, maxSearchWidths, processedSolutions)) {
 				bannedDstNodes.reset(newDstNode);
 				return true;
 			}
-			if (stopWorking)
+			if (config.stopWorking)
 				return false;
 			solution[curNode] = oldDstNode;
 			revSolution[newDstNode] = oldSrcNode;
@@ -1207,16 +1158,16 @@ bool linKernighanRec(SolutionConfig& config, const std::vector<std::vector<NodeT
 
 	return false;
 }
-bool linKernighan(SolutionConfig& config, const std::vector<std::vector<NodeType>>& adjList, std::vector<NodeType>& solution, std::vector<NodeType>& revSolution, const std::vector<int>& maxSearchWidths, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions, std::atomic<bool>& stopWorking, bool useExtendedMatrix) {
+bool linKernighan(SolutionConfig& config, const std::vector<std::vector<NodeType>>& adjList, std::vector<NodeType>& solution, std::vector<NodeType>& revSolution, const std::vector<int>& maxSearchWidths, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions) {
 	NodeType startNode = 0;
 	for (NodeType startNode = 0; startNode != solution.size() - 1; startNode = solution[startNode]) {
-		if (stopWorking)
+		if (config.stopWorking)
 			return false;
 		NodeType endNode = solution[startNode];
 		DynamicBitset bannedDstNodes;
 		bannedDstNodes.set(0);
 		bannedDstNodes.set(endNode);
-		if (linKernighanRec(config, adjList, solution, 0, startNode, endNode, 0, bannedDstNodes, revSolution, maxSearchWidths, processedSolutions, stopWorking, useExtendedMatrix)) {
+		if (linKernighanRec(config, adjList, solution, 0, startNode, endNode, 0, bannedDstNodes, revSolution, maxSearchWidths, processedSolutions)) {
 			return true;
 		}
 	}
@@ -1236,33 +1187,28 @@ std::vector<NodeType> generateRandomSolution(int tryId, XorShift64& rng, EdgeCos
 	solution.back() = 0;
 	return solution;
 }
-void findSolutionsHeuristic(SolutionConfig& config, EdgeCostType ignoredValue, int maxTime, bool useExtendedMatrix) {
-	auto N = config.weights.size();
+void findSolutionsHeuristic(SolutionConfig& config) {
+	auto N = int(config.weights.size());
 	auto& cost = config.weights;
 	auto& costEx = config.condWeights;
-
-	std::atomic<bool> stopWorking = false;
-	auto timerThread = std::thread([&config, maxTime, &stopWorking]() {
-		auto timer = Timer();
-		while (!stopWorking && !config.taskWasCanceled && timer.getTime() < maxTime) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		}
-		stopWorking = true;
-	});
 
 	std::vector<std::vector<NodeType>> adjList(N);
 	for (int i = 0; i < N; ++i) {
 		for (int j = 0; j < N; ++j) {
 			if (i == j)
 				continue;
-			if (cost[j][i] < ignoredValue) {
+			if (cost[j][i] < config.ignoredValue) {
 				adjList[i].push_back(j);
 			}
 		}
 	}
 
+	const int ThreadCount = (std::thread::hardware_concurrency() > 0) ? std::thread::hardware_concurrency() : 1;
+	ThreadPool threadPool(ThreadCount);
+	std::mutex solutionMutex;
+
 	for (int maxSequenceLength = 4; maxSequenceLength < N; maxSequenceLength += 2) {
-		if (stopWorking)
+		if (config.stopWorking)
 			break;
 		std::vector<int> maxSearchWidths(N, 0);
 		for (int i = 0; i < maxSequenceLength; ++i) {
@@ -1271,13 +1217,10 @@ void findSolutionsHeuristic(SolutionConfig& config, EdgeCostType ignoredValue, i
 		XorShift64 rng;
 		FastThreadSafeishHashSet<std::vector<NodeType>> processedSolutions(24);
 
-		const int ThreadCount = (std::thread::hardware_concurrency() > 0) ? std::thread::hardware_concurrency() : 1;
-		ThreadPool threadPool(ThreadCount);
-		std::mutex solutionMutex;
-
+		config.partialSolutionCount = ((uint64_t(maxSequenceLength) + 1) << 32);
 		constexpr int TryCount = 1000;
 		for (int tryId = 0; tryId < TryCount; ++tryId) {
-			auto solution = generateRandomSolution(tryId, rng, ignoredValue, costEx);
+			auto solution = generateRandomSolution(tryId, rng, config.ignoredValue, costEx);
 			std::vector<NodeType> revSolution(N);
 			for (int i = 0; i < N; ++i)
 				revSolution[solution[i]] = i;
@@ -1287,36 +1230,19 @@ void findSolutionsHeuristic(SolutionConfig& config, EdgeCostType ignoredValue, i
 			processedSolutions.insert(solution);
 			saveSolution(config, solution, solutionMutex);
 
-			threadPool.addTask([&config, &adjList, &processedSolutions, &maxSearchWidths, &solutionMutex, &stopWorking, solution, revSolution, useExtendedMatrix](int) mutable {
+			threadPool.addTask([&config, &adjList, &processedSolutions, &maxSearchWidths, &solutionMutex, solution, revSolution](int) mutable {
 				while (true) {
-					while (linKernighan(config, adjList, solution, revSolution, maxSearchWidths, processedSolutions, stopWorking, useExtendedMatrix))
+					while (linKernighan(config, adjList, solution, revSolution, maxSearchWidths, processedSolutions))
 						saveSolution(config, solution, solutionMutex);
-					if (stopWorking)
+					if (config.stopWorking)
 						return;
-					if (!doubleBridge(config, solution, revSolution, processedSolutions, useExtendedMatrix))
+					if (!doubleBridge(config, solution, revSolution, processedSolutions))
 						break;
 					saveSolution(config, solution, solutionMutex);
 				}
+				config.partialSolutionCount += 1;
 			});
 		}
 		threadPool.wait();
 	}
-	stopWorking = true;
-	timerThread.join();
-}
-void runAlgorithmHeuristic(
-	const std::vector<std::vector<int>>& A_, const std::vector<std::vector<std::vector<int>>>& B_, int maxSolutionCount, 
-	int limit, int ignoredValue, int maxTime,
-	ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsVec,
-	const std::string& appendFileName, const std::string& outputFileName,
-	const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix,
-	const Vector3d<Bool>& userRespawnMatrix,
-	std::atomic<int>& partialSolutionCount, std::atomic<bool>& taskWasCanceled
-) {
-	std::vector<std::vector<int>> A = createAtspMatrixFromInput(A_);
-	auto B = B_;
-	std::fill(B[0].back().begin(), B[0].back().end(), 0);
-	auto useExtendedMatrix = isUsingExtendedMatrix(B_);
-	SolutionConfig config(A, B, maxSolutionCount, limit, solutionsVec, appendFileName, outputFileName, repeatNodeMatrix, userRespawnMatrix, partialSolutionCount, taskWasCanceled);
-	findSolutionsHeuristic(config, ignoredValue, maxTime, useExtendedMatrix);
 }

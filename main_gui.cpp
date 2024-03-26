@@ -25,20 +25,14 @@ int main(int argc, char** argv) {
 	int ignoredValueInput = 600;
 	int ignoredValue = ignoredValueInput * 10;
 	int inputLimitValue = 100'000;
-	int limitValue = inputLimitValue * 10;
-	int maxSolutionCount = 100;
 	int maxRepeatNodesToAdd = 100;
+	int maxSolutionCountInput = 100;
 	int maxTime = 10;
-	int foundRepeatNodesCount = -1;
 	bool allowRepeatNodes = false;
 	constexpr int MinFontSize = 8;
 	constexpr int MaxFontSize = 30;
 	int fontSize = 15;
-	Vector3d<FastSmallVector<uint8_t>> repeatNodeMatrix(0);
-	Vector3d<Bool> useRespawnMatrix(0);
-	ThreadSafeVec<std::pair<std::vector<int16_t>, int>> solutionsView;
 	std::vector<std::pair<std::vector<int16_t>, int>> bestFoundSolutions;
-	std::atomic<int> partialSolutionCount = 0;
 
 	char inputDataFile[1024] = { 0 };
 	char appendDataFile[1024] = { 0 };
@@ -57,9 +51,17 @@ int main(int argc, char** argv) {
 	char inputRingCps[1024] = { 0 };
 
 	bool isHeuristicAlgorithm = false;
+	bool endedWithTimeout = false;
+	std::thread timerThread;
 
 	auto timer = Timer();
 	timer.stop();
+
+	SolutionConfig config;
+	config.ignoredValue = ignoredValue;
+	config.maxSolutionCount = maxSolutionCountInput;
+	config.partialSolutionCount = 0;
+	config.stopWorking = false;
 
 	MyImGui::Run([&] {
 		ImGui::GetIO().FontGlobalScale = fontSize / 10.0f;
@@ -110,23 +112,22 @@ int main(int argc, char** argv) {
 		ImGui::SetNextItemWidth(-1);
 		if (ImGui::InputInt("##max solution length", &inputLimitValue)) {
 			inputLimitValue = std::clamp(inputLimitValue, 1, 100'000);
-			limitValue = inputLimitValue * 10;
 		}
 		ImGui::Text("max number of routes:");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
-		if (ImGui::InputInt("##max number of routes", &maxSolutionCount)) {
-			maxSolutionCount = std::clamp(maxSolutionCount, 1, 100'000);
+		if (ImGui::InputInt("##max number of routes", &maxSolutionCountInput)) {
+			maxSolutionCountInput = std::clamp(maxSolutionCountInput, 1, 100'000);
 		}
-		ImGui::Text("heuristic search time:");
+		ImGui::Text("max search time:");
 		ImGui::SameLine();
-		HelpMarker("Max time in seconds you want heuristic algorithm to run for.\nFor most even hard problems 10sec should be enough to find most or all top100 solutions,\nbut might need to increase it for some problems - you have to experiment yourself.");
+		HelpMarker("Max time in seconds you want to search for.\n\nIt's mostly useful for heuristic algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems\n\nMight need to increase that time for some problems - you have to experiment yourself.");
 		ImGui::SameLine();
 		ImGui::SetCursorPosX(boxValuePosX);
 		ImGui::SetNextItemWidth(-1);
-		if (ImGui::InputInt("##heuristic search time", &maxTime)) {
-			maxTime = std::clamp(maxTime, 1, 10'000);
+		if (ImGui::InputInt("##max search time", &maxTime)) {
+			maxTime = std::clamp(maxTime, 1, 100'000);
 		}
 		ImGui::Text("output append data file:");
 		ImGui::SameLine();
@@ -165,14 +166,11 @@ int main(int argc, char** argv) {
 			ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 			if (GetOpenFileNameA(&ofn) == TRUE) {
 				std::strcpy(inputDataFile, ofn.lpstrFile);
-				foundRepeatNodesCount = -1;
 			}
 		}
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(-1);
-		if (ImGui::InputText("##input data file", inputDataFile, sizeof(inputDataFile))) {
-			foundRepeatNodesCount = -1;
-		}
+		ImGui::InputText("##input data file", inputDataFile, sizeof(inputDataFile));
 
 		ImGui::Text("ring CPs:");
 		ImGui::SameLine();
@@ -217,9 +215,6 @@ int main(int argc, char** argv) {
 						repeatNodesTurnedOff.push_back(node);
 				}
 			}
-		} else {
-			foundRepeatNodesCount = -1;
-			maxRepeatNodesToAdd = 100;
 		}
 
 		if (!errorMsg.empty()) {
@@ -232,34 +227,45 @@ int main(int argc, char** argv) {
 			if (!isRunning(algorithmRunTask)) {
 				errorMsg = "";
 				taskWasCanceled = false;
-				partialSolutionCount = 0;
-				repeatNodeMatrix.clear();
+				endedWithTimeout = false;
 				bestFoundSolutions.clear();
-				solutionsView.clear();
-				auto [A, B] = loadCsvData(inputDataFile, ignoredValue, errorMsg);
+
+				config.limit = inputLimitValue * 10;
+				config.ignoredValue = ignoredValue;
+				config.maxSolutionCount = maxSolutionCountInput;
+				config.appendFileName = appendDataFile;
+				config.outputFileName = outputDataFile;
+				config.partialSolutionCount = 0;
+				config.stopWorking = false;
+				config.repeatNodeMatrix.clear();
+				config.solutionsVec.clear();
+
+				auto [A_, B_] = loadCsvData(inputDataFile, config.ignoredValue, errorMsg);
+				config.weights = A_;
+				config.condWeights = B_;
 
 				if (allowRepeatNodes) {
-					repeatNodeMatrix = addRepeatNodeEdges(A, B, ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
+					config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
 				}
 
-				useRespawnMatrix = Vector3d<Bool>(int(B.size()));
+				config.useRespawnMatrix = Vector3d<Bool>(int(config.condWeights.size()));
 				for (auto ringCp : ringCps) {
-					if (ringCp >= B.size())
+					if (ringCp >= config.condWeights.size())
 						continue;
-					for (int i = 0; i < B.size(); ++i) {
+					for (int i = 0; i < config.condWeights.size(); ++i) {
 						if (std::find(ringCps.begin(), ringCps.end(), i) != ringCps.end())
 							continue;
-						for (int j = 0; j < B.size(); ++j) {
+						for (int j = 0; j < config.condWeights.size(); ++j) {
 							if (j == ringCp)
 								continue;
-							if (A[ringCp][i] < ignoredValue && B[j][i].back() < B[j][ringCp][i]) {
+							if (config.weights[ringCp][i] < config.ignoredValue && config.condWeights[j][i].back() < config.condWeights[j][ringCp][i]) {
 								// faster to respawn from ringCp to i then go from i to j, then to directly go from ring to j
-								B[j][ringCp][i] = B[j][i].back();
-								useRespawnMatrix[j][ringCp][i] = true;
-								if (!repeatNodeMatrix.empty()) {
-									repeatNodeMatrix[j][ringCp][i] = repeatNodeMatrix[j][i].back();
+								config.condWeights[j][ringCp][i] = config.condWeights[j][i].back();
+								config.useRespawnMatrix[j][ringCp][i] = true;
+								if (!config.repeatNodeMatrix.empty()) {
+									config.repeatNodeMatrix[j][ringCp][i] = config.repeatNodeMatrix[j][i].back();
 								}
-								A[j][ringCp] = std::min(A[j][ringCp], B[j][i].back());
+								config.weights[j][ringCp] = std::min(config.weights[j][ringCp], config.condWeights[j][i].back());
 							}
 						}
 					}
@@ -267,16 +273,29 @@ int main(int argc, char** argv) {
 
 				if (errorMsg.empty()) {
 					timer = Timer();
-					clearFile(outputDataFile);
-					writeSolutionFileProlog(appendDataFile, inputDataFile, limitValue, isExactAlgorithm, allowRepeatNodes, repeatNodesTurnedOff);
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &solutionsView, &partialSolutionCount, &taskWasCanceled, &repeatNodeMatrix, &useRespawnMatrix, appendDataFile, outputDataFile, A, B, ignoredValue, limitValue, maxSolutionCount, maxTime]() mutable {
-						if (isExactAlgorithm)
-							runAlgorithm(A, B, maxSolutionCount, limitValue, ignoredValue, solutionsView, appendDataFile, outputDataFile, repeatNodeMatrix, useRespawnMatrix, partialSolutionCount, taskWasCanceled);
-						else {
-							runAlgorithmHeuristic(A, B, maxSolutionCount, limitValue, ignoredValue, maxTime, solutionsView, appendDataFile, outputDataFile, repeatNodeMatrix, useRespawnMatrix, partialSolutionCount, taskWasCanceled);
+					timerThread = std::thread([&taskWasCanceled, &timer, maxTime, &config, &endedWithTimeout]() {
+						while (!config.stopWorking && !taskWasCanceled && timer.getTime() < maxTime) {
+							std::this_thread::sleep_for(std::chrono::milliseconds(10));
 						}
-						writeSolutionFileEpilog(appendDataFile, taskWasCanceled);
-						overwriteFileWithSortedSolutions(outputDataFile, maxSolutionCount, solutionsView, repeatNodeMatrix, useRespawnMatrix);
+						endedWithTimeout = timer.getTime() >= maxTime;
+						config.stopWorking = true;
+					});
+					clearFile(outputDataFile);
+					writeSolutionFileProlog(appendDataFile, inputDataFile, config.limit, isExactAlgorithm, allowRepeatNodes, repeatNodesTurnedOff);
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout, appendDataFile, outputDataFile]() mutable {
+						config.weights = createAtspMatrixFromInput(config.weights);
+						std::fill(config.condWeights[0].back().begin(), config.condWeights[0].back().end(), 0);
+						config.useExtendedMatrix = isUsingExtendedMatrix(config.condWeights);
+						config.bestSolutions.clear();
+						if (isExactAlgorithm) {
+							findSolutionsPriority(config);
+						} else {
+							findSolutionsHeuristic(config);
+						}
+						config.stopWorking = true;
+						timerThread.join();
+						writeSolutionFileEpilog(appendDataFile, taskWasCanceled, endedWithTimeout);
+						overwriteFileWithSortedSolutions(outputDataFile, config.maxSolutionCount, config.solutionsVec, config.repeatNodeMatrix, config.useRespawnMatrix);
 						timer.stop();
 					});
 				}
@@ -302,39 +321,49 @@ int main(int argc, char** argv) {
 		}
 
 		std::string status;
-		if (!algorithmRunTask.valid())
+		if (!algorithmRunTask.valid()) {
 			status = "Waiting for start";
-		else if (taskWasCanceled) {
+		} else if (endedWithTimeout) {
+			if (isRunning(algorithmRunTask))
+				status = "Timeout (Still running)";
+			else
+				status = "Timeout";
+		} else if (taskWasCanceled) {
 			if (isRunning(algorithmRunTask))
 				status = "Canceled (Still running)";
 			else
 				status = "Canceled";
 		}
-		else if (isRunning(algorithmRunTask))
+		else if (isRunning(algorithmRunTask)) {
 			status = "Running";
-		else
+		} else {
 			status = "Done";
+		}
 		ImGui::Text("Status: %s", status.c_str());
 		ImGui::Text("Time elapsed: %.1f [s]", timer.getTime());
-		if (isHeuristicAlgorithm)
-			ImGui::Text("Starting points checked: %d", partialSolutionCount.load());
-		else
-			ImGui::Text("Partial routes processed: %d", partialSolutionCount.load());
-		ImGui::Text("Candidate routes found: %d", solutionsView.size());
+		if (isHeuristicAlgorithm) {
+			auto n = config.partialSolutionCount.load();
+			auto optVal = n >> 32;
+			auto tryVal = n & 0xffffffff;
+			ImGui::Text("Complated %4d tries for %d-opt", tryVal, optVal);
+		} else {
+			ImGui::Text("Partial routes processed: %d", config.partialSolutionCount.load());
+		}
+		ImGui::Text("Candidate routes found: %d", config.solutionsVec.size());
 
-		if (solutionsView.size() > bestFoundSolutions.size()) {
-			for (int i = int(bestFoundSolutions.size()); i < solutionsView.size(); ++i) {
-				bestFoundSolutions.push_back(solutionsView[i]);
+		if (config.solutionsVec.size() > bestFoundSolutions.size()) {
+			for (int i = int(bestFoundSolutions.size()); i < config.solutionsVec.size(); ++i) {
+				bestFoundSolutions.push_back(config.solutionsVec[i]);
 			}
 			std::sort(bestFoundSolutions.begin(), bestFoundSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
 		}
 
 		ImGuiListClipper clipper;
-		clipper.Begin(std::min<int>(int(bestFoundSolutions.size()), maxSolutionCount));
+		clipper.Begin(std::min<int>(int(bestFoundSolutions.size()), config.maxSolutionCount));
 		while (clipper.Step()) {
 			for (int j = clipper.DisplayStart; j < clipper.DisplayEnd; ++j) {
 				auto& [B_, time] = bestFoundSolutions[j];
-				auto solStr = createSolutionString(B_, repeatNodeMatrix, useRespawnMatrix);
+				auto solStr = createSolutionString(B_, config.repeatNodeMatrix, config.useRespawnMatrix);
 				ImGui::Text("%.1f", time / 10.0);
 				ImGui::SameLine();
 				ImGui::SetNextItemWidth(-1);
