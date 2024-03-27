@@ -19,6 +19,76 @@ void HelpMarker(const char* desc) {
 	}
 }
 
+void drawSolutionGraph(std::vector<int16_t> solution, std::vector<int16_t> compare, ImVec2 pos, ImVec2 size) {
+	compare.insert(compare.begin(), 0);
+	solution.insert(solution.begin(), 0);
+
+	int N = solution.size();
+
+	std::vector<int> indexes(N);
+	std::vector<int> revIndexes(N);
+	std::iota(indexes.begin(), indexes.end(), 0);
+	if (compare.size() == solution.size()) {
+		for (int i = 0; i < N; ++i)
+			indexes[i] = compare[i];
+	}
+	for (int i = 0; i < N; ++i)
+		revIndexes[indexes[i]] = i;
+
+	float minTextSize = 10.f;
+	float maxTextSize = 20.f;
+	float resizeFactor = 0.05f;
+	auto minXY = std::min(size.x, size.y);
+	float textSize = std::min(maxTextSize, std::max(minTextSize, (100.f / N) * minXY / 50.0f));
+	float r = (minXY / 2) - textSize * 2;
+	
+	auto& drawList = *ImGui::GetWindowDrawList();
+
+	std::vector<float> x(N);
+	std::vector<float> y(N);
+	std::vector<float> textX(N);
+	std::vector<float> textY(N);
+	
+	constexpr float Pi = 3.141592653589793238463;
+
+	auto drawArrow = [&drawList, &x, &y, N, minXY](int i, int j, ImColor color) {
+		float arrowLength = std::min(12.f, (75.0f / N) * minXY / 100.f);
+		float arrowAngle = 25;
+		auto a = ImVec2(x[i], y[i]);
+		auto b = ImVec2(x[j], y[j]);
+		double theta = std::atan2(b.y - a.y, b.x - a.x);
+		double rad = arrowAngle * (Pi / 180);
+		double x1 = b.x - arrowLength * std::cos(theta + rad);
+		double y1 = b.y - arrowLength * std::sin(theta + rad);
+		double x2 = b.x - arrowLength * std::cos(theta - rad);
+		double y2 = b.y - arrowLength * std::sin(theta - rad);
+		drawList.AddLine(a, b, color, 1.0);
+		drawList.AddTriangleFilled(b, ImVec2(x1, y1), ImVec2(x2, y2), color);
+	};
+
+	for (int i = 0; i < N; ++i) {
+		x[i] = r * std::cos(2 * Pi * i / N) + pos.x + size.x / 2.0f;
+		y[i] = r * std::sin(2 * Pi * i / N) + pos.y + size.y / 2.0f;
+		textX[i] = (r + textSize) * std::cos(2 * Pi * i / N) + pos.x + size.x / 2.0f - textSize / 2;
+		textY[i] = (r + textSize) * std::sin(2 * Pi * i / N) + pos.y + size.y / 2.0f - textSize / 2;
+	}
+	std::rotate(x.begin(), x.begin() + (N * 3) / 4 + 1, x.end());
+	std::rotate(y.begin(), y.begin() + (N * 3) / 4 + 1, y.end());
+	std::rotate(textX.begin(), textX.begin() + (N * 3) / 4 + 1, textX.end());
+	std::rotate(textY.begin(), textY.begin() + (N * 3) / 4 + 1, textY.end());
+
+	for (int i = 0; i < N - 1; ++i) {
+		float r, g, b;
+		float h = i * (1.0f / N);
+		ImGui::ColorConvertHSVtoRGB(h, 1.f, 1.f, r, g, b);
+		drawArrow(revIndexes[solution[i]], revIndexes[solution[i + 1]], ImColor(r, g, b));
+	}
+	for (int i = 0; i < N; ++i) {
+		auto text = (i == 0) ? std::string("S") : (i == N - 1) ? std::string("F") : std::to_string(indexes[i]);
+		drawList.AddText(ImGui::GetDefaultFont(), textSize, ImVec2(textX[i], textY[i]), ImColor(255, 255, 255), text.c_str());
+	}
+}
+
 int main(int argc, char** argv) {
 	MyImGui::Init(u"Trackmania Path Finder");
 
@@ -63,6 +133,10 @@ int main(int argc, char** argv) {
 	config.partialSolutionCount = 0;
 	config.stopWorking = false;
 
+	bool isGraphWindowOpen = false;
+	std::vector<int16_t> solutionToShowInGraphWindow;
+	std::vector<int16_t> solutionToCompareToInGraphWindow;
+
 	MyImGui::Run([&] {
 		ImGui::GetIO().FontGlobalScale = fontSize / 10.0f;
 
@@ -73,7 +147,7 @@ int main(int argc, char** argv) {
 		auto io = ImGui::GetIO();
 		ImGui::SetNextWindowPos(ImVec2(0, 0));
 		ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, io.DisplaySize.y));
-		ImGui::Begin("Window", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+		ImGui::Begin("Window", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
 		if (ImGui::GetIO().KeyCtrl) {
 			if (ImGui::GetIO().MouseWheel > 0) {
@@ -230,6 +304,10 @@ int main(int argc, char** argv) {
 				endedWithTimeout = false;
 				bestFoundSolutions.clear();
 
+				isGraphWindowOpen = false;
+				solutionToShowInGraphWindow.clear();
+				solutionToCompareToInGraphWindow.clear();
+
 				config.limit = inputLimitValue * 10;
 				config.ignoredValue = ignoredValue;
 				config.maxSolutionCount = maxSolutionCountInput;
@@ -366,13 +444,50 @@ int main(int argc, char** argv) {
 				auto solStr = createSolutionString(B_, config.repeatNodeMatrix, config.useRespawnMatrix);
 				ImGui::Text("%.1f", time / 10.0);
 				ImGui::SameLine();
+				ImGui::PushID((std::to_string(j) + "_solution_button").c_str());
+				if (ImGui::Button("G")) {
+					isGraphWindowOpen = true;
+					solutionToShowInGraphWindow = B_;
+				}
+				if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+					if (solutionToCompareToInGraphWindow == B_) {
+						solutionToCompareToInGraphWindow.clear();
+					} else {
+						solutionToCompareToInGraphWindow = B_;
+					}
+				}
+				ImGui::PopID();
+				if (ImGui::IsItemHovered()) {
+					ImGui::SetNextWindowSize(ImVec2(350, 375));
+					ImGui::BeginTooltip();
+					auto pos = ImGui::GetWindowPos();
+					drawSolutionGraph(B_, solutionToCompareToInGraphWindow, pos, ImVec2(350, 350));
+					auto& drawList = *ImGui::GetWindowDrawList();
+					std::string text = (solutionToCompareToInGraphWindow == B_) ? "Right-click to disable compare" : "Right-click to compare against";
+					drawList.AddText(ImGui::GetDefaultFont(), 20, ImVec2(pos.x + 10, pos.y + 350), ImColor(255, 255, 255), text.c_str());
+					ImGui::EndTooltip();
+				}
+				ImGui::SameLine();
 				ImGui::SetNextItemWidth(-1);
 				ImGui::InputText(("##solution" + std::to_string(j)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
 			}
 		}
 		clipper.End();
-
 		ImGui::End();
+
+		if (isGraphWindowOpen) {
+			ImGui::SetNextWindowPos(ImVec2(200, 50), ImGuiCond_Once);
+			ImGui::SetNextWindowSize(ImVec2(600, 600), ImGuiCond_Once);
+			ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 1));
+			ImGui::Begin("Solution graph", &isGraphWindowOpen, ImGuiWindowFlags_NoCollapse);
+			auto size = ImGui::GetWindowSize();
+			size.y -= fontSize * 1.5f;
+			auto pos = ImGui::GetWindowPos();
+			pos.y += fontSize * 1.5f;
+			drawSolutionGraph(solutionToShowInGraphWindow, solutionToCompareToInGraphWindow, pos, size);
+			ImGui::End();
+			ImGui::PopStyleColor();
+		}
 	});
 	std::quick_exit(0);
 }
