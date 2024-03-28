@@ -12,7 +12,7 @@ If you have any questions / feature requests the best way is to contact me throu
 
 ## Program screenshot
 
-![screenshot](https://github.com/isfoo/TrackmaniaPathFinder/assets/128239594/9b9eb375-df4d-4c8e-a796-f4f8b663f578)
+![screenshot](https://github.com/isfoo/TrackmaniaPathFinder/assets/128239594/798a383f-077e-44cf-8c76-f9702734338d)
 
 ## Input spreadsheet
 
