@@ -551,7 +551,7 @@ int main(int argc, char** argv) {
 			pos.y += fontSize * 1.5f;
 			
 			auto minXY = std::min(size.x, size.y);
-			guiFont->Scale = std::max(0.5f, (minXY / 680) * 0.6f);
+			guiFont->Scale = std::max(0.5f, (minXY / 680) * 0.8f);
 			ImGui::PushFont(guiFont);
 			float tableWidth = (guiFont->Scale / 0.6f) * 200;
 
