@@ -212,4 +212,20 @@ The desribed above algorithm doesn't natively support such sequence dependent we
 
 ### Heuristic algorithm
 
-TODO: Old description is out of date after algorithm change
+If exact method is too slow we can use a heuristic one. The difference is that this kind of algorithm doesn't give guarantees on solution quality, but should generally complete the search much faster and in practice will give good and even most likely optimal solutions. For this purpose I implemented algorithm based on [Lin–Kernighan heuristic](https://en.wikipedia.org/wiki/Lin%E2%80%93Kernighan_heuristic). 
+
+I made some changes to the algorithm so it works well for the purpose of this program. The 3 main things typical algorithm and it's implementations don't care about are:
+1. Directed graph - We want it to work well for ATSP and not (symmetric) TSP
+2. Sequence dependence - We need the algorithm to take into consideration sequence dependent connections
+3. Finding a lot of solutions - Lin–Kernighan heuristic was made with finding a single optimal solution in mind, but we want a lot of them.
+
+I won't describe how Lin–Kernighan heuristic works, but will give a very non-complete simplified description of the ideas used. If you want to learn more about Lin–Kernighan heuristic I recommend first part of this [paper](https://sci-hub.se/10.1016/S0377-2217(99)00284-2) by Keld Helsgaun and this [series of blog posts](https://tsp-basics.blogspot.com/).
+
+The base idea is simple. First we generate some initial complete route. The initial route can be completely random - it doesn't need to be good. Then we perform a series of small changes to the route that make it better until we can no longer make any more changes. This results in a locally optimal solution. To increase the chances that this solution is globally optimal we can do 2 things - increase the size of changes we make to the route and redoing the process multiple times with different starting routes to hit different local optimums hoping that one of them will be the global optimum.
+
+The *change* of route for our purposes is a **k-opt move**. **k-opt move** means we remove **k** connections from our complete route and add **k** connections such that we get a new complete route that has lower total cost. A route is **k-opt** if no possible **k-opt** move for it exists. Few things to note:
+- If route is **N-opt** where N is the number of nodes (CPs) then it means it's globally optimal.
+- All routes are **1-opt** - if you remove a single connection the only way to get a valid route is to add that same connection back.
+- For ATSP all routes are **2-opt** - harder to explain, but if you try it you will realize if you remove 2 connections the only way to get a valid route is to add those 2 connections back.
+
+The algorithm tries making those **k-opt** moves for varying values of **k** until it's no longer able to do so and at that point it starts the process again with a new starting route.
