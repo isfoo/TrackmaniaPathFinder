@@ -337,7 +337,7 @@ template<typename T> struct FastSmallVector {
 	int size_ = 0;
 	FastSmallVector() {}
 	static std::optional<FastSmallVector> Combine(const FastSmallVector& a, const T& val, const FastSmallVector& b) {
-		if (a.size() + b.size() + 1 > MaxSize)
+		if (a.size() + b.size() + 1 >= MaxSize)
 			return std::nullopt;
 		FastSmallVector result;
 		std::copy(&a.data[0], &a.data[a.size_], &result.data[0]);

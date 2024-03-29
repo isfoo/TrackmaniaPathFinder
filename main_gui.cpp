@@ -23,7 +23,7 @@ void drawSolutionGraph(std::vector<int16_t> solution, std::vector<int16_t> compa
 	compare.insert(compare.begin(), 0);
 	solution.insert(solution.begin(), 0);
 
-	int N = solution.size();
+	int N = int(solution.size());
 
 	std::vector<int> indexes(N);
 	std::vector<int> revIndexes(N);
@@ -48,19 +48,19 @@ void drawSolutionGraph(std::vector<int16_t> solution, std::vector<int16_t> compa
 	std::vector<float> textX(N);
 	std::vector<float> textY(N);
 	
-	constexpr float Pi = 3.141592653589793238463;
+	constexpr float Pi = 3.14159265f;
 
 	auto drawArrow = [&drawList, &x, &y, N, minXY](int i, int j, ImColor color, float thickness) {
 		float arrowLength = thickness * std::min(12.f, 0.75f * minXY / N);
 		float arrowAngle = 25;
 		auto a = ImVec2(x[i], y[i]);
 		auto b = ImVec2(x[j], y[j]);
-		double theta = std::atan2(b.y - a.y, b.x - a.x);
-		double rad = arrowAngle * (Pi / 180);
-		double x1 = b.x - arrowLength * std::cos(theta + rad);
-		double y1 = b.y - arrowLength * std::sin(theta + rad);
-		double x2 = b.x - arrowLength * std::cos(theta - rad);
-		double y2 = b.y - arrowLength * std::sin(theta - rad);
+		float theta = std::atan2(b.y - a.y, b.x - a.x);
+		float rad = arrowAngle * (Pi / 180);
+		float x1 = b.x - arrowLength * std::cos(theta + rad);
+		float y1 = b.y - arrowLength * std::sin(theta + rad);
+		float x2 = b.x - arrowLength * std::cos(theta - rad);
+		float y2 = b.y - arrowLength * std::sin(theta - rad);
 		drawList.AddLine(a, b, color, thickness);
 		drawList.AddTriangleFilled(b, ImVec2(x1, y1), ImVec2(x2, y2), color);
 	};
@@ -188,9 +188,9 @@ int main(int argc, char** argv) {
 		};
 
 		if (ImGui::BeginTable("menuTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
-			ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12, 0);
+			ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
 			ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-			ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12, 2);
+			ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
 			ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
 			tableInputEntry("font size", "You can use CTRL + Mouse wheel to change font size", [&]() {
 				if (ImGui::InputInt("##font size", &fontSize)) {
@@ -244,7 +244,7 @@ int main(int argc, char** argv) {
 		}
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 1);
 		if (ImGui::BeginTable("menuTable2", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
-			ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12, 0);
+			ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
 			ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
 			
 			tableInputEntry("ring CPs", "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP", [&]() {
@@ -350,9 +350,9 @@ int main(int argc, char** argv) {
 						endedWithTimeout = timer.getTime() >= maxTime;
 						config.stopWorking = true;
 					});
-					clearFile(outputDataFile);
-					writeSolutionFileProlog(appendDataFile, inputDataFile, config.limit, isExactAlgorithm, maxRepeatNodesToAdd > 0, repeatNodesTurnedOff);
-					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout, appendDataFile, outputDataFile]() mutable {
+					clearFile(config.outputFileName);
+					writeSolutionFileProlog(config.appendFileName, inputDataFile, config.limit, isExactAlgorithm, maxRepeatNodesToAdd > 0, repeatNodesTurnedOff);
+					algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout]() mutable {
 						config.weights = createAtspMatrixFromInput(config.weights);
 						std::fill(config.condWeights[0].back().begin(), config.condWeights[0].back().end(), 0);
 						config.useExtendedMatrix = isUsingExtendedMatrix(config.condWeights);
@@ -364,8 +364,8 @@ int main(int argc, char** argv) {
 						}
 						config.stopWorking = true;
 						timerThread.join();
-						writeSolutionFileEpilog(appendDataFile, taskWasCanceled, endedWithTimeout);
-						overwriteFileWithSortedSolutions(outputDataFile, config.maxSolutionCount, config.solutionsVec, config.repeatNodeMatrix, config.useRespawnMatrix);
+						writeSolutionFileEpilog(config.appendFileName, taskWasCanceled, endedWithTimeout);
+						overwriteFileWithSortedSolutions(config.outputFileName, config.maxSolutionCount, config.solutionsVec, config.repeatNodeMatrix, config.useRespawnMatrix);
 						timer.stop();
 					});
 				}
@@ -391,7 +391,7 @@ int main(int argc, char** argv) {
 		}
 
 		auto addNumberPadding = [](int value, int maxValue) {
-			int paddingCount = std::to_string(maxValue).size() - std::to_string(value).size();
+			int paddingCount = int(std::to_string(maxValue).size() - std::to_string(value).size());
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 0));
 			ImGui::Text("%s", std::string(paddingCount, '0').c_str());
 			ImGui::PopStyleColor();
@@ -439,7 +439,7 @@ int main(int argc, char** argv) {
 				auto tryVal = n & 0xffffffff;
 				ImGui::Text("Complated "); 
 				ImGui::SameLine();
-				addNumberPadding(tryVal, 1000);
+				addNumberPadding(int(tryVal), 1000);
 				ImGui::Text("%d tries for %d-opt", tryVal, optVal);
 			} else {
 				ImGui::Text("Partial routes processed: %d", config.partialSolutionCount.load());
@@ -482,7 +482,7 @@ int main(int argc, char** argv) {
 
 		if (ImGui::BeginTable("solutionsTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
 			ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::to_string(config.maxSolutionCount).size() + 1), 0);
-			ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::max<int>(4, std::to_string(maxSolutionTime).size()) + 1), 1);
+			ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::max(4, int(std::to_string(maxSolutionTime).size())) + 1), 1);
 			ImGui::TableSetupColumn("Graph", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 3.5f, 2);
 			ImGui::TableSetupColumn("Route", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
 			ImGui::TableHeadersRow();
@@ -567,22 +567,22 @@ int main(int argc, char** argv) {
 			auto diffTableSizeY = size.y - fontSize * 1.5f - graphMenuTableSizeY;
 			if (solutionToShowId != -1 && solutionToCompareId != -1) {
 				auto N = solutionToShowInGraphWindow.size();
-				std::vector<NodeType> solution1(N);
-				std::vector<NodeType> solution2(N);
+				std::vector<int16_t> solution1(N);
+				std::vector<int16_t> solution2(N);
 				solution1[0] = solutionToShowInGraphWindow[0];
 				solution2[0] = solutionToCompareToInGraphWindow[0];
 				for (int i = 1; i < N; ++i) {
 					solution1[solutionToShowInGraphWindow[i - 1]] = solutionToShowInGraphWindow[i];
 					solution2[solutionToCompareToInGraphWindow[i - 1]] = solutionToCompareToInGraphWindow[i];
 				}
-				std::vector<NodeType> revSolution1(N + 1);
-				std::vector<NodeType> revSolution2(N + 1);
+				std::vector<int16_t> revSolution1(N + 1);
+				std::vector<int16_t> revSolution2(N + 1);
 				for (int i = 0; i < N; ++i) {
 					revSolution1[solution1[i]] = i;
 					revSolution2[solution2[i]] = i;
 				}
-				revSolution1[0] = N;
-				revSolution2[0] = N;
+				revSolution1[0] = int16_t(N);
+				revSolution2[0] = int16_t(N);
 
 				ImGui::SetCursorPos(ImVec2(tablePosX, fontSize * 1.5f));
 				if (ImGui::BeginTable("diffTable", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(tableWidth, diffTableSizeY))) {
@@ -602,7 +602,7 @@ int main(int argc, char** argv) {
 							ImGui::PushID((std::to_string(i) + "_diffTable").c_str());
 							ImGui::Selectable("##", isSelected, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, ImGui::GetTextLineHeight()));
 							if (ImGui::IsItemHovered()) {
-								hoveredConnection = { i, solution1[i] };
+								hoveredConnection = { NodeType(i), NodeType(solution1[i]) };
 							}
 							ImGui::PopID();
 							ImGui::SameLine();
