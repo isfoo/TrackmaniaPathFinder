@@ -437,7 +437,7 @@ int main(int argc, char** argv) {
 				auto n = config.partialSolutionCount.load();
 				auto optVal = n >> 32;
 				auto tryVal = n & 0xffffffff;
-				ImGui::Text("Complated "); 
+				ImGui::Text("Completed "); 
 				ImGui::SameLine();
 				addNumberPadding(int(tryVal), 1000);
 				ImGui::Text("%d tries for %d-opt", tryVal, optVal);
