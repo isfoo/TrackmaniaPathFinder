@@ -17,7 +17,7 @@ std::vector<std::vector<ConditionalCost>> splitLineToConditionalCosts(std::strin
 		str = str.substr(pos);
 
 		std::vector<ConditionalCost> condCostList;
-		while (str.size() > 0 && (std::isdigit(str[0]) || str[0] == '.')) {
+		while (str.size() > 0 && (std::isdigit(uint8_t(str[0])) || str[0] == '.')) {
 			auto costEnd = str.find_first_not_of(PossiblyFloatChars);
 			auto cost = parseFloatAsInt(std::string(str.substr(0, costEnd)), 10);
 			if (!cost) {
