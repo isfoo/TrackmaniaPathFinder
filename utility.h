@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <array>
 #include <queue>
+#include <charconv>
 #include <condition_variable>
 
 using Bool = int8_t;
@@ -258,6 +259,11 @@ private:
 };
 
 
+std::string floatToString(float value, int precision) {
+	std::array<char, 64> buf;
+	auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value, std::chars_format::fixed, precision);
+	return std::string(buf.data(), ptr);
+}
 std::optional<int> parseInt(const std::string& s) {
 	if (s.empty())
 		return std::nullopt;
