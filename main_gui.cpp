@@ -846,6 +846,7 @@ int main(int argc, char** argv) {
 					if (!isRunning(matrixCreateTask)) {
 						std::scoped_lock l{ createdMatrixLogMutex };
 						createdMatrixLog.clear();
+						createdMatrix.clear();
 						spreadSheetTimer = Timer();
 						processedFilesTotalSize = 0;
 						matrixCreateTask = std::async(std::launch::async, [&]() {
