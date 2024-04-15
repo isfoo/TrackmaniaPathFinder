@@ -126,6 +126,7 @@ std::vector<uint8_t> lzoDummyCompress(uint8_t* data, int dataSize) {
 using byte = uint8_t;
 using u32 = uint32_t;
 
+constexpr u32 CGameArenaPlayer = 0x032CB000;
 constexpr u32 CSceneVehicleVis = 0x0A018000;
 constexpr u32 CPlugEntRecordData = 0x0911F000;
 constexpr u32 CGameCtnGhostCheckpoints = 0x0309200B;
@@ -162,6 +163,10 @@ struct ReplayEvent {
 struct ReplaySamples {
     std::vector<GhostSample> ghostSamples;
     std::vector<ReplayEvent> events;
+};
+struct ReplayData {
+    std::vector<ReplaySamples> replaySamples;
+    std::vector<u32> cpTimes;
 };
 struct ContinuousReplayData {
     std::vector<u32> cpTimes;
@@ -271,8 +276,8 @@ struct DataBuffer {
     }
 };
 
-std::vector<ReplaySamples> readSamplesData(DataBuffer& buffer) {
-    std::vector<ReplaySamples> replaySamplesList;
+ReplayData readSamplesData(DataBuffer& buffer) {
+    ReplayData replayData;
     AssertReturnEmpty(buffer.readNext<u32>() == CPlugEntRecordData);
     AssertReturnEmpty(buffer.readNext<u32>() == CPlugEntRecordData);
     AssertReturnEmpty(buffer.readNext<u32>() == 10); // version
@@ -332,27 +337,41 @@ std::vector<ReplaySamples> readSamplesData(DataBuffer& buffer) {
                 }
             }
             if (samples.ghostSamples.size() > 0) {
-                replaySamplesList.push_back(samples);
+                replayData.replaySamples.push_back(samples);
             }
+        } else if (entRecordClassIds[type] == CGameArenaPlayer && (u4 == 0 || u4 == 0xED00000)) {
+            std::vector<u32> cpTimes;
+            int cpNumber = 1;
+            while (entRecordBuffer.readNext<byte>()) {
+                entRecordBuffer.skipNext(sizeof(u32));
+                entRecordBuffer.skipNextArray();
+            }
+            hasNextElement = entRecordBuffer.readNext<byte>();
+            while (entRecordBuffer.readNext<byte>()) {
+                auto type = entRecordBuffer.readNext<u32>();
+                auto time = entRecordBuffer.readNext<u32>();
+                auto dataSize = entRecordBuffer.readNext<u32>();
+                entRecordBuffer.skipNext(dataSize - 2);
+                auto readCpNumber = entRecordBuffer.readNext<uint16_t>();
+                if (entRecordNoticeDescriptions[type].second == 21 && readCpNumber == cpNumber) {
+                    cpTimes.push_back(time);
+                    cpNumber += 1;
+                }
+            }
+            replayData.cpTimes = cpTimes;
         } else {
             while (entRecordBuffer.readNext<byte>()) {
                 entRecordBuffer.skipNext(sizeof(u32));
                 entRecordBuffer.skipNextArray();
-                if (entRecordBuffer.readIndex > entRecordBuffer.size) {
-                    int x = 0;
-                }
             }
             hasNextElement = entRecordBuffer.readNext<byte>();
             while (entRecordBuffer.readNext<byte>()) {
                 entRecordBuffer.skipNext(sizeof(u32) * 2);
                 entRecordBuffer.skipNextArray();
-                if (entRecordBuffer.readIndex > entRecordBuffer.size) {
-                    int x = 0;
-                }
             }
         }
     }
-    return replaySamplesList;
+    return replayData;
 }
 
 std::optional<int> findSubsequenceSlow(byte* data, int dataSize, u32 v) {
@@ -400,8 +419,8 @@ std::optional<int> findSubsequence(byte* data, int dataSize, u32 v) {
 #endif
 }
 
-std::vector<ReplaySamples> getReplaySamplesList(const std::wstring& fileName) {
-    std::vector<ReplaySamples> replaySamplesList;
+ReplayData getReplaySamplesList(const std::wstring& fileName) {
+    ReplayData replayData;
     auto memoryFile = openMemoryMappedFile(fileName);
     AssertReturnEmpty(memoryFile);
     auto buffer = DataBuffer((byte*)memoryFile->ptr, memoryFile->size);
@@ -419,9 +438,9 @@ std::vector<ReplaySamples> getReplaySamplesList(const std::wstring& fileName) {
         if (!pos)
             break;
         buffer.readIndex += *pos;
-        replaySamplesList = readSamplesData(buffer);
+        replayData = readSamplesData(buffer);
     }
-    return replaySamplesList;
+    return replayData;
 }
 
 float dist3d(Position p1, Position p2) {
@@ -437,9 +456,22 @@ bool isRespawnBehaviour(const GhostSample& a, const GhostSample& b) {
 std::vector<ContinuousReplayData> getReplayData(const std::wstring& fileName) {
     std::vector<ContinuousReplayData> replayData;
 
-    auto samplesLists = getReplaySamplesList(fileName);
+    auto replayDataSamples = getReplaySamplesList(fileName);
+    auto& samplesLists = replayDataSamples.replaySamples;
+    if (samplesLists.empty())
+        return replayData;
     std::sort(samplesLists.begin(), samplesLists.end(), [](ReplaySamples& a, ReplaySamples& b) { return a.ghostSamples[0].time < b.ghostSamples[0].time; });
     
+    // add finish cross event if it's missing (happens often/always? with ghost files that end exactly when finish is crossed)
+    if (!replayDataSamples.cpTimes.empty()) {
+        auto finishCrossTime = replayDataSamples.cpTimes.back();
+        auto& lastEvents = samplesLists.back().events;
+        auto lastCpCrossEvent = std::find_if(lastEvents.rbegin(), lastEvents.rend(), [&](auto& e) { return e.type == ReplayEvent::CpCross; });
+        if (lastCpCrossEvent == lastEvents.rend() || std::abs(int(lastCpCrossEvent->time) - int(finishCrossTime)) > 200) {
+            lastEvents.push_back(ReplayEvent{ ReplayEvent::CpCross, finishCrossTime });
+        }
+    }
+
     // combine sample lists that were split because of car switch
     for (int i = 0; i < int(samplesLists.size()) - 1; ++i) {
         if (samplesLists[i + 1].events.size() > 0 && samplesLists[i + 1].events[0].type == ReplayEvent::CarSwitch) {
