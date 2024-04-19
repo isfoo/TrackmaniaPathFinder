@@ -9,7 +9,7 @@
 #include <Windows.h>
 #include "utility.h"
 #include "immintrin.h"
-#include "zlib.h"
+#include "libdeflate.h"
 
 struct LzoReader {
     const uint8_t* data;
@@ -179,18 +179,10 @@ struct Connection {
 };
 
 bool zlibDecompress(byte* compressedData, int compressedSize, byte* decompressedData, int decompressedSize) {
-    z_stream infstream;
-    infstream.zalloc = Z_NULL;
-    infstream.zfree = Z_NULL;
-    infstream.opaque = Z_NULL;
-    infstream.avail_in = (uInt)compressedSize;
-    infstream.next_in = (Bytef*)compressedData;
-    infstream.avail_out = (uInt)decompressedSize;
-    infstream.next_out = (Bytef*)decompressedData;
-    inflateInit(&infstream);
-    auto result = inflate(&infstream, Z_NO_FLUSH);
-    inflateEnd(&infstream);
-    return result == Z_STREAM_END;
+    auto d = libdeflate_alloc_decompressor();
+    auto result = libdeflate_zlib_decompress(d, compressedData, compressedSize, decompressedData, decompressedSize, nullptr);
+    libdeflate_free_decompressor(d);
+    return result == LIBDEFLATE_SUCCESS;
 }
 
 struct MemoryMappedFile {
