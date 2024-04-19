@@ -732,58 +732,61 @@ int main(int argc, char** argv) {
 				}
 				if (ImGui::Button("Create positions file")) {
 					cpPositionsErrorMsg.clear();
-					auto replayData = getReplayData(std::wstring(inputPositionReplayFile, inputPositionReplayFile + strlen(inputPositionReplayFile)));
-					calculatedCpPositions = getCpPositions(replayData);
-					if (calculatedCpPositions.empty()) {
-						cpPositionsErrorMsg = "Failed to read positions";
-					} else if (calculatedCpPositions.size() == 1) {
-						cpPositionsErrorMsg = "Failed to find CP positions in replay file";
-					} else if (!cpOrder.empty()) {
-						std::vector<int16_t> path(calculatedCpPositions.size() - 2);
-						std::iota(path.begin(), path.end(), 1);
-						auto sortedCpOrder = cpOrder;
-						std::sort(sortedCpOrder.begin(), sortedCpOrder.end());
-						if (sortedCpOrder != path) {
-							calculatedCpPositions.clear();
-							if (path.empty()) {
-								cpPositionsErrorMsg = "There are only 2 positions (assumed start and finish) in replay, so cannot apply CP order list";
-							} else if (sortedCpOrder.size() > path.size()) {
-								for (auto cp : sortedCpOrder) {
-									if (cp < path[0] || cp > path.back()) {
-										cpPositionsErrorMsg = "CP " + std::to_string(cp) + " provided in list is outside of expected [" + std::to_string(path[0]) + ", " + std::to_string(path.back()) + "] range";
-										break;
+					calculatedCpPositions.clear();
+					auto replayData = getReplayData(std::wstring(inputPositionReplayFile, inputPositionReplayFile + strlen(inputPositionReplayFile)), cpPositionsErrorMsg);
+					if (cpPositionsErrorMsg.empty()) {
+						calculatedCpPositions = getCpPositions(replayData);
+						if (calculatedCpPositions.empty()) {
+							cpPositionsErrorMsg = "Failed to read positions";
+						} else if (calculatedCpPositions.size() == 1) {
+							cpPositionsErrorMsg = "Failed to find CP positions in replay file";
+						} else if (!cpOrder.empty()) {
+							std::vector<int16_t> path(calculatedCpPositions.size() - 2);
+							std::iota(path.begin(), path.end(), 1);
+							auto sortedCpOrder = cpOrder;
+							std::sort(sortedCpOrder.begin(), sortedCpOrder.end());
+							if (sortedCpOrder != path) {
+								calculatedCpPositions.clear();
+								if (path.empty()) {
+									cpPositionsErrorMsg = "There are only 2 positions (assumed start and finish) in replay, so cannot apply CP order list";
+								} else if (sortedCpOrder.size() > path.size()) {
+									for (auto cp : sortedCpOrder) {
+										if (cp < path[0] || cp > path.back()) {
+											cpPositionsErrorMsg = "CP " + std::to_string(cp) + " provided in list is outside of expected [" + std::to_string(path[0]) + ", " + std::to_string(path.back()) + "] range";
+											break;
+										}
+									}
+									for (int i = 1; i < sortedCpOrder.size(); ++i) {
+										if (sortedCpOrder[i - 1] == sortedCpOrder[i]) {
+											cpPositionsErrorMsg = "Duplicate CP " + std::to_string(sortedCpOrder[i]) + " in CP order list";
+											break;
+										}
+									}
+								} else {
+									for (auto cp : path) {
+										if (std::find(sortedCpOrder.begin(), sortedCpOrder.end(), cp) == sortedCpOrder.end()) {
+											cpPositionsErrorMsg = "Missing CP " + std::to_string(cp) + " in CP order list";
+											break;
+										}
 									}
 								}
-								for (int i = 1; i < sortedCpOrder.size(); ++i) {
-									if (sortedCpOrder[i - 1] == sortedCpOrder[i]) {
-										cpPositionsErrorMsg = "Duplicate CP " + std::to_string(sortedCpOrder[i]) + " in CP order list";
-										break;
-									}
+								if (cpPositionsErrorMsg.empty()) { // should never happen
+									cpPositionsErrorMsg = "Unexpected problem with CP order list";
 								}
 							} else {
-								for (auto cp : path) {
-									if (std::find(sortedCpOrder.begin(), sortedCpOrder.end(), cp) == sortedCpOrder.end()) {
-										cpPositionsErrorMsg = "Missing CP " + std::to_string(cp) + " in CP order list";
-										break;
-									}
+								calculatedCpOrder = cpOrder;
+								calculatedCpOrder.insert(calculatedCpOrder.begin(), 0);
+								calculatedCpOrder.push_back(int16_t(calculatedCpOrder.size()));
+								std::vector<Position> newPositions(calculatedCpPositions.size());
+								for (int i = 0; i < calculatedCpOrder.size(); ++i) {
+									newPositions[calculatedCpOrder[i]] = calculatedCpPositions[i];
 								}
-							}
-							if (cpPositionsErrorMsg.empty()) { // should never happen
-								cpPositionsErrorMsg = "Unexpected problem with CP order list";
+								calculatedCpPositions = newPositions;
 							}
 						} else {
-							calculatedCpOrder = cpOrder;
-							calculatedCpOrder.insert(calculatedCpOrder.begin(), 0);
-							calculatedCpOrder.push_back(int16_t(calculatedCpOrder.size()));
-							std::vector<Position> newPositions(calculatedCpPositions.size());
-							for (int i = 0; i < calculatedCpOrder.size(); ++i) {
-								newPositions[calculatedCpOrder[i]] = calculatedCpPositions[i];
-							}
-							calculatedCpPositions = newPositions;
+							calculatedCpOrder.resize(calculatedCpPositions.size());
+							std::iota(calculatedCpOrder.begin(), calculatedCpOrder.end(), 0);
 						}
-					} else {
-						calculatedCpOrder.resize(calculatedCpPositions.size());
-						std::iota(calculatedCpOrder.begin(), calculatedCpOrder.end(), 0);
 					}
 					if (cpPositionsErrorMsg.empty()) {
 						std::ofstream positionsFile(outputPositionsFile, std::ios::trunc);
@@ -872,8 +875,15 @@ int main(int argc, char** argv) {
 									auto wString = dirEntry.path().wstring();
 									ImTextStrToUtf8(out, sizeof(out), (ImWchar*)wString.c_str(), (ImWchar*)wString.c_str() + wString.size());
 									auto fileSize = std::filesystem::file_size(dirEntry.path());
-									auto repData = getReplayData(dirEntry.path().wstring());
+									std::string error;
+									auto repData = getReplayData(dirEntry.path().wstring(), error);
+									processedFilesTotalSize += fileSize;
 									std::string logEntry = std::string(out) + '\n';
+									if (!error.empty()) {
+										std::scoped_lock l{ createdMatrixLogMutex };
+										createdMatrixLog.insert(0, logEntry + "\t\t" + error + "\n");
+										return;
+									}
 									auto connections = getConnections(repData, cpPositions);
 									for (auto& connection : connections) {
 										logEntry += "\t\t" + std::to_string(connection.src) + " -> " + std::to_string(connection.dst) + " time = " + floatToString(connection.time / 10.f, 1) + "\n";
@@ -882,7 +892,6 @@ int main(int argc, char** argv) {
 											createdMatrix[connection.dst][connection.src] = connection.time;
 										}
 									}
-									processedFilesTotalSize += fileSize;
 									std::scoped_lock l{ createdMatrixLogMutex };
 									createdMatrixLog += logEntry;
 								});
@@ -927,6 +936,7 @@ int main(int argc, char** argv) {
 				ImGui::EndTabItem();
 			}
 			if (ImGui::BeginTabItem("Replay visualizer")) {
+				static std::string replayVisulizerErrorMsg;
 				if (ImGui::BeginTable("menuTableReplayVisualizer", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
 					ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
 					ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
@@ -941,14 +951,28 @@ int main(int argc, char** argv) {
 					ImGui::EndTable();
 				}
 				if (ImGui::Button("Visualize")) {
-					auto replayData = getReplayData(std::wstring(inputPositionReplayFile, inputPositionReplayFile + strlen(inputPositionReplayFile)));
 					pathToVisualize.clear();
-					for (auto& rep : replayData) {
-						for (auto& sample : rep.ghostSamples) {
-							pathToVisualize.push_back(sample.pos);
+					replayVisulizerErrorMsg.clear();
+					auto replayData = getReplayData(std::wstring(inputPositionReplayFile, inputPositionReplayFile + strlen(inputPositionReplayFile)), replayVisulizerErrorMsg);
+					if (replayVisulizerErrorMsg.empty()) {
+						if (replayData.empty()) {
+							replayVisulizerErrorMsg = "No data found in file";
+						}
+						for (auto& rep : replayData) {
+							for (auto& sample : rep.ghostSamples) {
+								pathToVisualize.push_back(sample.pos);
+							}
 						}
 					}
 				}
+
+				ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 0, 0, 255));
+				if (replayVisulizerErrorMsg.empty()) {
+					ImGui::Text("");
+				} else {
+					ImGui::Text("Error: %s", replayVisulizerErrorMsg.c_str());
+				}
+				ImGui::PopStyleColor();
 
 				if (!pathToVisualize.empty()) {
 					auto pos = ImGui::GetCursorPos();

@@ -5,11 +5,21 @@
 #include <algorithm>
 #include <optional>
 #include <string>
+#include <variant>
 #define NOMINMAX
 #include <Windows.h>
 #include "utility.h"
 #include "immintrin.h"
 #include "libdeflate.h"
+
+using byte = uint8_t;
+using sbyte = int8_t;
+using u16 = uint16_t;
+using u32 = uint32_t;
+
+constexpr u32 CGameArenaPlayer = 0x032CB000;
+constexpr u32 CSceneVehicleVis = 0x0A018000;
+constexpr u32 CPlugEntRecordData = 0x0911F000;
 
 struct LzoReader {
     const uint8_t* data;
@@ -123,13 +133,6 @@ std::vector<uint8_t> lzoDummyCompress(uint8_t* data, int dataSize) {
     return compressedData;
 }
 
-using byte = uint8_t;
-using u32 = uint32_t;
-
-constexpr u32 CGameArenaPlayer = 0x032CB000;
-constexpr u32 CSceneVehicleVis = 0x0A018000;
-constexpr u32 CPlugEntRecordData = 0x0911F000;
-constexpr u32 CGameCtnGhostCheckpoints = 0x0309200B;
 
 #define AssertReturnEmpty(Exp) if (!(Exp)) return {}
 
@@ -142,6 +145,72 @@ struct GbxHeaderV6 {
     char compressionBody;
     char _unknown0;
     u32 classId;
+};
+struct vec3 {
+    float x;
+    float y;
+    float z;
+};
+struct EntRecordSample {
+    byte UO_0_1[2];
+    u16 sideSpeedInt;
+    byte UO_4[1];
+    byte rpm;
+    byte flWheelRotation;
+    byte flWheelRotationCount;
+    byte frWheelRotation;
+    byte frWheelRotationCount;
+    byte rrWheelRotation;
+    byte rrWheelRotationCount;
+    byte rlWheelRotation;
+    byte rlWheelRotationCount;
+    byte steer;
+    byte UO_15_17[3];
+    byte brake;
+    byte UO_19_20[2];
+    byte turboTimeByte;
+    byte UO_22[1];
+    byte flDampenLen;
+    byte flGroundContactMaterial;
+    byte frDampenLen;
+    byte frGroundContactMaterial;
+    byte rrDampenLen;
+    byte rrGroundContactMaterial;
+    byte rlDampenLen;
+    byte rlGroundContactMaterial;
+    byte isTurbo;
+    byte slipCoef1;
+    byte slipCoef2;
+    byte UO_34_46[13];
+    vec3 position;
+    u16 axisHeading;
+    u16 axisPitch;
+    u16 speed;
+    sbyte velocityHeading;
+    sbyte velocityPitch;
+    byte UO_67_75[9];
+    byte vechicleState;
+    byte UO_77_80[4];
+    byte flIceByte;
+    byte frIceByte;
+    byte rrIceByte;
+    byte rlIceByte;
+    byte UO_85_88[4];
+    byte groundMode;
+    byte boosterAirControl;
+    byte gearByte;
+    byte UO5;
+    byte flDirtByte;
+    byte UO6;
+    byte frDirtByte;
+    byte UO7;
+    byte rrDirtByte;
+    byte UO8;
+    byte rlDirtByte;
+    byte UO9;
+    byte waterByte;
+    byte simulationTimeCoef;
+    byte UO_103_[1]; // variable size
 };
 #pragma pack(pop)
 
@@ -246,6 +315,15 @@ struct DataBuffer {
         readIndex += sizeof(T);
         return value;
     }
+    template<typename T1, typename T2, typename... Ts> std::tuple<T1, T2, Ts...> readNext() {
+        auto v = std::tuple{ readNext<T1>() };
+        return std::tuple_cat(v, std::tuple{ readNext<T2, Ts...>() });
+    }
+    template<typename T> T* readNextGetPtr(int size) {
+        auto ptr = (T*)&data[readIndex];
+        readIndex += size;
+        return ptr;
+    }
     template<typename T> bool canReadNext() {
         return readIndex + sizeof(T) <= size;
     }
@@ -260,6 +338,18 @@ struct DataBuffer {
         readIndex += compressedSize;
         return decompressedBuffer;
     }
+    void skipNextLookbackString(bool& isFirstTime) {
+        if (isFirstTime) { // maybe version
+            auto version = readNext<u32>();
+            if (version & 0xE0000000)
+                readIndex -= 4;
+            isFirstTime = false;
+        }
+        auto index = readNext<u32>();
+        if ((index & 0xE0000000) && !(index & 0x1FFFFFFF)) {
+            skipNextArray();
+        }
+    }
     void skipNextArray() {
         skipNext(readNext<u32>());
     }
@@ -268,14 +358,8 @@ struct DataBuffer {
     }
 };
 
-ReplayData readSamplesData(DataBuffer& buffer) {
+ReplayData readSamplesData(DataBuffer& entRecordBuffer) {
     ReplayData replayData;
-    AssertReturnEmpty(buffer.readNext<u32>() == CPlugEntRecordData);
-    AssertReturnEmpty(buffer.readNext<u32>() == CPlugEntRecordData);
-    AssertReturnEmpty(buffer.readNext<u32>() == 10); // version
-    auto entRecordBuffer = buffer.readNextCompressed(zlibDecompress);
-    AssertReturnEmpty(entRecordBuffer.size > 1'000);
-    AssertReturnEmpty(entRecordBuffer.peakNext<u32>() >> 16 == 0); // start of sample range should have zeros in high bits
     entRecordBuffer.skipNext(sizeof(u32) * 2); // start and end of sample range
 
     auto entRecordDescSize = entRecordBuffer.readNext<u32>();
@@ -298,29 +382,21 @@ ReplayData readSamplesData(DataBuffer& buffer) {
     bool hasNextElement = entRecordBuffer.readNext<byte>();
     while (entRecordBuffer.canReadNext<byte>() && hasNextElement) {
         auto type = entRecordBuffer.readNext<u32>();
-        if (type >= entRecordClassIds.size())
-            break;
+        AssertReturnEmpty(type < entRecordClassIds.size());
         entRecordBuffer.skipNext(sizeof(u32) * 3);
         auto u4 = entRecordBuffer.readNext<u32>();
 
         if (entRecordClassIds[type] == CSceneVehicleVis && (u4 == 0 || u4 == 0xED00000)) {
             ReplaySamples samples;
             while (entRecordBuffer.readNext<byte>()) {
-                auto time = entRecordBuffer.readNext<u32>();
-                auto size = entRecordBuffer.readNext<u32>();
-                entRecordBuffer.skipNext(47);
-                auto posX = entRecordBuffer.readNext<float>();
-                auto posY = entRecordBuffer.readNext<float>();
-                auto posZ = entRecordBuffer.readNext<float>();
-                entRecordBuffer.skipNext(6);
-                auto speed = 3.6f * std::exp(entRecordBuffer.readNext<int16_t>() / 1000.0f);
-                entRecordBuffer.skipNext(size - 47 - 3 * sizeof(float) - 8);
-                samples.ghostSamples.push_back(GhostSample{ time, Position{posX, posY, posZ}, speed });
+                auto [time, size] = entRecordBuffer.readNext<u32, u32>();
+                auto sample = entRecordBuffer.readNextGetPtr<EntRecordSample>(size);
+                auto speed = 3.6f * std::exp(sample->speed / 1000.0f);
+                samples.ghostSamples.push_back(GhostSample{ time, Position{sample->position.x, sample->position.y, sample->position.z}, speed });
             }
             hasNextElement = entRecordBuffer.readNext<byte>();
             while (entRecordBuffer.readNext<byte>()) {
-                auto type = entRecordBuffer.readNext<u32>();
-                auto time = entRecordBuffer.readNext<u32>();
+                auto [type, time] = entRecordBuffer.readNext<u32, u32>();
                 entRecordBuffer.skipNextArray();
                 if (entRecordNoticeDescriptions[type].second == 20) {
                     samples.events.push_back(ReplayEvent{ ReplayEvent::CpCross, time });
@@ -340,8 +416,7 @@ ReplayData readSamplesData(DataBuffer& buffer) {
             }
             hasNextElement = entRecordBuffer.readNext<byte>();
             while (entRecordBuffer.readNext<byte>()) {
-                auto type = entRecordBuffer.readNext<u32>();
-                auto time = entRecordBuffer.readNext<u32>();
+                auto [type, time] = entRecordBuffer.readNext<u32, u32>();
                 auto dataSize = entRecordBuffer.readNext<u32>();
                 entRecordBuffer.skipNext(dataSize - 2);
                 auto readCpNumber = entRecordBuffer.readNext<uint16_t>();
@@ -366,52 +441,238 @@ ReplayData readSamplesData(DataBuffer& buffer) {
     return replayData;
 }
 
-std::optional<int> findSubsequenceSlow(byte* data, int dataSize, u32 v) {
-    for (int pos = 0; pos < dataSize - 4; ++pos) {
-        auto dataVal = *(u32*)(&data[pos]);
-        if (dataVal == v)
-            return pos;
-    }
-    return std::nullopt;
-}
+struct BodyReadState {
+    enum ErrorType {
+        None = 0, 
+        Unexpected,
+        UnsupportedChunk,
+        UnknownRecordDataVersion,
+        MultipleRecordDataEntries
+    };
+    ErrorType error = None;
+    bool isFirstLookbackString = true;
+    DataBuffer& buffer;
+    ReplayData& replayData;
+    std::unordered_map<u32, std::function<void(BodyReadState& state)>>& functions;
+    BodyReadState(DataBuffer& buffer, ReplayData& replayData, std::unordered_map<u32, std::function<void(BodyReadState& state)>>& functions) : 
+        buffer(buffer), replayData(replayData), functions(functions)
+    {}
+};
 
-u32 trailingZeroBitCount(u32 a) {
-#if defined(COMPILER_MSVC)
-    return __popcnt(~a & (a - 1));
-#else
-    return __builtin_ctz(a);
-#endif
-}
-
-std::optional<int> findSubsequence(byte* data, int dataSize, u32 v) {
-#ifdef __AVX2__
-    byte* s = (byte*)&v;
-    auto b1 = _mm256_set1_epi8(s[0]);
-    auto b2 = _mm256_set1_epi8(s[1]);
-    auto dataStart = data;
-    auto dataEnd = data + dataSize;
-    auto dataEndAvx = dataEnd - 32 - sizeof(u32);
-    for (; data < dataEndAvx; data += 32) {
-        auto loadByte1 = _mm256_lddqu_si256((__m256i*)data);
-        auto loadByte2 = _mm256_lddqu_si256((__m256i*)(data + 1));
-        u32 matches = _mm256_movemask_epi8(_mm256_cmpeq_epi8(b1, loadByte1)) & _mm256_movemask_epi8(_mm256_cmpeq_epi8(b2, loadByte2));
-        while (matches) {
-            int potentialOffset = trailingZeroBitCount(matches);
-            if (*(u32*)(data + potentialOffset) == v)
-                return int(data - dataStart + potentialOffset);
-            matches &= matches - 1;
+void readBody(BodyReadState& state) {
+    while (true) {
+        if (state.error)
+            return;
+        if (!state.buffer.canReadNext<u32>()) {
+            state.error = BodyReadState::ErrorType::Unexpected;
+            return;
+        }
+        auto chunkId = state.buffer.readNext<u32>();
+        if (chunkId == 0xFACADE01)
+            return;
+        if (auto fun = state.functions.find(chunkId); fun != state.functions.end()) {
+            fun->second(state);
+        } else {
+            state.error = BodyReadState::ErrorType::UnsupportedChunk;
+            return;
         }
     }
-    auto result = findSubsequenceSlow(data, int(dataEnd - data), v);
-    if (!result)
-        return std::nullopt;
-    return *result + int(data - dataStart);
-#else
-    return findSubsequenceSlow(data, dataSize, v);
-#endif
 }
 
-ReplayData getReplaySamplesList(const std::wstring& fileName) {
+void rangesImpl(std::vector<u32>& data) {}
+template<typename... Args> void rangesImpl(std::vector<u32>& data, std::pair<u32, u32> a, Args... rest);
+template<typename... Args> void rangesImpl(std::vector<u32>& data, u32 a, Args... rest) {
+    data.push_back(a);
+    rangesImpl(data, rest...);
+}
+template<typename... Args> void rangesImpl(std::vector<u32>& data, std::pair<u32, u32> a, Args... rest) {
+    for (auto v = a.first; v <= a.second; ++v)
+        data.push_back(v);
+    rangesImpl(data, rest...);
+}
+template<typename... Args> std::vector<u32> ranges(Args... args) {
+    std::vector<u32> data;
+    rangesImpl(data, args...);
+    return data;
+}
+
+BodyReadState::ErrorType readBody(DataBuffer& buffer, ReplayData& replayData, bool isFirstLookbackString=true) {
+    static std::unordered_map<u32, std::function<void(BodyReadState& state)>> functions;
+    static bool wasInitialized = false;
+    static std::mutex initMutex;
+
+    if (!wasInitialized) {
+        std::scoped_lock l{ initMutex };
+        if (!wasInitialized) {
+            #define ReadBodyAssertNoError(State) do { readBody((State)); if ((State).error) return; } while (false)
+            #define AssertReturnWithError(Exp, Error) if (!(Exp)) { state.error = Error; return; }
+
+            // skip chunks:
+            std::vector<u32> skipChunks;
+            for (u32 chunkPart : ranges(0x07, 0x08, 0x0F, 0x13, 0x18, std::pair(0x1A, 0x23), std::pair(0x25, 0x28)))
+                skipChunks.push_back(0x03093000 | chunkPart); // CGameCtnReplay
+            skipChunks.push_back(0x0303F007); // CGameGhost
+            for (u32 chunkPart : ranges(0x04, 0x05, 0x08, 0x09, 0x0A, 0x0B, 0x13, 0x14, 0x17, 0x1A, 0x1B, 0x1D, 0x1F, std::pair(0x21, 0x2E)))
+                skipChunks.push_back(0x03092000 | chunkPart); // CGameCtnGhost
+            auto skipFunction = [](BodyReadState& state) {
+                AssertReturnWithError(state.buffer.readNext<u32>() == 'SKIP', BodyReadState::ErrorType::Unexpected);
+                auto size = state.buffer.readNext<u32>();
+                state.buffer.skipNext(size);
+            };
+            for (auto& skipChunk : skipChunks) {
+                functions.emplace(skipChunk, skipFunction);
+            }
+
+            // CPlugEntRecordData:
+            functions.emplace(CPlugEntRecordData, [](BodyReadState& state) {
+                AssertReturnWithError(state.buffer.readNext<u32>() == 10, BodyReadState::ErrorType::UnknownRecordDataVersion);
+                auto entRecordBuffer = state.buffer.readNextCompressed(zlibDecompress);
+                if (state.replayData.replaySamples.empty()) {
+                    state.replayData = readSamplesData(entRecordBuffer);
+                } else {
+                    state.error = BodyReadState::ErrorType::MultipleRecordDataEntries;
+                }
+            });
+
+            // CGameCtnReplay:
+            functions.emplace(0x03093002, [](BodyReadState& state) {
+                auto size = state.buffer.readNext<u32>();
+                state.buffer.skipNext(size); // map GBX
+            });
+            functions.emplace(0x03093014, [](BodyReadState& state) {
+                state.buffer.readNext<u32>();
+                auto numGhosts = state.buffer.readNext<u32>();
+                for (int i = 0; i < numGhosts; ++i) {
+                    auto noderef_index = state.buffer.readNext<u32>();
+                    auto classId = state.buffer.readNext<u32>();
+                    ReadBodyAssertNoError(state);
+                }
+                state.buffer.readNext<u32>();
+                auto numExtras = state.buffer.readNext<u32>();
+                state.buffer.skipNext(numExtras * sizeof(uint64_t));
+            });
+            functions.emplace(0x03093015, [](BodyReadState& state) {
+                auto noderef_index = state.buffer.readNext<u32>();
+                if (noderef_index != u32(~0)) {
+                    auto classId = state.buffer.readNext<u32>();
+                    ReadBodyAssertNoError(state);
+                }
+            });
+            functions.emplace(0x03093024, [](BodyReadState& state) {
+                auto version = state.buffer.readNext<u32>();
+                auto UO2 = state.buffer.readNext<u32>();
+                auto index = state.buffer.readNext<u32>();
+                if (index != u32(~0)) {
+                    AssertReturnWithError(state.buffer.readNext<u32>() == CPlugEntRecordData, BodyReadState::ErrorType::Unexpected);
+                    ReadBodyAssertNoError(state);
+                }
+            });
+            
+            // CGameCtnGhost:
+            functions.emplace(0x03092000, [](BodyReadState& state) {
+                AssertReturnWithError(state.buffer.readNext<u32>() == 'SKIP', BodyReadState::ErrorType::Unexpected);
+                auto size = state.buffer.readNext<u32>();
+                auto version = state.buffer.readNext<u32>();
+                u32 appearanceVersion = 0;
+                if (version >= 9) {
+                    appearanceVersion = state.buffer.readNext<u32>();
+                }
+
+                for (int i = 0; i < 3; ++i) {
+                    state.buffer.skipNextLookbackString(state.isFirstLookbackString);
+                }
+                state.buffer.skipNext(3 * sizeof(float)); // vec3
+                auto fileRefCount = state.buffer.readNext<u32>();
+                for (int i = 0; i < fileRefCount; ++i) {
+                    auto fileRefVersion = state.buffer.readNext<byte>();
+                    if (fileRefVersion >= 3) {
+                        state.buffer.skipNext(32); // checksum
+                    }
+                    auto filePathSize = state.buffer.readNext<u32>();
+                    state.buffer.skipNext(filePathSize); // filePath
+                    if (fileRefVersion >= 3 || (fileRefVersion >= 1 && filePathSize > 0)) {
+                        state.buffer.skipNextArray(); // locatorUrl
+                    }
+                }
+                auto hasBadges = state.buffer.readNext<u32>();
+                if (hasBadges) {
+                    auto badgeVersion = state.buffer.readNext<u32>();
+                    state.buffer.skipNext(3 * sizeof(float)); // vec3
+                    if (badgeVersion == 0) {
+                        state.buffer.readNext<u32>();
+                        state.buffer.skipNextArray();
+                    }
+                    auto stickersArraySize = state.buffer.readNext<u32>();
+                    for (int i = 0; i < stickersArraySize; ++i) {
+                        state.buffer.skipNextArray();
+                        state.buffer.skipNextArray();
+                    }
+                    auto layerArraySize = state.buffer.readNext<u32>();
+                    for (int i = 0; i < layerArraySize; ++i) {
+                        state.buffer.skipNextArray();
+                    }
+                }
+                if (appearanceVersion >= 1) {
+                    state.buffer.skipNextArray(); // UO7
+                }
+                state.buffer.skipNextArray(); // ghostNickname
+                state.buffer.skipNextArray(); // ghostAvatarName
+                state.buffer.skipNextArray(); // recordingContext
+                auto U03 = state.buffer.readNext<u32>();
+
+                auto index = state.buffer.readNext<u32>();
+                if (index != u32(~0)) {
+                    AssertReturnWithError(state.buffer.readNext<u32>() == CPlugEntRecordData, BodyReadState::ErrorType::Unexpected);
+                    ReadBodyAssertNoError(state);
+                }
+                state.buffer.skipNext(state.buffer.readNext<u32>() * sizeof(u32)); // UO4
+                state.buffer.skipNextArray(); // ghostTrigram
+                state.buffer.skipNextArray(); // ghostZone
+                if (version >= 8) {
+                    state.buffer.skipNextArray(); // ghostClubTag
+                }
+            });
+            functions.emplace(0x0309200C, [](BodyReadState& state) {
+                state.buffer.readNext<u32>();
+            });
+            functions.emplace(0x0309201C, [](BodyReadState& state) {
+                state.buffer.skipNext(32);
+            });
+            functions.emplace(0x0309200E, [](BodyReadState& state) {
+                state.buffer.skipNextLookbackString(state.isFirstLookbackString);
+            });
+            functions.emplace(0x0309200F, [](BodyReadState& state) {
+                auto size = state.buffer.readNext<u32>();
+                state.buffer.skipNext(size);
+            });
+            functions.emplace(0x03092010, [](BodyReadState& state) {
+                state.buffer.skipNextLookbackString(state.isFirstLookbackString);
+            });
+            
+            // CGameGhost:
+            functions.emplace(0x0303F005, [](BodyReadState& state) {
+                auto uncompressedSize = state.buffer.readNext<u32>();
+                auto compressedSize = state.buffer.readNext<u32>();
+                state.buffer.skipNext(compressedSize);
+            });
+            functions.emplace(0x0303F006, [](BodyReadState& state) {
+                bool isReplaying = state.buffer.readNext<u32>();
+                auto uncompressedSize = state.buffer.readNext<u32>();
+                auto compressedSize = state.buffer.readNext<u32>();
+                state.buffer.skipNext(compressedSize);
+            });
+
+            #undef AssertReturnWithError
+
+            wasInitialized = true;
+        }
+    }
+    BodyReadState bodyReadState(buffer, replayData, functions);
+    readBody(bodyReadState);
+    return bodyReadState.error;
+}
+
+ReplayData getReplaySamplesList(const std::wstring& fileName, BodyReadState::ErrorType& error) {
     ReplayData replayData;
     auto memoryFile = openMemoryMappedFile(fileName);
     AssertReturnEmpty(memoryFile);
@@ -425,13 +686,7 @@ ReplayData getReplaySamplesList(const std::wstring& fileName) {
     buffer.skipNext(sizeof(u32)); // number of nodes
     AssertReturnEmpty(buffer.readNext<u32>() == 0); // number of external nodes
     buffer = buffer.readNextCompressed(lzoDecompress); // compressed body data
-    while (true) {
-        auto pos = findSubsequence((byte*)&buffer.data[buffer.readIndex], buffer.size - int(buffer.readIndex), CPlugEntRecordData);
-        if (!pos)
-            break;
-        buffer.readIndex += *pos;
-        replayData = readSamplesData(buffer);
-    }
+    error = readBody(buffer, replayData);
     return replayData;
 }
 
@@ -445,10 +700,23 @@ bool isRespawnBehaviour(const GhostSample& a, const GhostSample& b) {
     auto dist = dist3d(a.pos, b.pos);
     return (b.speed < 500 && dist > 10) || (b.speed >= 500 && dist > 30);
 }
-std::vector<ContinuousReplayData> getReplayData(const std::wstring& fileName) {
+std::vector<ContinuousReplayData> getReplayData(const std::wstring& fileName, std::string& outError) {
     std::vector<ContinuousReplayData> replayData;
 
-    auto replayDataSamples = getReplaySamplesList(fileName);
+    BodyReadState::ErrorType error;
+    auto replayDataSamples = getReplaySamplesList(fileName, error);
+    if (error == BodyReadState::ErrorType::MultipleRecordDataEntries) {
+        outError = "Encountered multiple RecordData entries";
+    } else if (error == BodyReadState::ErrorType::UnknownRecordDataVersion) {
+        outError = "Encountered unsupported RecordData version";
+    } else if (error == BodyReadState::ErrorType::UnsupportedChunk) {
+        outError = "Encountered unsupported ChunkID";
+    } else if (error == BodyReadState::ErrorType::Unexpected) {
+        outError = "Unexpected problem";
+    }
+    if (!outError.empty())
+        return replayData;
+
     auto& samplesLists = replayDataSamples.replaySamples;
     if (samplesLists.empty())
         return replayData;
