@@ -76,9 +76,13 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, std::pair<std::vector<in
         if (config.bestSolutions[i].time == solution.second) {
             if (solutionConnections == config.bestSolutions[i].solutionConnections) {
                 config.bestSolutions[i].allVariations.push_back(solution.first);
-                if (solutionWithRepeats != config.bestSolutions[i].solutionWithRepeats) {
-                    config.bestSolutions[i].variations.push_back(getSortedSolutionIfPossible(config, solution.first));
+                for (auto& variationWithRepeats : config.bestSolutions[i].variationsWithRepeats) {
+                    if (solutionWithRepeats == variationWithRepeats) {
+                        return;
+                    }
                 }
+                config.bestSolutions[i].variations.push_back(getSortedSolutionIfPossible(config, solution.first));
+                config.bestSolutions[i].variationsWithRepeats.push_back(solutionWithExplicitRepeats(solution.first, config.repeatNodeMatrix));
                 return;
             }
         }
