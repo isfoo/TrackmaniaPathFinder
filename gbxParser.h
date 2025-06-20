@@ -698,11 +698,9 @@ float dist3d(Position p1, Position p2) {
 }
 bool isRespawnBehaviour(const GhostSample& a, const GhostSample& b) {
     auto dist = dist3d(a.pos, b.pos);
-    return (b.speed < 500 && dist > 10) || (b.speed >= 500 && dist > 30);
+    return (b.speed < 500 && dist > 15) || (b.speed >= 500 && dist > 40);
 }
-std::vector<ContinuousReplayData> getReplayData(const std::wstring& fileName, std::string& outError) {
-    std::vector<ContinuousReplayData> replayData;
-
+std::vector<ReplaySamples> getReplaySamples(const std::wstring& fileName, std::string& outError) {
     BodyReadState::ErrorType error;
     auto replayDataSamples = getReplaySamplesList(fileName, error);
     if (error == BodyReadState::ErrorType::MultipleRecordDataEntries) {
@@ -715,11 +713,11 @@ std::vector<ContinuousReplayData> getReplayData(const std::wstring& fileName, st
         outError = "Unexpected problem";
     }
     if (!outError.empty())
-        return replayData;
+        return {};
 
     auto& samplesLists = replayDataSamples.replaySamples;
     if (samplesLists.empty())
-        return replayData;
+        return {};
     std::sort(samplesLists.begin(), samplesLists.end(), [](ReplaySamples& a, ReplaySamples& b) { return a.ghostSamples[0].time < b.ghostSamples[0].time; });
     
     // add finish cross event if it's missing (happens often/always? with ghost files that end exactly when finish is crossed)
@@ -741,6 +739,11 @@ std::vector<ContinuousReplayData> getReplayData(const std::wstring& fileName, st
             i -= 1;
         }
     }
+
+    return samplesLists;
+}
+std::vector<ContinuousReplayData> getReplayData(const std::wstring& fileName, std::string& outError) {
+    auto samplesLists = getReplaySamples(fileName, outError);
 
     // split sample lists when you see a respawn behaviour
     for (int i = 0; i < samplesLists.size(); ++i) {
@@ -765,6 +768,7 @@ std::vector<ContinuousReplayData> getReplayData(const std::wstring& fileName, st
     }
 
     // save sample lists treating each one as if it was a seperate replay 
+    std::vector<ContinuousReplayData> replayData;
     for (auto& sampleList : samplesLists) {
         ContinuousReplayData continuousReplay;
         auto startTime = sampleList.ghostSamples[0].time;
@@ -872,4 +876,40 @@ std::vector<Connection> getConnections(const std::vector<ContinuousReplayData>& 
         connections.insert(connections.end(), con.begin(), con.end());
     }
     return connections;
+}
+
+ContinuousReplayData getNoRespawnReplayData(const std::wstring& fileName, std::string& outError) {
+    auto listX = getReplaySamples(fileName, outError);
+    auto list = listX[0];
+    list.events.erase(std::remove_if(list.events.begin(), list.events.end(), [](ReplayEvent& e) { return e.type != ReplayEvent::CpCross; }), list.events.end());
+
+    for (int j = 0; j < list.ghostSamples.size() - 1; ++j) {
+        if (isRespawnBehaviour(list.ghostSamples[j], list.ghostSamples[j + 1])) {
+            int i = 0;
+            while (list.events[i].time < list.ghostSamples[j + 2].time) {
+                i += 1;
+            }
+            i -= 1;
+            
+            int k = j + 2;
+            while (list.ghostSamples[k].time >= list.events[i].time) {
+                k -= 1;
+            }
+            k += 1;
+
+            list.ghostSamples.erase(list.ghostSamples.begin() + k, list.ghostSamples.begin() + j + 1);
+            j = k + 19;
+        }
+    }
+
+    ContinuousReplayData replayData;
+    for (auto& event : list.events) {
+        if (event.type == ReplayEvent::CpCross) {
+            replayData.cpTimes.push_back(event.time);
+        }
+    }
+    for (auto& ghostSample : list.ghostSamples) {
+        replayData.ghostSamples.push_back(ghostSample);
+    }
+    return replayData;
 }
