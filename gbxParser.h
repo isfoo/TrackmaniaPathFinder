@@ -386,7 +386,7 @@ ReplayData readSamplesData(DataBuffer& entRecordBuffer) {
         entRecordBuffer.skipNext(sizeof(u32) * 3);
         auto u4 = entRecordBuffer.readNext<u32>();
 
-        if (entRecordClassIds[type] == CSceneVehicleVis && (u4 == 0 || u4 == 0xED00000)) {
+        if (entRecordClassIds[type] == CSceneVehicleVis && (u4 == 0 || u4 == 0xED00000 || u4 == 0xDA00000 || u4 == 0xDC00000 || u4 == 0xEB00000)) {
             ReplaySamples samples;
             while (entRecordBuffer.readNext<byte>()) {
                 auto [time, size] = entRecordBuffer.readNext<u32, u32>();
@@ -407,7 +407,7 @@ ReplayData readSamplesData(DataBuffer& entRecordBuffer) {
             if (samples.ghostSamples.size() > 0) {
                 replayData.replaySamples.push_back(samples);
             }
-        } else if (entRecordClassIds[type] == CGameArenaPlayer && (u4 == 0 || u4 == 0xED00000)) {
+        } else if (entRecordClassIds[type] == CGameArenaPlayer && (u4 == 0 || u4 == 0xED00000 || u4 == 0xDA00000)) {
             std::vector<u32> cpTimes;
             int cpNumber = 1;
             while (entRecordBuffer.readNext<byte>()) {
