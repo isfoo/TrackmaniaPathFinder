@@ -17,11 +17,17 @@ struct ConditionalCost {
 
 struct SolutionConfig {
 	struct BestSolution {
-		BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& solutionWithRepeats, int time) :
-			solution(solution), solutionWithRepeats(solutionWithRepeats), time(time)
-		{}
+		BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& solutionWithRepeats, const FastSet2d& solutionConnections, int time) :
+			solution(solution), solutionWithRepeats(solutionWithRepeats), solutionConnections(solutionConnections), time(time)
+		{
+            allVariations.push_back(solution);
+            variations.push_back(solution);
+        }
 		std::vector<int16_t> solution;
+        std::vector<std::vector<int16_t>> allVariations;
+        std::vector<std::vector<int16_t>> variations;
 		std::vector<int16_t> solutionWithRepeats;
+        FastSet2d solutionConnections;
 		int time;
 	};
 

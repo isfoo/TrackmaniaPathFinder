@@ -36,21 +36,56 @@ std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& sol
 	}
 	return solutionWithRepeats;
 }
+std::vector<int16_t> solutionWithRepeatsAtEnd(const std::vector<int16_t>& solution, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix) {
+    std::vector<int16_t> result;
+    auto allCps = solutionWithExplicitRepeats(solution, repeatNodeMatrix);
+    for (auto cp : allCps) {
+        if (std::find(result.begin(), result.end(), cp) == result.end()) {
+            result.push_back(cp);
+        }
+    }
+    return result;
+}
+FastSet2d solutionConnectionsSet(const std::vector<int16_t>& solutionWithRepeats, int nodeCount) {
+    FastSet2d result(nodeCount);
+    auto B = solutionWithRepeats;
+    B.insert(B.begin(), 0);
+    for (int i = 2; i < B.size(); ++i) {
+        result.set(B[i], B[i - 1]);
+    }
+    return result;
+}
 template<typename T, typename Pred> void insertSorted(std::vector<T>& vec, const T& val, Pred pred) {
 	vec.insert(std::upper_bound(vec.begin(), vec.end(), val, pred), val);
 }
-void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::pair<std::vector<int16_t>, int>& solution) {
+std::vector<int16_t> getSortedSolutionIfPossible(const SolutionConfig& config, const std::vector<int16_t>& solution) {
+    auto solutionWithSortedRepeats = solutionWithRepeatsAtEnd(solution, config.repeatNodeMatrix);
+    auto a = solutionWithExplicitRepeats(solutionWithSortedRepeats, config.repeatNodeMatrix);
+    auto b = solutionWithExplicitRepeats(solution, config.repeatNodeMatrix);
+    if (a == b)
+        return solutionWithSortedRepeats;
+    return solution;
+}
+void saveSolutionAndUpdateLimit(SolutionConfig& config, std::pair<std::vector<int16_t>, int> solution) {
 	if (solution.second > config.limit || (config.bestSolutions.size() >= config.maxSolutionCount && solution.second >= config.limit))
 		return;
 
 	auto solutionWithRepeats = solutionWithExplicitRepeats(solution.first, config.repeatNodeMatrix);
-	for (int i = 0; i < config.bestSolutions.size(); ++i) {
-		if (config.bestSolutions[i].time == solution.second) {
-			if (solutionWithRepeats == config.bestSolutions[i].solutionWithRepeats) {
-				return;
-			}
-		}
-	}
+    auto solutionConnections = solutionConnectionsSet(solutionWithRepeats, config.repeatNodeMatrix.size());
+    for (int i = 0; i < config.bestSolutions.size(); ++i) {
+        if (config.bestSolutions[i].time == solution.second) {
+            if (solutionConnections == config.bestSolutions[i].solutionConnections) {
+                auto sortedSolution = getSortedSolutionIfPossible(config, solution.first);
+                config.bestSolutions[i].allVariations.push_back(sortedSolution);
+                if (solutionWithRepeats != config.bestSolutions[i].solutionWithRepeats) {
+                    config.bestSolutions[i].variations.push_back(sortedSolution);
+                }
+                return;
+            }
+        }
+    }
+    solution.first = getSortedSolutionIfPossible(config, solution.first);
+
 	config.solutionsVec.push_back_not_thread_safe(solution);
 	writeSolutionToFile(config.appendFileName, solution.first, solution.second, config.repeatNodeMatrix, config.useRespawnMatrix);
 
@@ -58,8 +93,12 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::pair<std::vec
 		config.limit = config.bestSolutions.back().time;
 		config.bestSolutions.pop_back();
 	}
-	insertSorted(config.bestSolutions, SolutionConfig::BestSolution(solution.first, solutionWithRepeats, solution.second), [](auto& a, auto& b) {
-		return a.time < b.time;
+	insertSorted(config.bestSolutions, SolutionConfig::BestSolution(solution.first, solutionWithRepeats, solutionConnections, solution.second), [](auto& a, auto& b) {
+        if (a.time < b.time)
+            return true;
+        if (a.time > b.time)
+            return false;
+        return a.solution < b.solution;
 	});
 }
 void saveSolution(SolutionConfig& config, const std::vector<NodeType>& solution, std::mutex& solutionMutex) {

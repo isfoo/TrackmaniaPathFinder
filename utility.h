@@ -393,6 +393,44 @@ private:
 	IntType singleBit(int i) const { return (1ull << (i % IntTypeBitSize)); }
 };
 
+struct DynamicBitset {
+	using IntType = uint64_t;
+	static constexpr int IntTypeBitSize = sizeof(IntType) * 8;
+	std::vector<IntType> bits;
+
+    DynamicBitset(int bitCount): bits(std::ceil(bitCount / IntTypeBitSize)) {}
+	bool test(int i) const { return bits[i / IntTypeBitSize] & singleBit(i); }
+	void set(int i)        { bits[i / IntTypeBitSize] |= singleBit(i); }
+	void reset(int i)      { bits[i / IntTypeBitSize] &= ~singleBit(i); }
+
+private:
+	IntType singleBit(int i) const { return (1ull << (i % IntTypeBitSize)); }
+};
+bool operator==(const DynamicBitset& a, const DynamicBitset& b) { return a.bits == b.bits; }
+
+struct FastSet2d {
+    int dimensionSize;
+    DynamicBitset bitset;
+
+    FastSet2d(int dimensionSize) : dimensionSize(dimensionSize), bitset(dimensionSize * dimensionSize) {}
+    bool test(int x, int y) const { return bitset.test(x + y * dimensionSize); }
+    void set(int x, int y)        { bitset.set(x + y * dimensionSize); }
+    void reset(int x, int y)      { bitset.reset(x + y * dimensionSize); }
+
+    std::vector<std::pair<int, int>> toSortedList() {
+        std::vector<std::pair<int, int>> result;
+        for (int y = 0; y < dimensionSize; ++y) {
+            for (int x = 0; x < dimensionSize; ++x) {
+                if (test(x, y)) {
+                    result.emplace_back(x, y);
+                }
+            }
+        }
+        return result;
+    }
+};
+bool operator==(const FastSet2d& a, const FastSet2d& b) { return a.bitset == b.bitset; }
+
 namespace std {
 	template <> struct hash<std::vector<NodeType>> {
 		std::size_t operator()(const std::vector<NodeType>& k) const {
