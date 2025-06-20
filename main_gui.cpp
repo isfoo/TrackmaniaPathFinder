@@ -214,6 +214,17 @@ std::vector<Position> readPositionsFile(const std::string& positionsFilePath) {
     return cpPositions;
 }
 
+struct FilterConnection {
+    enum Status {
+        Required, Banned, Optional, AutoBanned
+    };
+    FilterConnection() {}
+    FilterConnection(std::pair<int, int> connection, Status status) : connection(connection), status(status) {}
+
+    std::pair<int, int> connection;
+    Status status;
+};
+
 int main(int argc, char** argv) {
     CoInitialize(NULL);
     MyImGui::Init(u"Trackmania Path Finder");
@@ -317,6 +328,10 @@ int main(int argc, char** argv) {
     bool showAdvancedSettings = false;
 
     bool copiedBestSolutionsAfterAlgorithmDone = false;
+
+    bool showResultsFilter = false;
+    std::vector<FilterConnection> resultRequiredConnections;
+    std::vector<FilterConnection> resultOptionalConnections;
 
     MyImGui::Run([&] {
         guiFont->Scale = fontSize / 22.0f;
@@ -479,6 +494,9 @@ int main(int argc, char** argv) {
                         solutionToCompareToInGraphWindow.clear();
 
                         copiedBestSolutionsAfterAlgorithmDone = false;
+                        showResultsFilter = false;
+                        resultRequiredConnections.clear();
+                        resultOptionalConnections.clear();
 
                         config.limit = inputLimitValue * 10;
                         config.ignoredValue = ignoredValue;
@@ -578,6 +596,105 @@ int main(int argc, char** argv) {
                         taskWasCanceled = true;
                     }
                 }
+                if (copiedBestSolutionsAfterAlgorithmDone) {
+                    ImGui::SameLine();
+                    ImGui::Checkbox("Show results connection filter", &showResultsFilter);
+                }
+
+                auto getRequiredAndOptionalConnectionSets = [&]() -> std::pair<FastSet2d, FastSet2d> {
+                    if (bestFoundSolutions.empty())
+                        return {};
+                    auto allConnectionsSet = bestFoundSolutions[0].solutionConnections;
+                    auto commonConnectionsSet = bestFoundSolutions[0].solutionConnections;
+                    for (auto& solution : bestFoundSolutions) {
+                        allConnectionsSet |= solution.solutionConnections;
+                        commonConnectionsSet &= solution.solutionConnections;
+                    }
+                    auto diffConnectionsSet = allConnectionsSet;
+                    diffConnectionsSet -= commonConnectionsSet;
+
+                    return { commonConnectionsSet, diffConnectionsSet };
+                };
+
+                if (showResultsFilter) {
+                    ImVec2 buttonSize(fontSize * 5.5f, 0);
+                    ImVec4 colRequired = ImVec4(0.133f, 0.694f, 0.298f, 1.00f);
+                    ImVec4 colBanned = ImVec4(0.922f, 0.2f, 0.141f, 1.00f);
+                    ImVec4 colAutoBanned = colBanned;
+                    ImVec4 colOptional = ImVec4(0.4f, 0.4f, 0.4f, 1.00f);
+                    ImGuiStyle& style = ImGui::GetStyle();
+
+                    auto addConnectionButton = [&](const FilterConnection& c, bool alwaysDisabled = false) {
+                        if (c.status == FilterConnection::Required) ImGui::PushStyleColor(ImGuiCol_Button, colRequired);
+                        if (c.status == FilterConnection::Banned) ImGui::PushStyleColor(ImGuiCol_Button, colBanned);
+                        if (c.status == FilterConnection::AutoBanned) ImGui::PushStyleColor(ImGuiCol_Button, colAutoBanned);
+                        if (c.status == FilterConnection::Optional) ImGui::PushStyleColor(ImGuiCol_Button, colOptional);
+                       
+                        if (c.status == FilterConnection::Required || c.status == FilterConnection::AutoBanned)
+                            ImGui::BeginDisabled();
+                        bool buttonWasPressed = ImGui::Button((std::to_string(c.connection.second) + "->" + std::to_string(c.connection.first)).c_str(), buttonSize);
+                        if (c.status == FilterConnection::Required || c.status == FilterConnection::AutoBanned)
+                            ImGui::EndDisabled();
+                        ImGui::PopStyleColor();
+                        return buttonWasPressed;
+                    };
+
+                    ImGui::Text("Required connections:");
+                    float windowVisibleX = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+                    for (int i = 0; i < resultRequiredConnections.size(); ++i) {
+                        ImGui::PushID(("Required connection" + std::to_string(i)).c_str());
+                        addConnectionButton(resultRequiredConnections[i], true);
+                        float lastButtonX = ImGui::GetItemRectMax().x;
+                        float nextButtonX = lastButtonX + style.ItemSpacing.x + buttonSize.x;
+                        if (i + 1 < resultRequiredConnections.size() && nextButtonX < windowVisibleX)
+                            ImGui::SameLine();
+                        ImGui::PopID();
+                    }
+
+                    ImGui::Text("Optional connections:");
+                    for (int i = 0; i < resultOptionalConnections.size(); ++i) {
+                        ImGui::PushID(("Optional connection" + std::to_string(i)).c_str());
+                        if (addConnectionButton(resultOptionalConnections[i])) {
+                            if (resultOptionalConnections[i].status == FilterConnection::Optional)
+                                resultOptionalConnections[i].status = FilterConnection::Banned;
+                            else if (resultOptionalConnections[i].status == FilterConnection::Banned)
+                                resultOptionalConnections[i].status = FilterConnection::Optional;
+
+                            bestFoundSolutions.clear();
+                            FastSet2d bannedConnections(config.repeatNodeMatrix.size());
+                            for (auto& c : resultOptionalConnections) {
+                                if (c.status == FilterConnection::Banned) {
+                                    bannedConnections.set(c.connection.first, c.connection.second);
+                                }
+                            }
+                            for (auto& s : config.bestSolutions) {
+                                auto set = s.solutionConnections;
+                                set &= bannedConnections;
+                                if (!set.any()) {
+                                    bestFoundSolutions.push_back(s);
+                                }
+                            }
+                            auto [commonConnectionsSet, optionalConnectionsSet] = getRequiredAndOptionalConnectionSets();
+
+                            for (auto& c : resultOptionalConnections) {
+                                if (bannedConnections.test(c.connection.first, c.connection.second)) {
+                                    c.status = FilterConnection::Banned;
+                                } else if (commonConnectionsSet.test(c.connection.first, c.connection.second)) {
+                                    c.status = FilterConnection::Required;
+                                } else if (optionalConnectionsSet.test(c.connection.first, c.connection.second)){
+                                    c.status = FilterConnection::Optional;
+                                } else {
+                                    c.status = FilterConnection::AutoBanned;
+                                }
+                            }
+                        }
+                        float lastButtonX = ImGui::GetItemRectMax().x;
+                        float nextButtonX = lastButtonX + style.ItemSpacing.x + buttonSize.x;
+                        if (i + 1 < resultOptionalConnections.size() && nextButtonX < windowVisibleX)
+                            ImGui::SameLine();
+                        ImGui::PopID();
+                    }
+                }
 
                 auto addNumberPadding = [](int value, int maxValue) {
                     int paddingCount = int(std::to_string(maxValue).size() - std::to_string(value).size());
@@ -640,7 +757,14 @@ int main(int argc, char** argv) {
                 if (config.stopWorking && !copiedBestSolutionsAfterAlgorithmDone && !isHeuristicAlgorithm) {
                     copiedBestSolutionsAfterAlgorithmDone = true;
                     bestFoundSolutions = config.bestSolutions;
-                } else if (config.solutionsVec.size() > bestFoundSolutions.size()) {
+                    auto [commonConnectionsSet, optionalConnectionsSet] = getRequiredAndOptionalConnectionSets();
+                    for (auto& connection : commonConnectionsSet.toSortedList()) {
+                        resultRequiredConnections.emplace_back(connection, FilterConnection::Required);
+                    }
+                    for (auto& connection : optionalConnectionsSet.toSortedList()) {
+                        resultOptionalConnections.emplace_back(connection, FilterConnection::Optional);
+                    }
+                } else if (!copiedBestSolutionsAfterAlgorithmDone && config.solutionsVec.size() > bestFoundSolutions.size()) {
                     for (int i = int(bestFoundSolutions.size()); i < config.solutionsVec.size(); ++i) {
                         bestFoundSolutions.push_back(config.solutionsVec[i]);
                     }
@@ -676,7 +800,7 @@ int main(int argc, char** argv) {
                 };
                 updateSolutionId(solutionToShowId, solutionToShowInGraphWindow);
                 updateSolutionId(solutionToCompareId, solutionToCompareToInGraphWindow);
-
+                
                 if (ImGui::BeginTable("solutionsTable", 5, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::to_string(config.maxSolutionCount).size() + 1), 0);
                     ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::max(4, int(std::to_string(maxSolutionTime).size())) + 1), 1);

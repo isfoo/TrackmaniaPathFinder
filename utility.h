@@ -398,10 +398,39 @@ struct DynamicBitset {
     static constexpr int IntTypeBitSize = sizeof(IntType) * 8;
     std::vector<IntType> bits;
 
-    DynamicBitset(int bitCount): bits(std::ceil(bitCount / IntTypeBitSize)) {}
+    DynamicBitset(int bitCount): bits(std::ceil(double(bitCount) / IntTypeBitSize)) {}
     bool test(int i) const { return bits[i / IntTypeBitSize] & singleBit(i); }
     void set(int i)        { bits[i / IntTypeBitSize] |= singleBit(i); }
     void reset(int i)      { bits[i / IntTypeBitSize] &= ~singleBit(i); }
+
+    DynamicBitset& operator|=(const DynamicBitset& o) {
+        int minSize = std::min(bits.size(), o.bits.size());
+        for (int i = 0; i < minSize; ++i) {
+            bits[i] |= o.bits[i];
+        }
+        return *this;
+    }
+    DynamicBitset& operator&=(const DynamicBitset& o) {
+        int minSize = std::min(bits.size(), o.bits.size());
+        for (int i = 0; i < minSize; ++i) {
+            bits[i] &= o.bits[i];
+        }
+        return *this;
+    }
+    DynamicBitset& operator-=(const DynamicBitset& o) {
+        int minSize = std::min(bits.size(), o.bits.size());
+        for (int i = 0; i < minSize; ++i) {
+            bits[i] &= ~o.bits[i];
+        }
+        return *this;
+    }
+    bool any() {
+        for (auto& byte : bits) {
+            if (byte)
+                return true;
+        }
+        return false;
+    }
 
 private:
     IntType singleBit(int i) const { return (1ull << (i % IntTypeBitSize)); }
@@ -412,10 +441,27 @@ struct FastSet2d {
     int dimensionSize;
     DynamicBitset bitset;
 
+    FastSet2d() : FastSet2d(0) {}
     FastSet2d(int dimensionSize) : dimensionSize(dimensionSize), bitset(dimensionSize * dimensionSize) {}
     bool test(int x, int y) const { return bitset.test(x + y * dimensionSize); }
     void set(int x, int y)        { bitset.set(x + y * dimensionSize); }
     void reset(int x, int y)      { bitset.reset(x + y * dimensionSize); }
+
+    FastSet2d& operator|=(const FastSet2d& o) {
+        bitset |= o.bitset;
+        return *this;
+    }
+    FastSet2d& operator&=(const FastSet2d& o) {
+        bitset &= o.bitset;
+        return *this;
+    }
+    FastSet2d& operator-=(const FastSet2d& o) {
+        bitset -= o.bitset;
+        return *this;
+    }
+    bool any() {
+        return bitset.any();
+    }
 
     std::vector<std::pair<int, int>> toSortedList() {
         std::vector<std::pair<int, int>> result;
