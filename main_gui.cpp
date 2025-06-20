@@ -632,7 +632,13 @@ int main(int argc, char** argv) {
 					for (int i = int(bestFoundSolutions.size()); i < config.solutionsVec.size(); ++i) {
 						bestFoundSolutions.push_back(config.solutionsVec[i]);
 					}
-					std::sort(bestFoundSolutions.begin(), bestFoundSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
+					std::sort(bestFoundSolutions.begin(), bestFoundSolutions.end(), [](auto& a, auto& b) { 
+                        if (a.second < b.second)
+                            return true;
+                        if (a.second > b.second)
+                            return false;
+                        return a.first < b.first;
+                    });
 				}
 				auto bestSolutionCount = std::min<int>(int(bestFoundSolutions.size()), config.maxSolutionCount);
 				auto maxSolutionTime = bestFoundSolutions.empty() ? 0 : std::max_element(bestFoundSolutions.begin(), bestFoundSolutions.begin() + bestSolutionCount, [](auto& a, auto& b) { return a.second < b.second; })->second;
