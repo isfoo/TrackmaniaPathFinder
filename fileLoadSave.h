@@ -157,16 +157,15 @@ void writeSolutionToFile(const std::string& outputFileName, const std::vector<in
     }
 }
 
-void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<std::pair<std::vector<int16_t>, int>>& solutionsView, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
-    std::vector<std::pair<std::vector<int16_t>, int>> sortedSolutions;
+void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<BestSolution>& solutionsView, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
+    std::vector<BestSolution> sortedSolutions;
     for (int i = 0; i < solutionsView.size(); ++i) {
         sortedSolutions.push_back(solutionsView[i]);
     }
-    std::sort(sortedSolutions.begin(), sortedSolutions.end(), [](auto& a, auto& b) { return a.second < b.second; });
+    std::sort(sortedSolutions.begin(), sortedSolutions.end(), [](auto& a, auto& b) { return a.time < b.time; });
     std::ofstream solutionsFile(outputFileName, std::ios::trunc);
     for (int i = 0; i < maxSolutionCount && i < sortedSolutions.size(); ++i) {
-        auto& [solution, time] = sortedSolutions[i];
-        writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix, useRespawnMatrix);
+        writeSolutionToFile(solutionsFile, sortedSolutions[i].solution, sortedSolutions[i].time, repeatNodeMatrix, useRespawnMatrix);
     }
 }
 

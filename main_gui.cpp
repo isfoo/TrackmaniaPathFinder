@@ -227,7 +227,7 @@ int main(int argc, char** argv) {
     constexpr int MinFontSize = 8;
     constexpr int MaxFontSize = 30;
     int fontSize = 16;
-    std::vector<std::pair<std::vector<int16_t>, int>> bestFoundSolutions;
+    std::vector<BestSolution> bestFoundSolutions;
 
     char inputDataFile[1024] = { 0 };
     char inputPositionReplayFile[1024] = { 0 };
@@ -288,6 +288,11 @@ int main(int argc, char** argv) {
     std::vector<Position> cpPositionsVis;
     bool realCpPositionView = false;
 
+    bool isVariationsWindowOpen = false;
+    BestSolution solutionToShowVariation;
+    int solutionToShowVariationId = -1;
+    bool showRepeatNodeVariations = true;
+
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->AddFontDefault();
 
@@ -310,6 +315,8 @@ int main(int argc, char** argv) {
 
     bool isOnPathFinderTab = true;
     bool showAdvancedSettings = false;
+
+    bool copiedBestSolutionsAfterAlgorithmDone = false;
 
     MyImGui::Run([&] {
         guiFont->Scale = fontSize / 22.0f;
@@ -471,6 +478,8 @@ int main(int argc, char** argv) {
                         solutionToShowInGraphWindow.clear();
                         solutionToCompareToInGraphWindow.clear();
 
+                        copiedBestSolutionsAfterAlgorithmDone = false;
+
                         config.limit = inputLimitValue * 10;
                         config.ignoredValue = ignoredValue;
                         config.maxSolutionCount = maxSolutionCountInput;
@@ -628,20 +637,23 @@ int main(int argc, char** argv) {
                     ImGui::EndTable();
                 }
 
-                if (config.solutionsVec.size() > bestFoundSolutions.size()) {
+                if (config.stopWorking && !copiedBestSolutionsAfterAlgorithmDone) {
+                    copiedBestSolutionsAfterAlgorithmDone = true;
+                    bestFoundSolutions = config.bestSolutions;
+                } else if (config.solutionsVec.size() > bestFoundSolutions.size()) {
                     for (int i = int(bestFoundSolutions.size()); i < config.solutionsVec.size(); ++i) {
                         bestFoundSolutions.push_back(config.solutionsVec[i]);
                     }
                     std::sort(bestFoundSolutions.begin(), bestFoundSolutions.end(), [](auto& a, auto& b) { 
-                        if (a.second < b.second)
+                        if (a.time < b.time)
                             return true;
-                        if (a.second > b.second)
+                        if (a.time > b.time)
                             return false;
-                        return a.first < b.first;
+                        return a.solution < b.solution;
                     });
                 }
                 auto bestSolutionCount = std::min<int>(int(bestFoundSolutions.size()), config.maxSolutionCount);
-                auto maxSolutionTime = bestFoundSolutions.empty() ? 0 : std::max_element(bestFoundSolutions.begin(), bestFoundSolutions.begin() + bestSolutionCount, [](auto& a, auto& b) { return a.second < b.second; })->second;
+                auto maxSolutionTime = bestFoundSolutions.empty() ? 0 : std::max_element(bestFoundSolutions.begin(), bestFoundSolutions.begin() + bestSolutionCount, [](auto& a, auto& b) { return a.time < b.time; })->time;
                 auto textDigitWidth = ImGui::CalcTextSize("0").x;
 
                 auto updateSolutionId = [&](int& id, std::vector<int16_t>& solution) {
@@ -654,7 +666,7 @@ int main(int argc, char** argv) {
                         return;
                     }
                     for (int i = id; i < bestSolutionCount; ++i) {
-                        if (bestFoundSolutions[i].first == solution) {
+                        if (bestFoundSolutions[i].solution == solution) {
                             id = i;
                             return;
                         }
@@ -665,18 +677,20 @@ int main(int argc, char** argv) {
                 updateSolutionId(solutionToShowId, solutionToShowInGraphWindow);
                 updateSolutionId(solutionToCompareId, solutionToCompareToInGraphWindow);
 
-                if (ImGui::BeginTable("solutionsTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
+                if (ImGui::BeginTable("solutionsTable", 5, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::to_string(config.maxSolutionCount).size() + 1), 0);
                     ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::max(4, int(std::to_string(maxSolutionTime).size())) + 1), 1);
                     ImGui::TableSetupColumn("Graph", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 3.5f, 2);
-                    ImGui::TableSetupColumn("Route", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
+                    ImGui::TableSetupColumn("Variations", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 5.5f, 3);
+                    ImGui::TableSetupColumn("Route", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 4);
                     ImGui::TableHeadersRow();
 
                     ImGuiListClipper clipper;
                     clipper.Begin(bestSolutionCount);
                     while (clipper.Step()) {
                         for (int j = clipper.DisplayStart; j < clipper.DisplayEnd; ++j) {
-                            auto& [B_, time] = bestFoundSolutions[j];
+                            auto& B_ = bestFoundSolutions[j].solution;
+                            auto time = bestFoundSolutions[j].time;
                             auto solStr = createSolutionString(B_, config.repeatNodeMatrix, config.useRespawnMatrix);
                     
                             ImGui::TableNextColumn();
@@ -714,6 +728,28 @@ int main(int argc, char** argv) {
                                 drawList.AddText(ImGui::GetDefaultFont(), 20, ImVec2(pos.x + 10, pos.y + 350), ImColor(255, 255, 255), text.c_str());
                                 ImGui::EndTooltip();
                             }
+                            ImGui::TableNextColumn();
+                            ImGui::PushID((std::to_string(j) + "_variations_button").c_str());
+                            std::string variationButtonLabel = "Var(";
+                            if (copiedBestSolutionsAfterAlgorithmDone) {
+                                variationButtonLabel += std::to_string(bestFoundSolutions[j].allVariations.size());
+                            } else {
+                                variationButtonLabel += "???";
+                            }
+                            variationButtonLabel += ")";
+                            if (!copiedBestSolutionsAfterAlgorithmDone || bestFoundSolutions[j].allVariations.size() == 1) {
+                                ImGui::BeginDisabled();
+                            }
+                            ImGui::SetNextItemWidth(-1);
+                            if (ImGui::Button(variationButtonLabel.c_str(), ImVec2(-1, 0))) {
+                                isVariationsWindowOpen = true;
+                                solutionToShowVariationId = j;
+                                solutionToShowVariation = bestFoundSolutions[j];
+                            }
+                            if (!copiedBestSolutionsAfterAlgorithmDone || bestFoundSolutions[j].allVariations.size() == 1) {
+                                ImGui::EndDisabled();
+                            }
+                            ImGui::PopID();
 
                             ImGui::TableNextColumn();
                             ImGui::SetNextItemWidth(-1);
@@ -1144,6 +1180,34 @@ int main(int argc, char** argv) {
 
             ImGui::End();
             ImGui::PopStyleColor();
+        }
+        if (solutionToShowVariationId == -1) {
+            isVariationsWindowOpen = false;
+        }
+        if (isVariationsWindowOpen) {
+            ImGui::SetNextWindowPos(ImVec2(200, 50), ImGuiCond_Once);
+            ImGui::SetNextWindowSize(ImVec2(680 + 200, 680), ImGuiCond_Once);
+            ImGui::Begin("Variations", &isVariationsWindowOpen, ImGuiWindowFlags_NoCollapse);
+
+            if (ImGui::BeginTable("infoTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
+                ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 0);
+                ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(-1);
+                ImGui::Text("solution ID = %d", solutionToShowVariationId);
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(-1);
+                ImGui::Checkbox("include repeat node variations", &showRepeatNodeVariations);
+                ImGui::EndTable();
+            }
+
+            auto& variations = showRepeatNodeVariations ? solutionToShowVariation.allVariations : solutionToShowVariation.variations;
+            for (int i = 0; i < variations.size(); ++i) {
+                auto solStr = createSolutionString(variations[i], config.repeatNodeMatrix, config.useRespawnMatrix);
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText(("##variation" + std::to_string(i)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
+            }
+            ImGui::End();
         }
         ImGui::PopFont();
     });

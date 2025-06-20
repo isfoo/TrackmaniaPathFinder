@@ -75,25 +75,25 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, std::pair<std::vector<in
     for (int i = 0; i < config.bestSolutions.size(); ++i) {
         if (config.bestSolutions[i].time == solution.second) {
             if (solutionConnections == config.bestSolutions[i].solutionConnections) {
-                auto sortedSolution = getSortedSolutionIfPossible(config, solution.first);
-                config.bestSolutions[i].allVariations.push_back(sortedSolution);
+                config.bestSolutions[i].allVariations.push_back(solution.first);
                 if (solutionWithRepeats != config.bestSolutions[i].solutionWithRepeats) {
-                    config.bestSolutions[i].variations.push_back(sortedSolution);
+                    config.bestSolutions[i].variations.push_back(solution.first);
                 }
                 return;
             }
         }
     }
-    solution.first = getSortedSolutionIfPossible(config, solution.first);
+    auto sortedSolution = getSortedSolutionIfPossible(config, solution.first);
 
-    config.solutionsVec.push_back_not_thread_safe(solution);
+    auto newSolution = BestSolution(solution.first, sortedSolution, solutionWithRepeats, solutionConnections, solution.second);
+    config.solutionsVec.push_back_not_thread_safe(newSolution);
     writeSolutionToFile(config.appendFileName, solution.first, solution.second, config.repeatNodeMatrix, config.useRespawnMatrix);
 
     if (config.bestSolutions.size() >= config.maxSolutionCount) {
         config.limit = config.bestSolutions.back().time;
         config.bestSolutions.pop_back();
     }
-    insertSorted(config.bestSolutions, SolutionConfig::BestSolution(solution.first, solutionWithRepeats, solutionConnections, solution.second), [](auto& a, auto& b) {
+    insertSorted(config.bestSolutions, newSolution, [](auto& a, auto& b) {
         if (a.time < b.time)
             return true;
         if (a.time > b.time)

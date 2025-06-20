@@ -15,29 +15,29 @@ struct ConditionalCost {
     }
 };
 
+struct BestSolution {
+    BestSolution() : solutionConnections(0) {}
+    BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& sortedSolution, const std::vector<int16_t>& solutionWithRepeats, const FastSet2d& solutionConnections, int time) :
+        solution(sortedSolution), solutionWithRepeats(solutionWithRepeats), solutionConnections(solutionConnections), time(time)
+    {
+        allVariations.push_back(solution);
+        variations.push_back(solution);
+    }
+    std::vector<int16_t> solution;
+    std::vector<std::vector<int16_t>> allVariations;
+    std::vector<std::vector<int16_t>> variations;
+    std::vector<int16_t> solutionWithRepeats;
+    FastSet2d solutionConnections;
+    int time;
+};
 struct SolutionConfig {
-    struct BestSolution {
-        BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& solutionWithRepeats, const FastSet2d& solutionConnections, int time) :
-            solution(solution), solutionWithRepeats(solutionWithRepeats), solutionConnections(solutionConnections), time(time)
-        {
-            allVariations.push_back(solution);
-            variations.push_back(solution);
-        }
-        std::vector<int16_t> solution;
-        std::vector<std::vector<int16_t>> allVariations;
-        std::vector<std::vector<int16_t>> variations;
-        std::vector<int16_t> solutionWithRepeats;
-        FastSet2d solutionConnections;
-        int time;
-    };
-
     std::vector<std::vector<int>> weights;
     std::vector<std::vector<std::vector<int>>> condWeights;
     int maxSolutionCount;
     int limit;
     int ignoredValue;
     bool useExtendedMatrix;
-    ThreadSafeVec<std::pair<std::vector<int16_t>, int>> solutionsVec;
+    ThreadSafeVec<BestSolution> solutionsVec;
     std::vector<BestSolution> bestSolutions;
     std::string appendFileName;
     std::string outputFileName;
