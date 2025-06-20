@@ -379,12 +379,12 @@ private:
 	result_type state;
 };
 
-struct DynamicBitset {
+struct FastStackBitset {
 	using IntType = uint64_t;
 	static constexpr int IntTypeBitSize = sizeof(IntType) * 8;
 	std::array<IntType, 4> bits;
 
-	DynamicBitset() { std::fill(bits.begin(), bits.end(), 0); }
+    FastStackBitset() { std::fill(bits.begin(), bits.end(), 0); }
 	bool test(int i) const { return bits[i / IntTypeBitSize] & singleBit(i); }
 	void set(int i)        { bits[i / IntTypeBitSize] |= singleBit(i); }
 	void reset(int i)      { bits[i / IntTypeBitSize] &= ~singleBit(i); }

@@ -1075,7 +1075,7 @@ bool doubleBridge(SolutionConfig& config, std::vector<NodeType>& solution, std::
 	}
 	return false;
 }
-bool linKernighanRec(SolutionConfig& config, const std::vector<std::vector<NodeType>>& adjList, std::vector<NodeType>& solution, EdgeCostType costChange, NodeType curNode, NodeType endNode, int addedEdgesCount, DynamicBitset& bannedDstNodes, std::vector<NodeType>& revSolution, const std::vector<int>& maxSearchWidths, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions) {
+bool linKernighanRec(SolutionConfig& config, const std::vector<std::vector<NodeType>>& adjList, std::vector<NodeType>& solution, EdgeCostType costChange, NodeType curNode, NodeType endNode, int addedEdgesCount, FastStackBitset& bannedDstNodes, std::vector<NodeType>& revSolution, const std::vector<int>& maxSearchWidths, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions) {
 	auto& cost = config.weights;
 	auto& costEx = config.condWeights;
 	auto N = solution.size();
@@ -1164,7 +1164,7 @@ bool linKernighan(SolutionConfig& config, const std::vector<std::vector<NodeType
 		if (config.stopWorking)
 			return false;
 		NodeType endNode = solution[startNode];
-		DynamicBitset bannedDstNodes;
+        FastStackBitset bannedDstNodes;
 		bannedDstNodes.set(0);
 		bannedDstNodes.set(endNode);
 		if (linKernighanRec(config, adjList, solution, 0, startNode, endNode, 0, bannedDstNodes, revSolution, maxSearchWidths, processedSolutions)) {
