@@ -221,8 +221,8 @@ int main(int argc, char** argv) {
 	int ignoredValueInput = 600;
 	int ignoredValue = ignoredValueInput * 10;
 	int inputLimitValue = 100'000;
-	int maxRepeatNodesToAdd = 0;
-	int maxSolutionCountInput = 100;
+	int maxRepeatNodesToAdd = 100'000;
+	int maxSolutionCountInput = 1000;
 	int maxTime = 10;
 	constexpr int MinFontSize = 8;
 	constexpr int MaxFontSize = 30;
@@ -308,6 +308,9 @@ int main(int argc, char** argv) {
 	style->CellPadding = ImVec2(hspacing, vspacing);
 	std::pair<NodeType, NodeType> hoveredConnection = { 0, 0 };
 
+    bool isOnPathFinderTab = true;
+    bool showAdvancedSettings = false;
+
 	MyImGui::Run([&] {
 		guiFont->Scale = fontSize / 22.0f;
 		ImGui::PushFont(guiFont);
@@ -347,28 +350,38 @@ int main(int argc, char** argv) {
 					fontSize = std::clamp(fontSize, MinFontSize, MaxFontSize);
 				}
 			});
+            if (isOnPathFinderTab) {
+                ImGui::TableNextColumn();
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(-1);
+                ImGui::Checkbox("show advanced settings", &showAdvancedSettings);
+            }
 			ImGui::EndTable();
 		}
 
 		if (ImGui::BeginTabBar("#Tabs", ImGuiTabBarFlags_None)) {
 			if (ImGui::BeginTabItem("Path Finder")) {
+                isOnPathFinderTab = true;
 				if (ImGui::BeginTable("menuTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
 					ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
 					ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
 					ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
 					ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
-					tableInputEntry("max connection time", "Connections with this or higher time\nwill not be considered in the solutions", [&]() {
-						if (ImGui::InputInt("##max node value threshold", &ignoredValueInput)) {
-							ignoredValueInput = std::clamp(ignoredValueInput, 1, 100'000);
-							ignoredValue = ignoredValueInput * 10;
-						}
-					});
-					tableInputEntry("max route time", "", [&]() {
-						if (ImGui::InputInt("##max solution length", &inputLimitValue)) {
-							inputLimitValue = std::clamp(inputLimitValue, 1, 100'000);
-						}
-					});
-					tableInputEntry("max number of routes", "", [&]() {
+                    if (showAdvancedSettings) {
+                        tableInputEntry("max connection time", "Connections with this or higher time\nwill not be considered in the solutions", [&]() {
+						    if (ImGui::InputInt("##max node value threshold", &ignoredValueInput)) {
+							    ignoredValueInput = std::clamp(ignoredValueInput, 1, 100'000);
+							    ignoredValue = ignoredValueInput * 10;
+						    }
+					    });
+                    
+					    tableInputEntry("max route time", "", [&]() {
+						    if (ImGui::InputInt("##max solution length", &inputLimitValue)) {
+							    inputLimitValue = std::clamp(inputLimitValue, 1, 100'000);
+						    }
+					    });
+                    }
+					tableInputEntry("max nr of routes", "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable", [&]() {
 						if (ImGui::InputInt("##max number of routes", &maxSolutionCountInput)) {
 							maxSolutionCountInput = std::clamp(maxSolutionCountInput, 1, 100'000);
 						}
@@ -378,27 +391,29 @@ int main(int argc, char** argv) {
 							maxTime = std::clamp(maxTime, 1, 100'000);
 						}
 					});
-					tableInputEntry("max repeat CPs to add", "", [&]() {
-						if (ImGui::InputInt("##max repeat nodes to add", &maxRepeatNodesToAdd)) {
-							maxRepeatNodesToAdd = std::clamp(maxRepeatNodesToAdd, 0, 100'000);
-						}
-					});
-					tableInputEntry("turned off repeat CPs", "List of CP numbers you want to ban from repeating", [&]() {
-						if (ImGui::InputText("##turned off repeat nodes", inputTurnedOffRepeatNodes, sizeof(inputTurnedOffRepeatNodes))) {
-							auto nodes = splitLineOfFloatsToInts(inputTurnedOffRepeatNodes, ignoredValue);
-							repeatNodesTurnedOff.clear();
-							for (auto node : nodes) {
-								if (node != ignoredValue)
-									repeatNodesTurnedOff.push_back(node);
-							}
-						}
-					});
-					tableInputEntry("output data file", "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.", [&]() {
-						ImGui::InputText("##output data file", outputDataFile, sizeof(outputDataFile));
-					});
-					tableInputEntry("append data file", "Every time candidate route is found it's saved to this file.\nThe data will be added to the end of the file\nwithout removing what was there before.\n\nYou have to sort that list yourself to find best routes.\n\nBy default it's empty so it's turned off", [&]() {
-						ImGui::InputText("##append data file", appendDataFile, sizeof(appendDataFile));
-					});
+                    if (showAdvancedSettings) {
+					    tableInputEntry("max repeat CPs to add", "", [&]() {
+						    if (ImGui::InputInt("##max repeat nodes to add", &maxRepeatNodesToAdd)) {
+							    maxRepeatNodesToAdd = std::clamp(maxRepeatNodesToAdd, 0, 100'000);
+						    }
+					    });
+					    tableInputEntry("turned off repeat CPs", "List of CP numbers you want to ban from repeating", [&]() {
+						    if (ImGui::InputText("##turned off repeat nodes", inputTurnedOffRepeatNodes, sizeof(inputTurnedOffRepeatNodes))) {
+							    auto nodes = splitLineOfFloatsToInts(inputTurnedOffRepeatNodes, ignoredValue);
+							    repeatNodesTurnedOff.clear();
+							    for (auto node : nodes) {
+								    if (node != ignoredValue)
+									    repeatNodesTurnedOff.push_back(node);
+							    }
+						    }
+					    });
+					    tableInputEntry("output data file", "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.", [&]() {
+						    ImGui::InputText("##output data file", outputDataFile, sizeof(outputDataFile));
+					    });
+					    tableInputEntry("append data file", "Every time candidate route is found it's saved to this file.\nThe data will be added to the end of the file\nwithout removing what was there before.\n\nYou have to sort that list yourself to find best routes.\n\nBy default it's empty so it's turned off", [&]() {
+						    ImGui::InputText("##append data file", appendDataFile, sizeof(appendDataFile));
+					    });
+                    }
 					ImGui::EndTable();
 				}
 				ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 1);
@@ -406,24 +421,26 @@ int main(int argc, char** argv) {
 					ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
 					ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
 			
-					tableInputEntry("ring CPs", "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP", [&]() {
-						if (ImGui::InputText("##ring cps", inputRingCps, sizeof(inputRingCps))) {
-							auto nodes = splitLineOfFloatsToInts(inputRingCps, ignoredValue);
-							ringCps.clear();
-							for (auto node : nodes) {
-								if (node != ignoredValue)
-									ringCps.push_back(node);
-							}
-						}
-					});
-					tableInputEntry("CP positions file", "Optional for visualization only.\nFile containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.\n\nWhen provided it enables graph view to show 2D view of the route", [&]() {
-						if (ImGui::Button("Find file")) {
-							fileExplorer(inputPositionReplayFilePath, "txt\0*.txt\0All\0*.*\0");
-						}
-						ImGui::SameLine();
-						ImGui::SetNextItemWidth(-1);
-						ImGui::InputText("##positions file", inputPositionReplayFilePath, sizeof(inputPositionReplayFilePath));
-					});
+                    if (showAdvancedSettings) {
+					    tableInputEntry("ring CPs", "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP", [&]() {
+						    if (ImGui::InputText("##ring cps", inputRingCps, sizeof(inputRingCps))) {
+							    auto nodes = splitLineOfFloatsToInts(inputRingCps, ignoredValue);
+							    ringCps.clear();
+							    for (auto node : nodes) {
+								    if (node != ignoredValue)
+									    ringCps.push_back(node);
+							    }
+						    }
+					    });
+					    tableInputEntry("CP positions file", "Optional for visualization only.\nFile containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.\n\nWhen provided it enables graph view to show 2D view of the route", [&]() {
+						    if (ImGui::Button("Find file")) {
+							    fileExplorer(inputPositionReplayFilePath, "txt\0*.txt\0All\0*.*\0");
+						    }
+						    ImGui::SameLine();
+						    ImGui::SetNextItemWidth(-1);
+						    ImGui::InputText("##positions file", inputPositionReplayFilePath, sizeof(inputPositionReplayFilePath));
+					    });
+                    }
 					tableInputEntry("input data file", "Format is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.", [&]() {
 						ImGui::PushID("Input data file button");
 						if (ImGui::Button("Find file")) {
@@ -539,12 +556,13 @@ int main(int argc, char** argv) {
 					isHeuristicAlgorithm = false;
 					startAlgorithm(true);
 				}
-				ImGui::SameLine();
-				if (ImGui::Button("Run heuristic algorithm")) {
-					isHeuristicAlgorithm = true;
-					startAlgorithm(false);
-				}
-
+                if (showAdvancedSettings) {
+                    ImGui::SameLine();
+                    if (ImGui::Button("Run heuristic algorithm")) {
+                        isHeuristicAlgorithm = true;
+                        startAlgorithm(false);
+                    }
+                }
 				if (isRunning(algorithmRunTask)) {
 					ImGui::SameLine();
 					if (ImGui::Button("Cancel")) {
@@ -700,8 +718,10 @@ int main(int argc, char** argv) {
 					ImGui::EndTable();
 				}
 				ImGui::EndTabItem();
-			}
-			if (ImGui::BeginTabItem("CP positions creator")) {
+            } else {
+                isOnPathFinderTab = false;
+            }
+			if (ImGui::BeginTabItem("CP positions creator (experimental)")) {
 				static std::string cpPositionsErrorMsg;
 
 				if (ImGui::BeginTable("menuTableCp", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
@@ -818,7 +838,7 @@ int main(int argc, char** argv) {
 
 				ImGui::EndTabItem();
 			}
-			if (ImGui::BeginTabItem("Spreadsheet creator")) {
+			if (ImGui::BeginTabItem("Spreadsheet creator (experimental)")) {
 				if (ImGui::BeginTable("menuTableSpreadsheet", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
 					ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
 					ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
@@ -935,7 +955,7 @@ int main(int argc, char** argv) {
 				ImGui::PopStyleColor();
 				ImGui::EndTabItem();
 			}
-			if (ImGui::BeginTabItem("Replay visualizer")) {
+			if (ImGui::BeginTabItem("Replay visualizer (experimental)")) {
 				static std::string replayVisulizerErrorMsg;
 				if (ImGui::BeginTable("menuTableReplayVisualizer", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
 					ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
@@ -954,7 +974,8 @@ int main(int argc, char** argv) {
 					pathToVisualize.clear();
 					replayVisulizerErrorMsg.clear();
 					auto replayData = getReplayData(std::wstring(inputPositionReplayFile, inputPositionReplayFile + strlen(inputPositionReplayFile)), replayVisulizerErrorMsg);
-					if (replayVisulizerErrorMsg.empty()) {
+
+                    if (replayVisulizerErrorMsg.empty()) {
 						if (replayData.empty()) {
 							replayVisulizerErrorMsg = "No data found in file";
 						}
