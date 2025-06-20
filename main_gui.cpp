@@ -637,7 +637,7 @@ int main(int argc, char** argv) {
                     ImGui::EndTable();
                 }
 
-                if (config.stopWorking && !copiedBestSolutionsAfterAlgorithmDone) {
+                if (config.stopWorking && !copiedBestSolutionsAfterAlgorithmDone && !isHeuristicAlgorithm) {
                     copiedBestSolutionsAfterAlgorithmDone = true;
                     bestFoundSolutions = config.bestSolutions;
                 } else if (config.solutionsVec.size() > bestFoundSolutions.size()) {
