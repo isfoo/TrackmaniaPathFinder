@@ -77,7 +77,7 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, std::pair<std::vector<in
             if (solutionConnections == config.bestSolutions[i].solutionConnections) {
                 config.bestSolutions[i].allVariations.push_back(solution.first);
                 if (solutionWithRepeats != config.bestSolutions[i].solutionWithRepeats) {
-                    config.bestSolutions[i].variations.push_back(solution.first);
+                    config.bestSolutions[i].variations.push_back(getSortedSolutionIfPossible(config, solution.first));
                 }
                 return;
             }

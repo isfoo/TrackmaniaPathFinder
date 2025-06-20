@@ -21,7 +21,7 @@ struct BestSolution {
         solution(sortedSolution), solutionWithRepeats(solutionWithRepeats), solutionConnections(solutionConnections), time(time)
     {
         allVariations.push_back(solution);
-        variations.push_back(solution);
+        variations.push_back(sortedSolution);
     }
     std::vector<int16_t> solution;
     std::vector<std::vector<int16_t>> allVariations;
