@@ -779,7 +779,7 @@ int main(int argc, char** argv) {
                     ImGui::EndTable();
                 }
 
-                if (config.stopWorking && !copiedBestSolutionsAfterAlgorithmDone && !isHeuristicAlgorithm) {
+                if (config.stopWorking && !copiedBestSolutionsAfterAlgorithmDone) {
                     copiedBestSolutionsAfterAlgorithmDone = true;
                     bestFoundSolutions = config.bestSolutions;
                     auto [commonConnectionsSet, optionalConnectionsSet] = getRequiredAndOptionalConnectionSets();
