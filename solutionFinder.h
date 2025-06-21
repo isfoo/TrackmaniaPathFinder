@@ -183,6 +183,8 @@ int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector
 
 Vector3d<FastSmallVector<uint8_t>> addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
     auto repeatEdgeMatrix = Vector3d<FastSmallVector<uint8_t>>(int(B.size()));
+    if (maxEdgesToAdd <= 0)
+        return repeatEdgeMatrix;
     for (int i = 0; i < 2; ++i) {
         auto repeatEdges = getRepeatNodeEdges(A, ignoredValue, turnedOffRepeatNodes);
         auto edgesAdded = addRepeatNodeEdges(A, B, repeatEdgeMatrix, repeatEdges, maxEdgesToAdd);

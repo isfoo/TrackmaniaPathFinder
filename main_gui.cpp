@@ -535,11 +535,7 @@ int main(int argc, char** argv) {
                         auto [A_, B_] = loadCsvData(inputDataFile, config.ignoredValue, errorMsg);
                         config.weights = A_;
                         config.condWeights = B_;
-
-                        if (maxRepeatNodesToAdd > 0) {
-                            config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
-                        }
-
+                        config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
                         config.useRespawnMatrix = Vector3d<Bool>(int(config.condWeights.size()));
                         for (auto ringCp : ringCps) {
                             if (ringCp >= config.condWeights.size())
@@ -685,7 +681,7 @@ int main(int argc, char** argv) {
                                 resultOptionalConnections[i].status = FilterConnection::Optional;
 
                             bestFoundSolutions.clear();
-                            FastSet2d bannedConnections(config.repeatNodeMatrix.size());
+                            FastSet2d bannedConnections(config.weights.size());
                             for (auto& c : resultOptionalConnections) {
                                 if (c.status == FilterConnection::Banned) {
                                     bannedConnections.set(c.connection.first, c.connection.second);
