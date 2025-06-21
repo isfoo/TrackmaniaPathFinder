@@ -599,6 +599,9 @@ int main(int argc, char** argv) {
                         errorMsg = "Already running";
                     }
                 };
+                bool disableAlgorithmButtons = isRunning(algorithmRunTask);
+                if (disableAlgorithmButtons)
+                    ImGui::BeginDisabled();
                 if (ImGui::Button("Run exact algorithm")) {
                     isHeuristicAlgorithm = false;
                     startAlgorithm(true);
@@ -610,6 +613,8 @@ int main(int argc, char** argv) {
                         startAlgorithm(false);
                     }
                 }
+                if (disableAlgorithmButtons)
+                    ImGui::EndDisabled();
                 if (isRunning(algorithmRunTask)) {
                     ImGui::SameLine();
                     if (ImGui::Button("Cancel")) {
