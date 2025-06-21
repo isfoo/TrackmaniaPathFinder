@@ -85,3 +85,90 @@ std::string createSolutionString(const std::vector<int16_t>& solution, const Vec
     solStr += "]";
     return solStr;
 }
+
+
+struct Token {
+    Token(int type, int value=0) : type(type), value(value) {}
+    int value;
+    int type;
+    enum Type { Number, RepeatNumber, Dash, Comma };
+};
+
+int readNumber(const std::string& str, int& i) {
+    int start = i;
+    while (std::isdigit(str[i])) {
+        i += 1;
+    }
+    int number = std::stoi(str.substr(start, i - start));
+    i -= 1;
+    return number;
+}
+std::pair<std::vector<int16_t>, double> createSolutionFromString(std::string solStr, const SolutionConfig& config) {
+    std::vector<Token> tokens;
+    auto ErrorValue = std::pair<std::vector<int16_t>, double>{ {}, -1.0 };
+
+    try {
+        if (solStr.substr(0, 6) != "[Start")
+            return ErrorValue;
+        if (solStr.substr(solStr.size() - 7) != "Finish]")
+            return ErrorValue;
+        solStr = solStr.substr(5);
+        solStr[0] = '0';
+
+        int i = 0;
+        while (i < solStr.size()) {
+            char c = solStr[i];
+            if (c == '-') {
+                tokens.emplace_back(Token::Dash);
+            } else if (c == ',') {
+                if (solStr[i + 1] == '(') {
+                    i += 2;
+                    while (true) {
+                        tokens.emplace_back(Token::RepeatNumber, readNumber(solStr, i));
+                        i += 1;
+                        if (solStr[i] == ')')
+                            break;
+                        i += 1;
+                    }
+                } else {
+                    tokens.emplace_back(Token::Comma);
+                }
+            } else if (c == 'R') {
+                i += 1;
+            } else if (c == 'F') {
+                tokens.emplace_back(Token::Number, config.weights.size() - 1);
+                break;
+            } else {
+                tokens.emplace_back(Token::Number, readNumber(solStr, i));
+            }
+            i += 1;
+        }
+
+        std::vector<int16_t> solution;
+        i = 0;
+        while (i < tokens.size()) {
+            if (tokens[i].type == Token::Number) {
+                solution.push_back(tokens[i].value);
+            } else if (tokens[i].type == Token::Dash) {
+                i += 1;
+                while (solution.back() != tokens[i].value) {
+                    solution.push_back(solution.back() + 1);
+                }
+            }
+            i += 1;
+        }
+
+        int realCost = 0;
+        for (int i = 1; i < solution.size(); ++i) {
+            auto connectionCost = config.condWeights[solution[i]][solution[i - 1]][i > 1 ? solution[i - 2] : 0];
+            if (connectionCost >= config.ignoredValue)
+                return ErrorValue;
+            realCost += connectionCost;
+        }
+
+        solution.erase(solution.begin());
+        return { solution, realCost / 10.0 };
+    } catch (std::exception _) {
+        return ErrorValue;
+    }
+}

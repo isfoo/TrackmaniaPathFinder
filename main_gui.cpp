@@ -267,6 +267,9 @@ int main(int argc, char** argv) {
     std::vector<int16_t> calculatedCpOrder;
     char inputCpOrder[1024] = { 0 };
 
+    char inputRouteString[1024] = { 0 };
+    double outputRouteCalcTime = 0;
+
     std::future<void> matrixCreateTask;
     std::vector<std::vector<int>> createdMatrix;
     std::string createdMatrixLog;
@@ -435,6 +438,27 @@ int main(int argc, char** argv) {
                         tableInputEntry("append data file", "Every time candidate route is found it's saved to this file.\nThe data will be added to the end of the file\nwithout removing what was there before.\n\nYou have to sort that list yourself to find best routes.\n\nBy default it's empty so it's turned off", [&]() {
                             ImGui::InputText("##append data file", appendDataFile, sizeof(appendDataFile));
                         });
+                        if (config.weights.size() > 0) {
+                            tableInputEntry("calculate route time", "", [&]() {
+                                ImGui::PushID("Calculate route button");
+                                if (ImGui::Button("Calculate time")) {
+                                    std::string routeString = inputRouteString;
+                                    auto [sol, routeTime] = createSolutionFromString(routeString, config);
+                                    outputRouteCalcTime = routeTime;
+                                }
+                                ImGui::PopID();
+                                ImGui::SameLine();
+                                ImGui::SetNextItemWidth(-1);
+                                ImGui::InputText("##input route string", inputRouteString, sizeof(inputRouteString));
+                            });
+                            ImGui::TableNextColumn();
+                            ImGui::SetNextItemWidth(-1);
+                            if (outputRouteCalcTime == -1.0) {
+                                ImGui::Text("Error");
+                            } else {
+                                ImGui::Text("Time = %.1f", outputRouteCalcTime);
+                            }
+                        }
                     }
                     ImGui::EndTable();
                 }
