@@ -750,6 +750,18 @@ struct AssignmentSolution {
         if (d == Out) return removeOutEdge(edge);
         else return removeOutEdge({ edge.second, edge.first });
     }
+
+    void removeTooExpensiveEdges(int costLimit) {
+        auto maxDiff = costLimit - cost;
+        for (int i = 0; i < adjList.size(); ++i) {
+            for (int k = 0; k < adjList[i].size(); ++k) {
+                int j = adjList[i][k];
+                if (valueAt(i, j) > maxDiff) {
+                    removeOutEdge({ i, j });
+                }
+            }
+        }
+    }
     
     Edge findPivotEdge() {
         /*
@@ -906,6 +918,7 @@ void findSolutions(SolutionConfig& config, AssignmentSolution& assignmentSolutio
     if (assignmentSolution.cost > config.limit)
         return;
 
+    assignmentSolution.removeTooExpensiveEdges(config.limit);
     assignmentSolution.shrinkToFit();
     hungarianMethod(assignmentSolution);
 
