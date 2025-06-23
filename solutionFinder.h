@@ -97,11 +97,6 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, std::pair<std::vector<in
     auto newSolution = BestSolution(solution.first, sortedSolution, solutionWithRepeats, solutionConnections, solution.second);
     config.solutionsVec.push_back_not_thread_safe(newSolution);
     writeSolutionToFile(config.appendFileName, solution.first, solution.second, config.repeatNodeMatrix, config.useRespawnMatrix);
-
-    if (config.bestSolutions.size() >= config.maxSolutionCount) {
-        config.limit = config.bestSolutions.back().time;
-        config.bestSolutions.pop_back();
-    }
     insertSorted(config.bestSolutions, newSolution, [](auto& a, auto& b) {
         if (a.time < b.time)
             return true;
@@ -109,6 +104,10 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, std::pair<std::vector<in
             return false;
         return a.solution < b.solution;
     });
+    if (config.bestSolutions.size() > config.maxSolutionCount) {
+        config.limit = config.bestSolutions.back().time;
+        config.bestSolutions.pop_back();
+    }
 }
 void saveSolution(SolutionConfig& config, const std::vector<NodeType>& solution, std::mutex& solutionMutex) {
     std::vector<int16_t> solutionVec = { 0 };
