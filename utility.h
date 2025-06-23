@@ -540,6 +540,9 @@ template<typename T> class FastThreadSafeishHashSet {
 
 public:
     FastThreadSafeishHashSet(int power2Capacity = 8) : allocator(sizeof(Node), 8192), data(allocData(1 << power2Capacity)), capacity_(1 << power2Capacity) {}
+    ~FastThreadSafeishHashSet() {
+        deallocData(data);
+    }
 
     T* find(const T& value) {
         Node* n = node(getIndex(value));
