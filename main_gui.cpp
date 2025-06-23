@@ -225,6 +225,16 @@ struct FilterConnection {
     Status status;
 };
 
+struct ConnectionFinderSettings {
+    int testedConnectionTime = 0;
+    int minConnectionTime = 600;
+    int maxConnectionTime = 100'000;
+    int minDistance = 0;
+    int maxDistance = 100'000;
+    int minHeightDiff = -100'000;
+    int maxHeightDiff = 100'000;
+};
+
 int main(int argc, char** argv) {
     CoInitialize(NULL);
     MyImGui::Init(u"Trackmania Path Finder");
@@ -288,7 +298,8 @@ int main(int argc, char** argv) {
     auto timer = Timer();
     timer.stop();
 
-    SolutionConfig config;
+    std::atomic<bool> stopWorkingForConfig;
+    SolutionConfig config(stopWorkingForConfig);
     config.ignoredValue = ignoredValue;
     config.maxSolutionCount = maxSolutionCountInput;
     config.partialSolutionCount = 0;
@@ -331,6 +342,11 @@ int main(int argc, char** argv) {
     bool showAdvancedSettings = false;
 
     bool copiedBestSolutionsAfterAlgorithmDone = false;
+
+    ConnectionFinderSettings connectionFinderSettingsInput;
+    ConnectionFinderSettings connectionFinderSettings;
+    bool isConnectionSearchAlgorithm = false;
+    std::vector<Edge> connectionsToTest;
 
     bool showResultsFilter = false;
     std::vector<FilterConnection> resultRequiredConnections;
@@ -500,6 +516,65 @@ int main(int argc, char** argv) {
                     ImGui::EndTable();
                 }
 
+                if (showAdvancedSettings) {
+                    ImGui::Checkbox("Connection finder mode", &isConnectionSearchAlgorithm);
+                }
+                if (showAdvancedSettings && isConnectionSearchAlgorithm) {
+                    if (ImGui::BeginTable("ConnectionFinderTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
+                        ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
+                        ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
+                        ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
+                        ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
+                        tableInputEntry("min connection time", "Connections with this or higher time\nwill be tried to be replaced with tested time", [&]() {
+                            if (ImGui::InputInt("##finder min node connection", &connectionFinderSettingsInput.minConnectionTime)) {
+                                connectionFinderSettingsInput.minConnectionTime = std::clamp(connectionFinderSettingsInput.minConnectionTime, 0, 100'000);
+                            }
+                        });
+                        tableInputEntry("max connection time", "Connections with this or lower time\nwill be tried to be replaced with tested time", [&]() {
+                            if (ImGui::InputInt("##finder max node connection", &connectionFinderSettingsInput.maxConnectionTime)) {
+                                connectionFinderSettingsInput.maxConnectionTime = std::clamp(connectionFinderSettingsInput.maxConnectionTime, 0, 100'000);
+                            }
+                        });
+
+                        tableInputEntry("min distance", "Connections with this or higher distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file", [&]() {
+                            if (inputPositionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
+                            if (ImGui::InputInt("##finder min dist connection", &connectionFinderSettingsInput.minDistance)) {
+                                connectionFinderSettingsInput.minDistance = std::clamp(connectionFinderSettingsInput.minDistance, 0, 100'000);
+                            }
+                            if (inputPositionReplayFilePath[0] == '\0') ImGui::EndDisabled();
+                        });
+                        tableInputEntry("max distance", "Connections with this or lower distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file", [&]() {
+                            if (inputPositionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
+                            if (ImGui::InputInt("##finder max dist connection", &connectionFinderSettingsInput.maxDistance)) {
+                                connectionFinderSettingsInput.maxDistance = std::clamp(connectionFinderSettingsInput.maxDistance, 0, 100'000);
+                            }
+                            if (inputPositionReplayFilePath[0] == '\0') ImGui::EndDisabled();
+                        });
+
+                        tableInputEntry("min height difference", "Connections with this or higher Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file", [&]() {
+                            if (inputPositionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
+                            if (ImGui::InputInt("##finder min height connection", &connectionFinderSettingsInput.minHeightDiff)) {
+                                connectionFinderSettingsInput.minHeightDiff = std::clamp(connectionFinderSettingsInput.minHeightDiff, -100'000, 100'000);
+                            }
+                            if (inputPositionReplayFilePath[0] == '\0') ImGui::EndDisabled();
+                        });
+                        tableInputEntry("max height difference", "Connections with this or lower Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file", [&]() {
+                            if (inputPositionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
+                            if (ImGui::InputInt("##finder max height connection", &connectionFinderSettingsInput.maxHeightDiff)) {
+                                connectionFinderSettingsInput.maxHeightDiff = std::clamp(connectionFinderSettingsInput.maxHeightDiff, -100'000, 100'000);
+                            }
+                            if (inputPositionReplayFilePath[0] == '\0') ImGui::EndDisabled();
+                        });
+
+                        tableInputEntry("tested time", "Time that will be inserted into tested connections", [&]() {
+                            if (ImGui::InputInt("##finder tested connection time", &connectionFinderSettingsInput.testedConnectionTime)) {
+                                connectionFinderSettingsInput.testedConnectionTime = std::clamp(connectionFinderSettingsInput.testedConnectionTime, 0, 100'000);
+                            }
+                        });
+                        ImGui::EndTable();
+                    }
+                }
+
                 if (!errorMsg.empty()) {
                     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 0, 0, 255));
                     ImGui::Text("Error: %s", errorMsg.c_str());
@@ -531,33 +606,12 @@ int main(int argc, char** argv) {
                         config.stopWorking = false;
                         config.repeatNodeMatrix.clear();
                         config.solutionsVec.clear();
+                        config.addedConnection = NullEdge;
 
                         auto [A_, B_] = loadCsvData(inputDataFile, config.ignoredValue, errorMsg);
                         config.weights = A_;
                         config.condWeights = B_;
-                        config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
                         config.useRespawnMatrix = Vector3d<Bool>(int(config.condWeights.size()));
-                        for (auto ringCp : ringCps) {
-                            if (ringCp >= config.condWeights.size())
-                                continue;
-                            for (int i = 0; i < config.condWeights.size(); ++i) {
-                                if (std::find(ringCps.begin(), ringCps.end(), i) != ringCps.end())
-                                    continue;
-                                for (int j = 0; j < config.condWeights.size(); ++j) {
-                                    if (j == ringCp)
-                                        continue;
-                                    if (config.weights[ringCp][i] < config.ignoredValue && config.condWeights[j][i].back() < config.condWeights[j][ringCp][i]) {
-                                        // faster to respawn from ringCp to i then go from i to j, then to directly go from ring to j
-                                        config.condWeights[j][ringCp][i] = config.condWeights[j][i].back();
-                                        config.useRespawnMatrix[j][ringCp][i] = true;
-                                        if (!config.repeatNodeMatrix.empty()) {
-                                            config.repeatNodeMatrix[j][ringCp][i] = config.repeatNodeMatrix[j][i].back();
-                                        }
-                                        config.weights[j][ringCp] = std::min(config.weights[j][ringCp], config.condWeights[j][i].back());
-                                    }
-                                }
-                            }
-                        }
 
                         cpPositionsVis.clear();
                         if (inputPositionReplayFilePath[0] != '\0') {
@@ -576,24 +630,109 @@ int main(int argc, char** argv) {
                                 endedWithTimeout = timer.getTime() >= maxTime;
                                 config.stopWorking = true;
                             });
-                            clearFile(config.outputFileName);
-                            writeSolutionFileProlog(config.appendFileName, inputDataFile, config.limit, isExactAlgorithm, maxRepeatNodesToAdd > 0, repeatNodesTurnedOff);
-                            algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout]() mutable {
-                                config.weights = createAtspMatrixFromInput(config.weights);
-                                std::fill(config.condWeights[0].back().begin(), config.condWeights[0].back().end(), 0);
+                            if (isConnectionSearchAlgorithm) {
+                                connectionFinderSettings = connectionFinderSettingsInput;
+                                connectionFinderSettings.minConnectionTime *= 10;
+                                connectionFinderSettings.maxConnectionTime *= 10;
+                                connectionFinderSettings.testedConnectionTime *= 10;
                                 config.useExtendedMatrix = isUsingExtendedMatrix(config.condWeights);
                                 config.bestSolutions.clear();
-                                if (isExactAlgorithm) {
-                                    findSolutionsPriority(config);
-                                } else {
-                                    findSolutionsHeuristic(config);
-                                }
-                                config.stopWorking = true;
-                                timerThread.join();
-                                writeSolutionFileEpilog(config.appendFileName, taskWasCanceled, endedWithTimeout);
-                                overwriteFileWithSortedSolutions(config.outputFileName, config.maxSolutionCount, config.solutionsVec, config.repeatNodeMatrix, config.useRespawnMatrix);
-                                timer.stop();
-                            });
+                                connectionsToTest.clear();
+                                algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout, &maxRepeatNodesToAdd, &repeatNodesTurnedOff, &cpPositionsVis, &ringCps, &connectionFinderSettings, &connectionsToTest]() mutable {
+                                    auto privateConfig = config;
+                                    privateConfig.maxSolutionCount = 1;
+
+                                    for (int src = 0; src < config.weights.size() - 1; ++src) {
+                                        for (int dst = 1; dst < config.weights.size(); ++dst) {
+                                            if (src == dst)
+                                                continue;
+
+                                            if (config.weights[dst][src] > connectionFinderSettings.maxConnectionTime)
+                                                continue;
+                                            if (config.weights[dst][src] < connectionFinderSettings.minConnectionTime)
+                                                continue;
+
+                                            if (!cpPositionsVis.empty()) {
+                                                auto srcPos = cpPositionsVis[src];
+                                                auto dstPos = cpPositionsVis[dst];
+                                                if (dstPos.y - srcPos.y > connectionFinderSettings.maxHeightDiff)
+                                                    continue;
+                                                if (dstPos.y - srcPos.y < connectionFinderSettings.minHeightDiff)
+                                                    continue;
+                                                if (dist3d(srcPos, dstPos) > connectionFinderSettings.maxDistance)
+                                                    continue;
+                                                if (dist3d(srcPos, dstPos) < connectionFinderSettings.minDistance)
+                                                    continue;
+                                            }
+                                            connectionsToTest.emplace_back(src, dst);
+                                        }
+                                    }
+                                    for (auto [src, dst] : connectionsToTest) {
+                                        if (config.stopWorking)
+                                            break;
+
+                                        privateConfig.addedConnection = Edge{ src, dst };
+                                        privateConfig.weights[dst][src] = connectionFinderSettings.testedConnectionTime;
+                                        privateConfig.bestSolutions.clear();
+                                        privateConfig.solutionsVec.clear();
+                                        privateConfig.limit = config.limit;
+                                        std::fill(privateConfig.condWeights[dst][src].begin(), privateConfig.condWeights[dst][src].end(), privateConfig.weights[dst][src]);
+                                        privateConfig.repeatNodeMatrix = addRepeatNodeEdges(privateConfig.weights, privateConfig.condWeights, privateConfig.ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
+                                        addRingCps(config, ringCps);
+                                        privateConfig.weights = createAtspMatrixFromInput(privateConfig.weights);
+                                        std::fill(privateConfig.condWeights[0].back().begin(), privateConfig.condWeights[0].back().end(), 0);
+                                        if (isExactAlgorithm) {
+                                            findSolutionsPriority(privateConfig);
+                                        } else {
+                                            findSolutionsHeuristic(privateConfig);
+                                        }
+
+                                        if (!privateConfig.bestSolutions.empty()) {
+                                            auto& newSolution = privateConfig.bestSolutions[0];
+                                            config.solutionsVec.push_back_not_thread_safe(newSolution);
+                                            insertSorted(config.bestSolutions, newSolution, [](auto& a, auto& b) {
+                                                if (a.time < b.time)
+                                                    return true;
+                                                if (a.time > b.time)
+                                                    return false;
+                                                return a.solution < b.solution;
+                                            });
+                                            if (config.bestSolutions.size() >= config.maxSolutionCount) {
+                                                config.limit = config.bestSolutions.back().time;
+                                                config.bestSolutions.pop_back();
+                                            }
+                                        }
+
+                                        privateConfig.weights = config.weights;
+                                        privateConfig.condWeights = config.condWeights;
+                                        config.partialSolutionCount += 1;
+                                    }
+                                    config.stopWorking = true;
+                                    timerThread.join();
+                                    timer.stop();
+                                });
+                            } else {
+                                config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
+                                addRingCps(config, ringCps);
+                                clearFile(config.outputFileName);
+                                writeSolutionFileProlog(config.appendFileName, inputDataFile, config.limit, isExactAlgorithm, maxRepeatNodesToAdd > 0, repeatNodesTurnedOff);
+                                algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout]() mutable {
+                                    config.weights = createAtspMatrixFromInput(config.weights);
+                                    std::fill(config.condWeights[0].back().begin(), config.condWeights[0].back().end(), 0);
+                                    config.useExtendedMatrix = isUsingExtendedMatrix(config.condWeights);
+                                    config.bestSolutions.clear();
+                                    if (isExactAlgorithm) {
+                                        findSolutionsPriority(config);
+                                    } else {
+                                        findSolutionsHeuristic(config);
+                                    }
+                                    config.stopWorking = true;
+                                    timerThread.join();
+                                    writeSolutionFileEpilog(config.appendFileName, taskWasCanceled, endedWithTimeout);
+                                    overwriteFileWithSortedSolutions(config.outputFileName, config.maxSolutionCount, config.solutionsVec, config.repeatNodeMatrix, config.useRespawnMatrix);
+                                    timer.stop();
+                                });
+                            }
                         }
                     } else {
                         errorMsg = "Already running";
@@ -764,7 +903,9 @@ int main(int argc, char** argv) {
                     ImGui::Text("%d", config.solutionsVec.size());
 
                     ImGui::TableNextColumn();
-                    if (isHeuristicAlgorithm) {
+                    if (isConnectionSearchAlgorithm) {
+                        ImGui::Text("Checked %d / %d connections", config.partialSolutionCount.load(), connectionsToTest.size());
+                    } else if (isHeuristicAlgorithm) {
                         auto n = config.partialSolutionCount.load();
                         auto optVal = n >> 32;
                         auto tryVal = n & 0xffffffff;
@@ -830,7 +971,11 @@ int main(int argc, char** argv) {
                     ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::to_string(config.maxSolutionCount).size() + 1), 0);
                     ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::max(4, int(std::to_string(maxSolutionTime).size())) + 1), 1);
                     ImGui::TableSetupColumn("Graph", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 3.5f, 2);
-                    ImGui::TableSetupColumn("Variations", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 5.5f, 3);
+                    if (isConnectionSearchAlgorithm) {
+                        ImGui::TableSetupColumn("Connection", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 5.5f, 3);
+                    } else {
+                        ImGui::TableSetupColumn("Variations", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 5.5f, 3);
+                    }
                     ImGui::TableSetupColumn("Route", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 4);
                     ImGui::TableHeadersRow();
 
@@ -840,7 +985,7 @@ int main(int argc, char** argv) {
                         for (int j = clipper.DisplayStart; j < clipper.DisplayEnd; ++j) {
                             auto& B_ = bestFoundSolutions[j].solution;
                             auto time = bestFoundSolutions[j].time;
-                            auto solStr = createSolutionString(B_, config.repeatNodeMatrix, config.useRespawnMatrix);
+                            auto solStr = bestFoundSolutions[j].solutionString;// std::string("");// createSolutionString(B_, config.repeatNodeMatrix, config.useRespawnMatrix);
                     
                             ImGui::TableNextColumn();
                             addNumberPadding(j + 1, config.maxSolutionCount);
@@ -878,28 +1023,32 @@ int main(int argc, char** argv) {
                                 ImGui::EndTooltip();
                             }
                             ImGui::TableNextColumn();
-                            ImGui::PushID((std::to_string(j) + "_variations_button").c_str());
-                            std::string variationButtonLabel = "Var(";
-                            if (copiedBestSolutionsAfterAlgorithmDone) {
-                                variationButtonLabel += std::to_string(bestFoundSolutions[j].allVariations.size());
+                            if (bestFoundSolutions[j].addedConnection != NullEdge) {
+                                auto& c = bestFoundSolutions[j].addedConnection;
+                                ImGui::Text((std::to_string(c.first) + "->" + std::to_string(c.second)).c_str());
                             } else {
-                                variationButtonLabel += "???";
+                                ImGui::PushID((std::to_string(j) + "_variations_button").c_str());
+                                std::string variationButtonLabel = "Var(";
+                                if (copiedBestSolutionsAfterAlgorithmDone) {
+                                    variationButtonLabel += std::to_string(bestFoundSolutions[j].allVariations.size());
+                                } else {
+                                    variationButtonLabel += "???";
+                                }
+                                variationButtonLabel += ")";
+                                if (!copiedBestSolutionsAfterAlgorithmDone || bestFoundSolutions[j].allVariations.size() == 1) {
+                                    ImGui::BeginDisabled();
+                                }
+                                ImGui::SetNextItemWidth(-1);
+                                if (ImGui::Button(variationButtonLabel.c_str(), ImVec2(-1, 0))) {
+                                    isVariationsWindowOpen = true;
+                                    solutionToShowVariationId = j;
+                                    solutionToShowVariation = bestFoundSolutions[j];
+                                }
+                                if (!copiedBestSolutionsAfterAlgorithmDone || bestFoundSolutions[j].allVariations.size() == 1) {
+                                    ImGui::EndDisabled();
+                                }
+                                ImGui::PopID();
                             }
-                            variationButtonLabel += ")";
-                            if (!copiedBestSolutionsAfterAlgorithmDone || bestFoundSolutions[j].allVariations.size() == 1) {
-                                ImGui::BeginDisabled();
-                            }
-                            ImGui::SetNextItemWidth(-1);
-                            if (ImGui::Button(variationButtonLabel.c_str(), ImVec2(-1, 0))) {
-                                isVariationsWindowOpen = true;
-                                solutionToShowVariationId = j;
-                                solutionToShowVariation = bestFoundSolutions[j];
-                            }
-                            if (!copiedBestSolutionsAfterAlgorithmDone || bestFoundSolutions[j].allVariations.size() == 1) {
-                                ImGui::EndDisabled();
-                            }
-                            ImGui::PopID();
-
                             ImGui::TableNextColumn();
                             ImGui::SetNextItemWidth(-1);
                             ImGui::InputText(("##solution" + std::to_string(j)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);

@@ -93,8 +93,9 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, std::pair<std::vector<in
         }
     }
     auto sortedSolution = getSortedSolutionIfPossible(config, solution.first);
+    auto solutionString = createSolutionString(solution.first, config.repeatNodeMatrix, config.useRespawnMatrix);
 
-    auto newSolution = BestSolution(solution.first, sortedSolution, solutionWithRepeats, solutionConnections, solution.second);
+    auto newSolution = BestSolution(solution.first, sortedSolution, solutionWithRepeats, solutionConnections, solutionString, config.addedConnection, solution.second);
     config.solutionsVec.push_back_not_thread_safe(newSolution);
     writeSolutionToFile(config.appendFileName, solution.first, solution.second, config.repeatNodeMatrix, config.useRespawnMatrix);
     insertSorted(config.bestSolutions, newSolution, [](auto& a, auto& b) {
@@ -195,6 +196,29 @@ Vector3d<FastSmallVector<uint8_t>> addRepeatNodeEdges(std::vector<std::vector<in
         maxEdgesToAdd = std::max<int>(0, maxEdgesToAdd - edgesAdded);
     }
     return repeatEdgeMatrix;
+}
+void addRingCps(SolutionConfig& config, const std::vector<int>& ringCps) {
+    for (auto ringCp : ringCps) {
+        if (ringCp >= config.condWeights.size())
+            continue;
+        for (int i = 0; i < config.condWeights.size(); ++i) {
+            if (std::find(ringCps.begin(), ringCps.end(), i) != ringCps.end())
+                continue;
+            for (int j = 0; j < config.condWeights.size(); ++j) {
+                if (j == ringCp)
+                    continue;
+                if (config.weights[ringCp][i] < config.ignoredValue && config.condWeights[j][i].back() < config.condWeights[j][ringCp][i]) {
+                    // faster to respawn from ringCp to i then go from i to j, then to directly go from ring to j
+                    config.condWeights[j][ringCp][i] = config.condWeights[j][i].back();
+                    config.useRespawnMatrix[j][ringCp][i] = true;
+                    if (!config.repeatNodeMatrix.empty()) {
+                        config.repeatNodeMatrix[j][ringCp][i] = config.repeatNodeMatrix[j][i].back();
+                    }
+                    config.weights[j][ringCp] = std::min(config.weights[j][ringCp], config.condWeights[j][i].back());
+                }
+            }
+        }
+    }
 }
 
 std::vector<std::vector<int>> createAtspMatrixFromInput(const std::vector<std::vector<int>>& weights) {
@@ -1265,12 +1289,16 @@ void findSolutionsHeuristic(SolutionConfig& config) {
         }
     }
 
+    bool isFastRun = config.addedConnection != NullEdge;
+
     const int ThreadCount = (std::thread::hardware_concurrency() > 0) ? std::thread::hardware_concurrency() : 1;
     ThreadPool threadPool(ThreadCount);
     std::mutex solutionMutex;
 
     for (int maxSequenceLength = 4; maxSequenceLength < N; maxSequenceLength += 2) {
         if (config.stopWorking)
+            break;
+        if (isFastRun && maxSequenceLength == 8)
             break;
         std::vector<int> maxSearchWidths(N, 0);
         for (int i = 0; i < maxSequenceLength; ++i) {
@@ -1280,7 +1308,7 @@ void findSolutionsHeuristic(SolutionConfig& config) {
         FastThreadSafeishHashSet<std::vector<NodeType>> processedSolutions(24);
 
         config.partialSolutionCount = ((uint64_t(maxSequenceLength) + 1) << 32);
-        constexpr int TryCount = 1000;
+        const int TryCount = isFastRun ? 5 : 1000;
         for (int tryId = 0; tryId < TryCount; ++tryId) {
             auto solution = generateRandomSolution(tryId, rng, config.ignoredValue, costEx);
             std::vector<NodeType> revSolution(N);

@@ -17,8 +17,8 @@ struct ConditionalCost {
 
 struct BestSolution {
     BestSolution() : solutionConnections(0) {}
-    BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& sortedSolution, const std::vector<int16_t>& solutionWithRepeats, const FastSet2d& solutionConnections, int time) :
-        solution(sortedSolution), solutionConnections(solutionConnections), time(time)
+    BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& sortedSolution, const std::vector<int16_t>& solutionWithRepeats, const FastSet2d& solutionConnections, const std::string& solutionString, Edge addedConnection, int time) :
+        solution(sortedSolution), solutionConnections(solutionConnections), solutionString(solutionString), addedConnection(addedConnection), time(time)
     {
         allVariations.push_back(solution);
         variations.push_back(sortedSolution);
@@ -28,7 +28,9 @@ struct BestSolution {
     std::vector<std::vector<int16_t>> allVariations;
     std::vector<std::vector<int16_t>> variations;
     std::vector<std::vector<int16_t>> variationsWithRepeats;
+    std::string solutionString;
     FastSet2d solutionConnections;
+    Edge addedConnection;
     int time;
 };
 struct SolutionConfig {
@@ -45,7 +47,25 @@ struct SolutionConfig {
     Vector3d<FastSmallVector<uint8_t>> repeatNodeMatrix;
     Vector3d<Bool> useRespawnMatrix;
     std::atomic<int64_t> partialSolutionCount;
-    std::atomic<bool> stopWorking;
+    std::atomic<bool>& stopWorking;
+    Edge addedConnection;
+
+    SolutionConfig(std::atomic<bool>& stopWorking) : stopWorking(stopWorking) {}
+    SolutionConfig(const SolutionConfig& other) : stopWorking(other.stopWorking) {
+        weights = other.weights;
+        condWeights = other.condWeights;
+        maxSolutionCount = other.maxSolutionCount;
+        limit = other.limit;
+        ignoredValue = other.ignoredValue;
+        useExtendedMatrix = other.useExtendedMatrix;
+        bestSolutions = other.bestSolutions;
+        appendFileName = other.appendFileName;
+        outputFileName = other.outputFileName;
+        repeatNodeMatrix = other.repeatNodeMatrix;
+        useRespawnMatrix = other.useRespawnMatrix;
+        partialSolutionCount = other.partialSolutionCount.load();
+        addedConnection = other.addedConnection;
+    }
 };
 
 std::string createSolutionString(const std::vector<int16_t>& solution, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
