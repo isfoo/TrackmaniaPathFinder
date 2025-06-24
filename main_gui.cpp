@@ -347,6 +347,7 @@ int main(int argc, char** argv) {
     ConnectionFinderSettings connectionFinderSettings;
     bool isConnectionSearchAlgorithm = false;
     std::vector<Edge> connectionsToTest;
+    bool sortConnectionSearchResultsByConnection = false;
 
     bool showResultsFilter = false;
     std::vector<FilterConnection> resultRequiredConnections;
@@ -516,6 +517,29 @@ int main(int argc, char** argv) {
                     ImGui::EndTable();
                 }
 
+                auto sortBestFoundSolutionsSolutions = [&]() {
+                    std::sort(bestFoundSolutions.begin(), bestFoundSolutions.end(), [&](BestSolution& a, auto& b) {
+                        if (isConnectionSearchAlgorithm) {
+                            if (!sortConnectionSearchResultsByConnection) {
+                                if (a.time < b.time)
+                                    return true;
+                                if (a.time > b.time)
+                                    return false;
+                            }
+                            if (a.addedConnection.first < b.addedConnection.first)
+                                return true;
+                            if (a.addedConnection.first > b.addedConnection.first)
+                                return false;
+                            return a.addedConnection.second < b.addedConnection.second;
+                        }
+                        if (a.time < b.time)
+                            return true;
+                        if (a.time > b.time)
+                            return false;
+                        return a.solution < b.solution;
+                    });
+                };
+
                 if (showAdvancedSettings) {
                     ImGui::Checkbox("Connection finder mode", &isConnectionSearchAlgorithm);
                 }
@@ -571,6 +595,12 @@ int main(int argc, char** argv) {
                                 connectionFinderSettingsInput.testedConnectionTime = std::clamp(connectionFinderSettingsInput.testedConnectionTime, 0, 100'000);
                             }
                         });
+                        ImGui::TableNextColumn();
+                        ImGui::SetNextItemWidth(-1);
+                        if (ImGui::Checkbox("sort results by connection", &sortConnectionSearchResultsByConnection)) {
+                            sortBestFoundSolutionsSolutions();
+                        }
+
                         ImGui::EndTable();
                     }
                 }
@@ -923,6 +953,7 @@ int main(int argc, char** argv) {
                 if (config.stopWorking && !copiedBestSolutionsAfterAlgorithmDone) {
                     copiedBestSolutionsAfterAlgorithmDone = true;
                     bestFoundSolutions = config.bestSolutions;
+                    sortBestFoundSolutionsSolutions();
                     auto [commonConnectionsSet, optionalConnectionsSet] = getRequiredAndOptionalConnectionSets();
                     for (auto& connection : commonConnectionsSet.toSortedList()) {
                         resultRequiredConnections.emplace_back(connection, FilterConnection::Required);
@@ -934,13 +965,7 @@ int main(int argc, char** argv) {
                     for (int i = int(bestFoundSolutions.size()); i < config.solutionsVec.size(); ++i) {
                         bestFoundSolutions.push_back(config.solutionsVec[i]);
                     }
-                    std::sort(bestFoundSolutions.begin(), bestFoundSolutions.end(), [](auto& a, auto& b) { 
-                        if (a.time < b.time)
-                            return true;
-                        if (a.time > b.time)
-                            return false;
-                        return a.solution < b.solution;
-                    });
+                    sortBestFoundSolutionsSolutions();
                 }
                 auto bestSolutionCount = std::min<int>(int(bestFoundSolutions.size()), config.maxSolutionCount);
                 auto maxSolutionTime = bestFoundSolutions.empty() ? 0 : std::max_element(bestFoundSolutions.begin(), bestFoundSolutions.begin() + bestSolutionCount, [](auto& a, auto& b) { return a.time < b.time; })->time;
