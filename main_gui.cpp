@@ -348,6 +348,8 @@ int main(int argc, char** argv) {
     bool isConnectionSearchAlgorithm = false;
     std::vector<Edge> connectionsToTest;
     bool sortConnectionSearchResultsByConnection = false;
+    char inputSearchSourceNodes[1024] = { 0 };
+    std::vector<int> searchSourceNodes;
 
     bool showResultsFilter = false;
     std::vector<FilterConnection> resultRequiredConnections;
@@ -595,9 +597,21 @@ int main(int argc, char** argv) {
                                 connectionFinderSettingsInput.testedConnectionTime = std::clamp(connectionFinderSettingsInput.testedConnectionTime, 0, 100'000);
                             }
                         });
+
+                        tableInputEntry("source CPs", "List of source CP numbers that should be considered while searching.\nIf empty - all CPs are considered", [&]() {
+                            if (ImGui::InputText("##sourceCPs", inputSearchSourceNodes, sizeof(inputSearchSourceNodes))) {
+                                auto nodes = splitLineOfFloatsToInts(inputSearchSourceNodes, ignoredValue);
+                                searchSourceNodes.clear();
+                                for (auto node : nodes) {
+                                    if (node != ignoredValue)
+                                        searchSourceNodes.push_back(node);
+                                }
+                            }
+                        });
+
                         ImGui::TableNextColumn();
                         ImGui::SetNextItemWidth(-1);
-                        if (ImGui::Checkbox("sort results by connection", &sortConnectionSearchResultsByConnection)) {
+                        if (ImGui::Checkbox("sort by connection", &sortConnectionSearchResultsByConnection)) {
                             sortBestFoundSolutionsSolutions();
                         }
 
@@ -668,11 +682,13 @@ int main(int argc, char** argv) {
                                 config.useExtendedMatrix = isUsingExtendedMatrix(config.condWeights);
                                 config.bestSolutions.clear();
                                 connectionsToTest.clear();
-                                algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout, &maxRepeatNodesToAdd, &repeatNodesTurnedOff, &cpPositionsVis, &ringCps, &connectionFinderSettings, &connectionsToTest]() mutable {
+                                algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout, &maxRepeatNodesToAdd, &repeatNodesTurnedOff, &cpPositionsVis, &ringCps, &connectionFinderSettings, &connectionsToTest, &searchSourceNodes]() mutable {
                                     auto privateConfig = config;
                                     privateConfig.maxSolutionCount = 1;
 
                                     for (int src = 0; src < config.weights.size() - 1; ++src) {
+                                        if (!searchSourceNodes.empty() && std::find(searchSourceNodes.begin(), searchSourceNodes.end(), src) == searchSourceNodes.end())
+                                            continue;
                                         for (int dst = 1; dst < config.weights.size(); ++dst) {
                                             if (src == dst)
                                                 continue;
