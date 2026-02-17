@@ -242,7 +242,6 @@ int main(int argc, char** argv) {
     MyImGui::Init(u"Trackmania Path Finder");
 
     int ignoredValueInput = 600;
-    int ignoredValue = ignoredValueInput * 10;
     int inputLimitValue = 100'000;
     int maxRepeatNodesToAdd = 100'000;
     int maxSolutionCountInput = 100;
@@ -267,14 +266,10 @@ int main(int argc, char** argv) {
     std::future<void> algorithmRunTask;
     std::atomic<bool> taskWasCanceled = false;
 
-    std::vector<int> repeatNodesTurnedOff;
+    char inputRingCps[1024] = { 0 };
     char inputTurnedOffRepeatNodes[1024] = { 0 };
 
-    std::vector<int> ringCps;
-    char inputRingCps[1024] = { 0 };
-
-    std::vector<int16_t> cpOrder;
-    std::vector<int16_t> calculatedCpOrder;
+    std::vector<int> calculatedCpOrder;
     char inputCpOrder[1024] = { 0 };
 
     char inputRouteString[1024] = { 0 };
@@ -300,7 +295,6 @@ int main(int argc, char** argv) {
 
     std::atomic<bool> stopWorkingForConfig;
     SolutionConfig config(stopWorkingForConfig);
-    config.ignoredValue = ignoredValue;
     config.maxSolutionCount = maxSolutionCountInput;
     config.partialSolutionCount = 0;
     config.stopWorking = false;
@@ -349,7 +343,6 @@ int main(int argc, char** argv) {
     std::vector<Edge> connectionsToTest;
     bool sortConnectionSearchResultsByConnection = false;
     char inputSearchSourceNodes[1024] = { 0 };
-    std::vector<int> searchSourceNodes;
 
     bool showResultsFilter = false;
     std::vector<FilterConnection> resultRequiredConnections;
@@ -415,7 +408,6 @@ int main(int argc, char** argv) {
                         tableInputEntry("max connection time", "Connections with this or higher time\nwill not be considered in the solutions", [&]() {
                             if (ImGui::InputInt("##max node value threshold", &ignoredValueInput)) {
                                 ignoredValueInput = std::clamp(ignoredValueInput, 1, 100'000);
-                                ignoredValue = ignoredValueInput * 10;
                             }
                         });
                     
@@ -442,27 +434,13 @@ int main(int argc, char** argv) {
                             }
                         });
                         tableInputEntry("turned off repeat CPs", "List of CP numbers you want to ban from repeating", [&]() {
-                            if (ImGui::InputText("##turned off repeat nodes", inputTurnedOffRepeatNodes, sizeof(inputTurnedOffRepeatNodes))) {
-                                auto nodes = splitLineOfFloatsToInts(inputTurnedOffRepeatNodes, ignoredValue);
-                                repeatNodesTurnedOff.clear();
-                                for (auto node : nodes) {
-                                    if (node != ignoredValue)
-                                        repeatNodesTurnedOff.push_back(node);
-                                }
-                            }
+                            ImGui::InputText("##turned off repeat nodes", inputTurnedOffRepeatNodes, sizeof(inputTurnedOffRepeatNodes));
                         });
                         tableInputEntry("output data file", "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.", [&]() {
                             ImGui::InputText("##output data file", outputDataFile, sizeof(outputDataFile));
                         });
                         tableInputEntry("ring CPs", "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP", [&]() {
-                            if (ImGui::InputText("##ring cps", inputRingCps, sizeof(inputRingCps))) {
-                                auto nodes = splitLineOfFloatsToInts(inputRingCps, ignoredValue);
-                                ringCps.clear();
-                                for (auto node : nodes) {
-                                    if (node != ignoredValue)
-                                        ringCps.push_back(node);
-                                }
-                            }
+                            ImGui::InputText("##ring cps", inputRingCps, sizeof(inputRingCps));
                         });
                         if (config.weights.size() > 0) {
                             tableInputEntry("calculate route time", "", [&]() {
@@ -596,14 +574,7 @@ int main(int argc, char** argv) {
                         });
 
                         tableInputEntry("source CPs", "List of source CP numbers that should be considered while searching.\nIf empty - all CPs are considered", [&]() {
-                            if (ImGui::InputText("##sourceCPs", inputSearchSourceNodes, sizeof(inputSearchSourceNodes))) {
-                                auto nodes = splitLineOfFloatsToInts(inputSearchSourceNodes, ignoredValue);
-                                searchSourceNodes.clear();
-                                for (auto node : nodes) {
-                                    if (node != ignoredValue)
-                                        searchSourceNodes.push_back(node);
-                                }
-                            }
+                            ImGui::InputText("##sourceCPs", inputSearchSourceNodes, sizeof(inputSearchSourceNodes));
                         });
 
                         ImGui::TableNextColumn();
@@ -639,7 +610,7 @@ int main(int argc, char** argv) {
                         resultOptionalConnections.clear();
 
                         config.limit = inputLimitValue * 10;
-                        config.ignoredValue = ignoredValue;
+                        config.ignoredValue = ignoredValueInput * 10;
                         config.maxSolutionCount = maxSolutionCountInput;
                         config.outputFileName = outputDataFile;
                         config.partialSolutionCount = 0;
@@ -660,6 +631,10 @@ int main(int argc, char** argv) {
                                 errorMsg = "incorrect CP position file - wrong number of CPs";
                             }
                         }
+
+                        auto ringCps = parseIntList(inputRingCps, 1, config.weights.size() - 2, "ring CPs list", errorMsg);
+                        auto repeatNodesTurnedOff = parseIntList(inputTurnedOffRepeatNodes, 0, config.weights.size() - 2, "turned off repeat nodes", errorMsg);
+                        auto searchSourceNodes = parseIntList(inputSearchSourceNodes, 0, config.weights.size() - 2, "search source CPs list", errorMsg);
 
                         if (errorMsg.empty()) {
                             timer = Timer();
@@ -1111,14 +1086,7 @@ int main(int argc, char** argv) {
                         ImGui::InputText("##full replay file", inputPositionReplayFile, sizeof(inputPositionReplayFile));
                     });
                     tableInputEntry("CP order (optional)", "Comma separated full list of CP numbers in order they were driven.\nIt's useful if you have no replay at hand that drives all CPs in the correct order.", [&]() {
-                        if (ImGui::InputText("##CP order", inputCpOrder, sizeof(inputCpOrder))) {
-                            auto nodes = splitLineOfFloatsToInts(inputCpOrder, ignoredValue);
-                            cpOrder.clear();
-                            for (auto node : nodes) {
-                                if (node != ignoredValue)
-                                    cpOrder.push_back(node);
-                            }
-                        }
+                        ImGui::InputText("##CP order", inputCpOrder, sizeof(inputCpOrder));
                     });
                     tableInputEntry("output positions file", "Text file that will contain positions of start, CPs and finish.\nThis is used for automatic generation of spreadsheet values and visualizations.", [&]() {
                         ImGui::InputText("##output positions file", outputPositionsFile, sizeof(outputPositionsFile));
@@ -1131,12 +1099,13 @@ int main(int argc, char** argv) {
                     auto replayData = getReplayData(std::wstring(inputPositionReplayFile, inputPositionReplayFile + strlen(inputPositionReplayFile)), cpPositionsErrorMsg);
                     if (cpPositionsErrorMsg.empty()) {
                         calculatedCpPositions = getCpPositions(replayData);
+                        auto cpOrder = parseIntList(inputCpOrder, 1, calculatedCpPositions.size() - 2, "CP order list", cpPositionsErrorMsg);
                         if (calculatedCpPositions.empty()) {
                             cpPositionsErrorMsg = "Failed to read positions";
                         } else if (calculatedCpPositions.size() == 1) {
                             cpPositionsErrorMsg = "Failed to find CP positions in replay file";
                         } else if (!cpOrder.empty()) {
-                            std::vector<int16_t> path(calculatedCpPositions.size() - 2);
+                            std::vector<int> path(calculatedCpPositions.size() - 2);
                             std::iota(path.begin(), path.end(), 1);
                             auto sortedCpOrder = cpOrder;
                             std::sort(sortedCpOrder.begin(), sortedCpOrder.end());
@@ -1171,7 +1140,7 @@ int main(int argc, char** argv) {
                             } else {
                                 calculatedCpOrder = cpOrder;
                                 calculatedCpOrder.insert(calculatedCpOrder.begin(), 0);
-                                calculatedCpOrder.push_back(int16_t(calculatedCpOrder.size()));
+                                calculatedCpOrder.push_back(calculatedCpOrder.size());
                                 std::vector<Position> newPositions(calculatedCpPositions.size());
                                 for (int i = 0; i < calculatedCpOrder.size(); ++i) {
                                     newPositions[calculatedCpOrder[i]] = calculatedCpPositions[i];
@@ -1206,9 +1175,12 @@ int main(int argc, char** argv) {
                 if (!calculatedCpPositions.empty()) {
                     auto path = calculatedCpOrder;
                     path.erase(path.begin());
+                    std::vector<int16_t> path16Bit;
+                    for (auto& node : path)
+                        path16Bit.push_back(node);
                     auto pos = ImGui::GetCursorPos();
                     auto size = ImVec2(ImGui::GetWindowSize().x - pos.x, ImGui::GetWindowSize().y - pos.y);
-                    drawSolutionGraph(calculatedCpPositions, path, {}, pos, size);
+                    drawSolutionGraph(calculatedCpPositions, path16Bit, {}, pos, size);
                 }
 
                 ImGui::EndTabItem();

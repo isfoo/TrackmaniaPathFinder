@@ -265,12 +265,9 @@ std::string floatToString(float value, int precision) {
     return std::string(buf.data(), ptr);
 }
 std::optional<int> parseInt(const std::string& s) {
-    if (s.empty())
+    if (s.empty() || !std::all_of(s.begin(), s.end(), ::isdigit))
         return std::nullopt;
-    if (s[0] == '0')
-        return 0;
-    auto result = atoi(s.c_str());
-    return result != 0 ? std::optional{ result } : std::nullopt;
+    return std::optional{ atoi(s.c_str()) };
 }
 std::optional<int> parseFloatAsInt(const std::string& s, int multiplyFactor=1) {
     if (s.empty())
@@ -281,24 +278,30 @@ std::optional<int> parseFloatAsInt(const std::string& s, int multiplyFactor=1) {
     return result != 0 ? std::optional{ result } : std::nullopt;
 }
 
-std::vector<int> splitLineOfFloatsToInts(std::string_view str, int ignoredValue, int multiplyFactor=1) {
-    constexpr auto PossiblyFloatChars = "0123456789.+-e";
+std::vector<int> parseIntList(std::string_view str, int allowedRangeMin, int allowedRangeMax, std::string listName, std::string& errorMsg) {
+    constexpr auto Digits = "0123456789";
     std::vector<int> result;
 
-    auto pos = str.find_first_of(PossiblyFloatChars);
+    auto pos = str.find_first_of(Digits);
     if (pos == std::string::npos)
         return result;
     str = str.substr(pos);
     while (true) {
-        auto pos = str.find_first_not_of(PossiblyFloatChars);
-        auto value = parseFloatAsInt(std::string(str.substr(0, pos)), multiplyFactor);
-        if (value)
+        auto pos = str.find_first_not_of(Digits);
+        auto value = parseInt(std::string(str.substr(0, pos)));
+        if (value) {
             result.emplace_back(*value);
-        else
-            result.emplace_back(ignoredValue);
+        } else {
+            errorMsg = "Unkown error while parsing " + listName;
+            return {};
+        }
+        if (result.back() < allowedRangeMin || result.back() > allowedRangeMax) {
+            errorMsg = "Found value outside of allowed range [" + std::to_string(allowedRangeMin) + ", " + std::to_string(allowedRangeMax) + "] while parsing " + listName;
+            return {};
+        }
         if (pos == std::string::npos)
             return result;
-        auto pos2 = str.find_first_of(PossiblyFloatChars, pos);
+        auto pos2 = str.find_first_of(Digits, pos);
         if (pos2 == std::string::npos)
             return result;
         str = str.substr(pos2);
