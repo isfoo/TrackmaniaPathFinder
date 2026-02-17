@@ -24,7 +24,6 @@ struct InputData {
     char inputDataFile[1024] = { 0 };
     char outputDataFile[1024] = { 0 };
     char outputPositionsFile[1024] = { 0 };
-    char outputSpreadsheetFile[1024] = { 0 };
 
     char positionReplayFile[1024] = { 0 };
     char positionReplayFilePath[1024] = { 0 };
@@ -46,7 +45,6 @@ struct InputData {
     InputData() {
         strcpy(outputDataFile, "out.txt");
         strcpy(outputPositionsFile, "CP_positions.txt");
-        strcpy(outputSpreadsheetFile, "spreadsheet.csv");
     }
 };
 
@@ -92,12 +90,6 @@ struct State {
 
     Timer timer;
 
-    std::future<void> matrixCreateTask;
-    std::vector<std::vector<int>> createdMatrix;
-    std::string createdMatrixLog;
-    std::mutex createdMatrixLogMutex;
-    Timer spreadSheetTimer;
-
     std::vector<Position> calculatedCpPositions;
     std::vector<Position> pathToVisualize;
 
@@ -132,9 +124,6 @@ struct State {
     State() {
         timer = Timer();
         timer.stop();
-
-        spreadSheetTimer = Timer();
-        spreadSheetTimer.stop();
     }
 };
 
