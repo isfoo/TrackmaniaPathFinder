@@ -376,17 +376,48 @@ int main(int argc, char** argv) {
             ImGui::SetNextItemWidth(-1);
             inputFunction();
         };
+        auto tableInputEntryText = [&tableInputEntry](const std::string& label, char(&inputText)[1024], const std::string& helpText) {
+            tableInputEntry(label, helpText, [&]() {
+                ImGui::InputText(("##" + label).c_str(), inputText, sizeof(inputText));
+            });
+        };
+        auto tableInputEntryInt = [&tableInputEntry](const std::string& label, int& inputInt, int minValue, int maxValue, const std::string& helpText) {
+            tableInputEntry(label, helpText, [&]() {
+                if (ImGui::InputInt(("##" + label).c_str(), &inputInt)) {
+                    inputInt = std::clamp(inputInt, minValue, maxValue);
+                }
+            });
+        };
+        auto tableInputEntryIntDisabledIfNoPositionData = [&tableInputEntryInt, &inputPositionReplayFilePath](const std::string& label, int& inputInt, int minValue, int maxValue, const std::string& helpText) {
+            if (inputPositionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
+            tableInputEntryInt(label, inputInt, minValue, maxValue, helpText);
+            if (inputPositionReplayFilePath[0] == '\0') ImGui::EndDisabled();
+        };
+        auto tableInputEntryFile = [&tableInputEntry](const std::string& label, char(&inputText)[1024], const char* filter, const std::string& helpText) {
+            tableInputEntry(label, helpText, [&]() {
+                ImGui::PushID((label + " button").c_str());
+                if (filter == nullptr) {
+                    if (ImGui::Button("Find folder")) {
+                        folderExplorer(inputText);
+                    }
+                } else {
+                    if (ImGui::Button("Find file")) {
+                        fileExplorer(inputText, filter);
+                    }
+                }
+                ImGui::PopID();
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##input data file", inputText, sizeof(inputText));
+            });
+        };
 
         if (ImGui::BeginTable("menuTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
             ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
             ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
             ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
             ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
-            tableInputEntry("font size", "You can use CTRL + Mouse wheel to change font size", [&]() {
-                if (ImGui::InputInt("##font size", &fontSize)) {
-                    fontSize = std::clamp(fontSize, MinFontSize, MaxFontSize);
-                }
-            });
+            tableInputEntryInt("font size", fontSize, MinFontSize, MaxFontSize, "You can use CTRL + Mouse wheel to change font size");
             if (isOnPathFinderTab) {
                 ImGui::TableNextColumn();
                 ImGui::TableNextColumn();
@@ -405,43 +436,16 @@ int main(int argc, char** argv) {
                     ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
                     ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
                     if (showAdvancedSettings) {
-                        tableInputEntry("max connection time", "Connections with this or higher time\nwill not be considered in the solutions", [&]() {
-                            if (ImGui::InputInt("##max node value threshold", &ignoredValueInput)) {
-                                ignoredValueInput = std::clamp(ignoredValueInput, 1, 100'000);
-                            }
-                        });
-                    
-                        tableInputEntry("max route time", "", [&]() {
-                            if (ImGui::InputInt("##max solution length", &inputLimitValue)) {
-                                inputLimitValue = std::clamp(inputLimitValue, 1, 100'000);
-                            }
-                        });
+                        tableInputEntryInt("max connection time", ignoredValueInput, 1, 100'000, "Connections with this or higher time\nwill not be considered in the solutions");
+                        tableInputEntryInt("max route time", inputLimitValue, 1, 100'000, "");
                     }
-                    tableInputEntry("max nr of routes", "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable", [&]() {
-                        if (ImGui::InputInt("##max number of routes", &maxSolutionCountInput)) {
-                            maxSolutionCountInput = std::clamp(maxSolutionCountInput, 1, 100'000);
-                        }
-                    });
-                    tableInputEntry("max search time", "Max time in seconds you want to search for.\n\nIt's mostly useful for heuristic algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems\n\nMight need to increase that time for some problems - you have to experiment yourself.", [&]() {
-                        if (ImGui::InputInt("##max search time", &maxTime)) {
-                            maxTime = std::clamp(maxTime, 1, 100'000);
-                        }
-                    });
+                    tableInputEntryInt("max nr of routes", maxSolutionCountInput, 1, 100'000, "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable");
+                    tableInputEntryInt("max search time", maxTime, 1, 100'000, "Max time in seconds you want to search for.\n\nIt's mostly useful for heuristic algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems\n\nMight need to increase that time for some problems - you have to experiment yourself.");
                     if (showAdvancedSettings) {
-                        tableInputEntry("max repeat CPs to add", "", [&]() {
-                            if (ImGui::InputInt("##max repeat nodes to add", &maxRepeatNodesToAdd)) {
-                                maxRepeatNodesToAdd = std::clamp(maxRepeatNodesToAdd, 0, 100'000);
-                            }
-                        });
-                        tableInputEntry("turned off repeat CPs", "List of CP numbers you want to ban from repeating", [&]() {
-                            ImGui::InputText("##turned off repeat nodes", inputTurnedOffRepeatNodes, sizeof(inputTurnedOffRepeatNodes));
-                        });
-                        tableInputEntry("output data file", "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.", [&]() {
-                            ImGui::InputText("##output data file", outputDataFile, sizeof(outputDataFile));
-                        });
-                        tableInputEntry("ring CPs", "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP", [&]() {
-                            ImGui::InputText("##ring cps", inputRingCps, sizeof(inputRingCps));
-                        });
+                        tableInputEntryInt("max repeat CPs to add", maxRepeatNodesToAdd, 0, 100'000, "");
+                        tableInputEntryText("turned off repeat CPs", inputTurnedOffRepeatNodes, "List of CP numbers you want to ban from repeating");
+                        tableInputEntryText("output data file", outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.");
+                        tableInputEntryText("ring CPs", inputRingCps, "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP");
                         if (config.weights.size() > 0) {
                             tableInputEntry("calculate route time", "", [&]() {
                                 ImGui::PushID("Calculate route button");
@@ -472,25 +476,9 @@ int main(int argc, char** argv) {
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
             
                     if (showAdvancedSettings) {
-                        tableInputEntry("CP positions file", "Optional for visualization only.\nFile containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.\n\nWhen provided it enables graph view to show 2D view of the route", [&]() {
-                            if (ImGui::Button("Find file")) {
-                                fileExplorer(inputPositionReplayFilePath, "txt\0*.txt\0All\0*.*\0");
-                            }
-                            ImGui::SameLine();
-                            ImGui::SetNextItemWidth(-1);
-                            ImGui::InputText("##positions file", inputPositionReplayFilePath, sizeof(inputPositionReplayFilePath));
-                        });
+                        tableInputEntryFile("CP positions file", inputPositionReplayFilePath, "txt\0*.txt\0All\0*.*\0", "Optional for visualization only.\nFile containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.\n\nWhen provided it enables graph view to show 2D view of the route");
                     }
-                    tableInputEntry("input data file", "Format is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.", [&]() {
-                        ImGui::PushID("Input data file button");
-                        if (ImGui::Button("Find file")) {
-                            fileExplorer(inputDataFile, "All\0*.*\0CSV\0*.CSV\0");
-                        }
-                        ImGui::PopID();
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(-1);
-                        ImGui::InputText("##input data file", inputDataFile, sizeof(inputDataFile));
-                    });
+                    tableInputEntryFile("input data file", inputDataFile, "All\0*.*\0CSV\0*.CSV\0", "Format is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.");
                     ImGui::EndTable();
                 }
 
@@ -526,63 +514,20 @@ int main(int argc, char** argv) {
                         ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
                         ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
                         ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
-                        tableInputEntry("min connection time", "Connections with this or higher time\nwill be tried to be replaced with tested time", [&]() {
-                            if (ImGui::InputInt("##finder min node connection", &connectionFinderSettingsInput.minConnectionTime)) {
-                                connectionFinderSettingsInput.minConnectionTime = std::clamp(connectionFinderSettingsInput.minConnectionTime, 0, 100'000);
-                            }
-                        });
-                        tableInputEntry("max connection time", "Connections with this or lower time\nwill be tried to be replaced with tested time", [&]() {
-                            if (ImGui::InputInt("##finder max node connection", &connectionFinderSettingsInput.maxConnectionTime)) {
-                                connectionFinderSettingsInput.maxConnectionTime = std::clamp(connectionFinderSettingsInput.maxConnectionTime, 0, 100'000);
-                            }
-                        });
-
-                        tableInputEntry("min distance", "Connections with this or higher distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file", [&]() {
-                            if (inputPositionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
-                            if (ImGui::InputInt("##finder min dist connection", &connectionFinderSettingsInput.minDistance)) {
-                                connectionFinderSettingsInput.minDistance = std::clamp(connectionFinderSettingsInput.minDistance, 0, 100'000);
-                            }
-                            if (inputPositionReplayFilePath[0] == '\0') ImGui::EndDisabled();
-                        });
-                        tableInputEntry("max distance", "Connections with this or lower distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file", [&]() {
-                            if (inputPositionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
-                            if (ImGui::InputInt("##finder max dist connection", &connectionFinderSettingsInput.maxDistance)) {
-                                connectionFinderSettingsInput.maxDistance = std::clamp(connectionFinderSettingsInput.maxDistance, 0, 100'000);
-                            }
-                            if (inputPositionReplayFilePath[0] == '\0') ImGui::EndDisabled();
-                        });
-
-                        tableInputEntry("min height difference", "Connections with this or higher Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file", [&]() {
-                            if (inputPositionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
-                            if (ImGui::InputInt("##finder min height connection", &connectionFinderSettingsInput.minHeightDiff)) {
-                                connectionFinderSettingsInput.minHeightDiff = std::clamp(connectionFinderSettingsInput.minHeightDiff, -100'000, 100'000);
-                            }
-                            if (inputPositionReplayFilePath[0] == '\0') ImGui::EndDisabled();
-                        });
-                        tableInputEntry("max height difference", "Connections with this or lower Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file", [&]() {
-                            if (inputPositionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
-                            if (ImGui::InputInt("##finder max height connection", &connectionFinderSettingsInput.maxHeightDiff)) {
-                                connectionFinderSettingsInput.maxHeightDiff = std::clamp(connectionFinderSettingsInput.maxHeightDiff, -100'000, 100'000);
-                            }
-                            if (inputPositionReplayFilePath[0] == '\0') ImGui::EndDisabled();
-                        });
-
-                        tableInputEntry("tested time", "Time that will be inserted into tested connections", [&]() {
-                            if (ImGui::InputInt("##finder tested connection time", &connectionFinderSettingsInput.testedConnectionTime)) {
-                                connectionFinderSettingsInput.testedConnectionTime = std::clamp(connectionFinderSettingsInput.testedConnectionTime, 0, 100'000);
-                            }
-                        });
-
-                        tableInputEntry("source CPs", "List of source CP numbers that should be considered while searching.\nIf empty - all CPs are considered", [&]() {
-                            ImGui::InputText("##sourceCPs", inputSearchSourceNodes, sizeof(inputSearchSourceNodes));
-                        });
+                        tableInputEntryInt("min connection time", connectionFinderSettingsInput.minConnectionTime, 0, 100'000, "Connections with this or higher time\nwill be tried to be replaced with tested time");
+                        tableInputEntryInt("max connection time", connectionFinderSettingsInput.maxConnectionTime, 0, 100'000, "Connections with this or lower time\nwill be tried to be replaced with tested time");
+                        tableInputEntryIntDisabledIfNoPositionData("min distance", connectionFinderSettingsInput.minDistance, 0, 100'000, "Connections with this or higher distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
+                        tableInputEntryIntDisabledIfNoPositionData("max distance", connectionFinderSettingsInput.maxDistance, 0, 100'000, "Connections with this or lower distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
+                        tableInputEntryIntDisabledIfNoPositionData("min height difference", connectionFinderSettingsInput.minHeightDiff, -100'000, 100'000, "Connections with this or higher Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
+                        tableInputEntryIntDisabledIfNoPositionData("max height difference", connectionFinderSettingsInput.maxHeightDiff, -100'000, 100'000, "Connections with this or lower Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
+                        tableInputEntryInt("tested time", connectionFinderSettingsInput.testedConnectionTime, 0, 100'000, "Time that will be inserted into tested connections");
+                        tableInputEntryText("source CPs", inputSearchSourceNodes, "List of source CP numbers that should be considered while searching.\nIf empty - all CPs are considered");
 
                         ImGui::TableNextColumn();
                         ImGui::SetNextItemWidth(-1);
                         if (ImGui::Checkbox("sort by connection", &sortConnectionSearchResultsByConnection)) {
                             sortBestFoundSolutionsSolutions();
                         }
-
                         ImGui::EndTable();
                     }
                 }
@@ -1077,20 +1022,9 @@ int main(int argc, char** argv) {
                 if (ImGui::BeginTable("menuTableCp", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-                    tableInputEntry("Full Replay Gbx", "Can be either Replay or Ghost file in Gbx format.\nIt's assumed that it is a full replay from start to finish", [&]() {
-                        if (ImGui::Button("Find file")) {
-                            fileExplorer(inputPositionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0");
-                        }
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(-1);
-                        ImGui::InputText("##full replay file", inputPositionReplayFile, sizeof(inputPositionReplayFile));
-                    });
-                    tableInputEntry("CP order (optional)", "Comma separated full list of CP numbers in order they were driven.\nIt's useful if you have no replay at hand that drives all CPs in the correct order.", [&]() {
-                        ImGui::InputText("##CP order", inputCpOrder, sizeof(inputCpOrder));
-                    });
-                    tableInputEntry("output positions file", "Text file that will contain positions of start, CPs and finish.\nThis is used for automatic generation of spreadsheet values and visualizations.", [&]() {
-                        ImGui::InputText("##output positions file", outputPositionsFile, sizeof(outputPositionsFile));
-                    });
+                    tableInputEntryFile("Full Replay Gbx", inputPositionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0", "Can be either Replay or Ghost file in Gbx format.\nIt's assumed that it is a full replay from start to finish");
+                    tableInputEntryText("CP order (optional)", inputCpOrder, "Comma separated full list of CP numbers in order they were driven.\nIt's useful if you have no replay at hand that drives all CPs in the correct order.");
+                    tableInputEntryText("output positions file", outputPositionsFile, "Text file that will contain positions of start, CPs and finish.\nThis is used for automatic generation of spreadsheet values and visualizations.");
                     ImGui::EndTable();
                 }
                 if (ImGui::Button("Create positions file")) {
@@ -1189,25 +1123,9 @@ int main(int argc, char** argv) {
                 if (ImGui::BeginTable("menuTableSpreadsheet", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-                    tableInputEntry("folder with replays", "Folder containing all .Gbx replay/ghost files to be used for spreadsheet creation.\nIt searches all sub-folders.\nOnly files with .gbx extension are considered.\n\nWARNING: make sure all .gbx files in folder were driven on the correct map, otherwise you might include wrong data", [&]() {
-                        if (ImGui::Button("Find folder")) {
-                            folderExplorer(inputReplayFolderPath);
-                        }
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(-1);
-                        ImGui::InputText("##gbx replay folder", inputReplayFolderPath, sizeof(inputReplayFolderPath));
-                    });
-                    tableInputEntry("positions file", "File containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.", [&]() {
-                        if (ImGui::Button("Find file")) {
-                            fileExplorer(inputPositionReplayFilePath, "txt\0*.txt\0All\0*.*\0");
-                        }
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(-1);
-                        ImGui::InputText("##positions file", inputPositionReplayFilePath, sizeof(inputPositionReplayFilePath));
-                    });
-                    tableInputEntry("output file", "Text file that will contain positions of start, CPs and finish.\nThis is used for automatic generation of spreadsheet values and visualizations.", [&]() {
-                        ImGui::InputText("##output spreadsheet file", outputSpreadsheetFile, sizeof(outputSpreadsheetFile));
-                    });
+                    tableInputEntryFile("folder with replays", inputReplayFolderPath, nullptr, "Folder containing all .Gbx replay/ghost files to be used for spreadsheet creation.\nIt searches all sub-folders.\nOnly files with .gbx extension are considered.\n\nWARNING: make sure all .gbx files in folder were driven on the correct map, otherwise you might include wrong data");
+                    tableInputEntryFile("positions file", inputPositionReplayFilePath, "txt\0*.txt\0All\0*.*\0", "File containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.");
+                    tableInputEntryText("output file", outputSpreadsheetFile, "Text file that will contain positions of start, CPs and finish.\nThis is used for automatic generation of spreadsheet values and visualizations.");
                     ImGui::EndTable();
                 }
                 static std::atomic<uint64_t> processedFilesTotalSize = 0;
@@ -1307,14 +1225,7 @@ int main(int argc, char** argv) {
                 if (ImGui::BeginTable("menuTableReplayVisualizer", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-                    tableInputEntry("Replay/Ghost file", "Can be either Replay or Ghost file in Gbx format.", [&]() {
-                        if (ImGui::Button("Find file")) {
-                            fileExplorer(inputPositionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0");
-                        }
-                        ImGui::SameLine();
-                        ImGui::SetNextItemWidth(-1);
-                        ImGui::InputText("##replay file", inputPositionReplayFile, sizeof(inputPositionReplayFile));
-                    });
+                    tableInputEntryFile("Replay/Ghost file", inputPositionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0", "Can be either Replay or Ghost file in Gbx format.");
                     ImGui::EndTable();
                 }
                 if (ImGui::Button("Visualize")) {
