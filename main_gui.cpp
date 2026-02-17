@@ -186,25 +186,6 @@ void fileExplorer(char* outFilePath, const char* filter) {
         std::strcpy(outFilePath, ofn.lpstrFile);
     }
 }
-void folderExplorer(char* outFilePath) {
-    CComPtr<IFileOpenDialog> pFolderDlg;
-    pFolderDlg.CoCreateInstance(CLSID_FileOpenDialog);
-
-    FILEOPENDIALOGOPTIONS opt{};
-    pFolderDlg->GetOptions(&opt);
-    pFolderDlg->SetOptions(opt | FOS_PICKFOLDERS | FOS_PATHMUSTEXIST | FOS_FORCEFILESYSTEM);
-
-    if (SUCCEEDED(pFolderDlg->Show(MyImGui::Hwnd()))) {
-        CComPtr<IShellItem> pSelectedItem;
-        pFolderDlg->GetResult(&pSelectedItem);
-        CComHeapPtr<wchar_t> pPath;
-        pSelectedItem->GetDisplayName(SIGDN_FILESYSPATH, &pPath);
-        auto length = std::wcslen(pPath.m_pData);
-        for (int i = 0; i <= length; ++i) {
-            outFilePath[i] = char(pPath.m_pData[i]);
-        }
-    }
-}
 
 ImFont* setGuiStyle() {
     ImGuiIO& io = ImGui::GetIO();
@@ -296,14 +277,8 @@ int main(int argc, char** argv) {
         auto tableInputEntryFile = [&tableInputEntry](const std::string& label, char(&inputText)[1024], const char* filter, const std::string& helpText) {
             tableInputEntry(label, helpText, [&]() {
                 ImGui::PushID((label + " button").c_str());
-                if (filter == nullptr) {
-                    if (ImGui::Button("Find folder")) {
-                        folderExplorer(inputText);
-                    }
-                } else {
-                    if (ImGui::Button("Find file")) {
-                        fileExplorer(inputText, filter);
-                    }
+                if (ImGui::Button("Find file")) {
+                    fileExplorer(inputText, filter);
                 }
                 ImGui::PopID();
                 ImGui::SameLine();
