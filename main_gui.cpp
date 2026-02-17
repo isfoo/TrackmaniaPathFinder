@@ -5,7 +5,9 @@
 #include <iomanip>
 #include <filesystem>
 #include "gbxParser.h"
-#include "solutionFinder.h"
+#include "solutionFinderCommon.h"
+#include "assignmentRelaxationSolutionFinder.h"
+#include "Lin-KernighanSolutionFinder.h"
 #include "utility.h"
 #include "common.h"
 #include "fileLoadSave.h"
