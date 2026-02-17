@@ -4,6 +4,8 @@
 #include <cstdint>
 #include "utility.h"
 
+enum class Algorithm { None, Assignment, LinKernighan };
+
 struct ConnectionFinderSettings {
     int testedConnectionTime = 0;
     int minConnectionTime = 600;
@@ -93,7 +95,7 @@ struct State {
     std::vector<Position> calculatedCpPositions;
     std::vector<Position> pathToVisualize;
 
-    bool isHeuristicAlgorithm = false;
+    Algorithm currentAlgorithm = Algorithm::None;
     bool endedWithTimeout = false;
     std::thread timerThread;
 

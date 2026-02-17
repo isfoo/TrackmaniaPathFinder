@@ -210,6 +210,29 @@ ImFont* setGuiStyle() {
     return guiFont;
 }
 
+void sortBestFoundSolutionsSolutions(State& state, const InputData& input) {
+    std::sort(state.bestFoundSolutions.begin(), state.bestFoundSolutions.end(), [&](BestSolution& a, auto& b) {
+        if (input.isConnectionSearchAlgorithm) {
+            if (!input.sortConnectionSearchResultsByConnection) {
+                if (a.time < b.time)
+                    return true;
+                if (a.time > b.time)
+                    return false;
+            }
+            if (a.addedConnection.first < b.addedConnection.first)
+                return true;
+            if (a.addedConnection.first > b.addedConnection.first)
+                return false;
+            return a.addedConnection.second < b.addedConnection.second;
+        }
+        if (a.time < b.time)
+            return true;
+        if (a.time > b.time)
+            return false;
+        return a.solution < b.solution;
+    });
+}
+
 int main(int argc, char** argv) {
     CoInitialize(NULL);
     MyImGui::Init(u"Trackmania Path Finder");
@@ -356,30 +379,6 @@ int main(int argc, char** argv) {
                     tableInputEntryFile("input data file", input.inputDataFile, "All\0*.*\0CSV\0*.CSV\0", "Format is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.");
                     ImGui::EndTable();
                 }
-
-                auto sortBestFoundSolutionsSolutions = [&]() {
-                    std::sort(state.bestFoundSolutions.begin(), state.bestFoundSolutions.end(), [&](BestSolution& a, auto& b) {
-                        if (input.isConnectionSearchAlgorithm) {
-                            if (!input.sortConnectionSearchResultsByConnection) {
-                                if (a.time < b.time)
-                                    return true;
-                                if (a.time > b.time)
-                                    return false;
-                            }
-                            if (a.addedConnection.first < b.addedConnection.first)
-                                return true;
-                            if (a.addedConnection.first > b.addedConnection.first)
-                                return false;
-                            return a.addedConnection.second < b.addedConnection.second;
-                        }
-                        if (a.time < b.time)
-                            return true;
-                        if (a.time > b.time)
-                            return false;
-                        return a.solution < b.solution;
-                    });
-                };
-
                 if (input.showAdvancedSettings) {
                     ImGui::Checkbox("Connection finder mode", &input.isConnectionSearchAlgorithm);
                 }
@@ -401,7 +400,7 @@ int main(int argc, char** argv) {
                         ImGui::TableNextColumn();
                         ImGui::SetNextItemWidth(-1);
                         if (ImGui::Checkbox("sort by connection", &input.sortConnectionSearchResultsByConnection)) {
-                            sortBestFoundSolutionsSolutions();
+                            sortBestFoundSolutionsSolutions(state, input);
                         }
                         ImGui::EndTable();
                     }
@@ -418,6 +417,8 @@ int main(int argc, char** argv) {
                         state.errorMsg = "Already running";
                         return;
                     }
+                    state.currentAlgorithm = algorithm;
+
                     state.errorMsg = "";
                     state.bestFoundSolutions.clear();
                     state.copiedBestSolutionsAfterAlgorithmDone = false;
@@ -436,13 +437,11 @@ int main(int argc, char** argv) {
                 if (disableAlgorithmButtons)
                     ImGui::BeginDisabled();
                 if (ImGui::Button("Run exact algorithm")) {
-                    state.isHeuristicAlgorithm = false;
                     startAlgorithm(Algorithm::Assignment);
                 }
                 if (input.showAdvancedSettings) {
                     ImGui::SameLine();
                     if (ImGui::Button("Run heuristic algorithm")) {
-                        state.isHeuristicAlgorithm = true;
                         startAlgorithm(Algorithm::LinKernighan);
                     }
                 }
@@ -599,7 +598,7 @@ int main(int argc, char** argv) {
                     ImGui::TableNextColumn();
                     if (input.isConnectionSearchAlgorithm) {
                         ImGui::Text("Checked %d / %d connections", config.partialSolutionCount.load(), state.connectionsToTest.size());
-                    } else if (state.isHeuristicAlgorithm) {
+                    } else if (state.currentAlgorithm == Algorithm::LinKernighan) {
                         auto n = config.partialSolutionCount.load();
                         auto optVal = n >> 32;
                         auto tryVal = n & 0xffffffff;
@@ -607,8 +606,10 @@ int main(int argc, char** argv) {
                         ImGui::SameLine();
                         addNumberPadding(int(tryVal), 1000);
                         ImGui::Text("%d tries for %d-opt", tryVal, optVal);
-                    } else {
+                    } else if (state.currentAlgorithm == Algorithm::Assignment) {
                         ImGui::Text("Partial routes processed: %d", config.partialSolutionCount.load());
+                    } else {
+                        ImGui::Text("");
                     }
 
                     ImGui::EndTable();
@@ -617,7 +618,7 @@ int main(int argc, char** argv) {
                 if (config.stopWorking && !state.copiedBestSolutionsAfterAlgorithmDone) {
                     state.copiedBestSolutionsAfterAlgorithmDone = true;
                     state.bestFoundSolutions = config.bestSolutions;
-                    sortBestFoundSolutionsSolutions();
+                    sortBestFoundSolutionsSolutions(state, input);
                     auto [commonConnectionsSet, optionalConnectionsSet] = getRequiredAndOptionalConnectionSets();
                     for (auto& connection : commonConnectionsSet.toSortedList()) {
                         state.resultRequiredConnections.emplace_back(connection, FilterConnection::Required);
@@ -629,7 +630,7 @@ int main(int argc, char** argv) {
                     for (int i = int(state.bestFoundSolutions.size()); i < config.solutionsVec.size(); ++i) {
                         state.bestFoundSolutions.push_back(config.solutionsVec[i]);
                     }
-                    sortBestFoundSolutionsSolutions();
+                    sortBestFoundSolutionsSolutions(state, input);
                 }
                 auto bestSolutionCount = std::min<int>(int(state.bestFoundSolutions.size()), config.maxSolutionCount);
                 auto maxSolutionTime = state.bestFoundSolutions.empty() ? 0 : std::max_element(state.bestFoundSolutions.begin(), state.bestFoundSolutions.begin() + bestSolutionCount, [](auto& a, auto& b) { return a.time < b.time; })->time;
