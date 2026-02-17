@@ -360,7 +360,7 @@ template<typename T> struct FastSmallVector {
 struct XorShift64 {
     using result_type = uint64_t;
     static constexpr result_type min() { return 0; }
-    static constexpr result_type max() { return std::numeric_limits<result_type>::max(); }
+    static constexpr result_type max() { return std::numeric_limits<result_type>::max() - 1; }
 
     XorShift64() {
         state = 0x12345678;
@@ -368,7 +368,7 @@ struct XorShift64 {
     }
     result_type operator()() {
         xorShift64();
-        return state;
+        return state - 1;
     }
 private:
     void xorShift64() {
