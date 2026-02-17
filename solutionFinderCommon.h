@@ -102,7 +102,6 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, std::pair<std::vector<in
 
     auto newSolution = BestSolution(solution.first, sortedSolution, solutionWithRepeats, solutionConnections, solutionString, config.addedConnection, solution.second);
     config.solutionsVec.push_back_not_thread_safe(newSolution);
-    writeSolutionToFile(config.appendFileName, solution.first, solution.second, config.repeatNodeMatrix, config.useRespawnMatrix);
     insertSorted(config.bestSolutions, newSolution, [](auto& a, auto& b) {
         if (a.time < b.time)
             return true;

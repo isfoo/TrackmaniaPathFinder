@@ -42,7 +42,6 @@ struct SolutionConfig {
     bool useExtendedMatrix;
     ThreadSafeVec<BestSolution> solutionsVec;
     std::vector<BestSolution> bestSolutions;
-    std::string appendFileName;
     std::string outputFileName;
     Vector3d<FastSmallVector<uint8_t>> repeatNodeMatrix;
     Vector3d<Bool> useRespawnMatrix;
@@ -59,7 +58,6 @@ struct SolutionConfig {
         ignoredValue = other.ignoredValue;
         useExtendedMatrix = other.useExtendedMatrix;
         bestSolutions = other.bestSolutions;
-        appendFileName = other.appendFileName;
         outputFileName = other.outputFileName;
         repeatNodeMatrix = other.repeatNodeMatrix;
         useRespawnMatrix = other.useRespawnMatrix;

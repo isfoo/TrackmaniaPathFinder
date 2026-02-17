@@ -122,29 +122,6 @@ std::pair<std::vector<std::vector<int>>, std::vector<std::vector<std::vector<int
     return { A, B };
 }
 
-void writeSolutionFileProlog(const std::string& outputFileName, const std::string& inputFileName, int limit, bool isExactAlgorithm, bool allowRepeatNodes, const std::vector<int>& repeatNodesTurnedOff) {
-    std::ofstream solutionsFile(outputFileName, std::ios::app);
-    solutionsFile << "\nSTART\n";
-    solutionsFile << "Input file:            \"" << inputFileName << "\"\n";
-    solutionsFile << "Algorithm:             " << (isExactAlgorithm ? "Exact (BnB Assignment Relaxation)" : "Heuristic (LKH)") << "\n";
-    solutionsFile << "Max route time:        " << limit / 10.0 << "\n";
-    solutionsFile << "allow repeat CPs:      " << (allowRepeatNodes ? "Yes" : "No") << "\n";
-    solutionsFile << "turned off repeat CPs: [";
-    if (!repeatNodesTurnedOff.empty()) {
-        solutionsFile << repeatNodesTurnedOff[0];
-        for (int i = 1; i < repeatNodesTurnedOff.size(); ++i) {
-            solutionsFile << ", " << repeatNodesTurnedOff[i];
-        }
-    }
-    solutionsFile << "]\n";
-
-}
-
-void writeSolutionFileEpilog(const std::string& outputFileName, bool taskWasCanceled, bool endedWithTimeout) {
-    std::ofstream solutionsFile(outputFileName, std::ios::app);
-    solutionsFile << "END " << (endedWithTimeout ? "(Timeout)" : (taskWasCanceled ? "(Canceled)" : "(Completed)")) << "\n";
-}
-
 void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t>& solution, int time, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
     solutionsFile << std::fixed << std::setprecision(1);
     solutionsFile << std::setw(8) << time / 10.0 << " ";

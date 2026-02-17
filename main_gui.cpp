@@ -256,8 +256,6 @@ int main(int argc, char** argv) {
     char inputPositionReplayFile[1024] = { 0 };
     char inputPositionReplayFilePath[1024] = { 0 };
     char inputReplayFolderPath[1024] = { 0 };
-    char appendDataFile[1024] = { 0 };
-    strcpy(appendDataFile, "");
     char outputDataFile[1024] = { 0 };
     strcpy(outputDataFile, "out.txt");
     char outputPositionsFile[1024] = { 0 };
@@ -456,8 +454,15 @@ int main(int argc, char** argv) {
                         tableInputEntry("output data file", "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.", [&]() {
                             ImGui::InputText("##output data file", outputDataFile, sizeof(outputDataFile));
                         });
-                        tableInputEntry("append data file", "Every time candidate route is found it's saved to this file.\nThe data will be added to the end of the file\nwithout removing what was there before.\n\nYou have to sort that list yourself to find best routes.\n\nBy default it's empty so it's turned off", [&]() {
-                            ImGui::InputText("##append data file", appendDataFile, sizeof(appendDataFile));
+                        tableInputEntry("ring CPs", "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP", [&]() {
+                            if (ImGui::InputText("##ring cps", inputRingCps, sizeof(inputRingCps))) {
+                                auto nodes = splitLineOfFloatsToInts(inputRingCps, ignoredValue);
+                                ringCps.clear();
+                                for (auto node : nodes) {
+                                    if (node != ignoredValue)
+                                        ringCps.push_back(node);
+                                }
+                            }
                         });
                         if (config.weights.size() > 0) {
                             tableInputEntry("calculate route time", "", [&]() {
@@ -489,16 +494,6 @@ int main(int argc, char** argv) {
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
             
                     if (showAdvancedSettings) {
-                        tableInputEntry("ring CPs", "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP", [&]() {
-                            if (ImGui::InputText("##ring cps", inputRingCps, sizeof(inputRingCps))) {
-                                auto nodes = splitLineOfFloatsToInts(inputRingCps, ignoredValue);
-                                ringCps.clear();
-                                for (auto node : nodes) {
-                                    if (node != ignoredValue)
-                                        ringCps.push_back(node);
-                                }
-                            }
-                        });
                         tableInputEntry("CP positions file", "Optional for visualization only.\nFile containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.\n\nWhen provided it enables graph view to show 2D view of the route", [&]() {
                             if (ImGui::Button("Find file")) {
                                 fileExplorer(inputPositionReplayFilePath, "txt\0*.txt\0All\0*.*\0");
@@ -646,7 +641,6 @@ int main(int argc, char** argv) {
                         config.limit = inputLimitValue * 10;
                         config.ignoredValue = ignoredValue;
                         config.maxSolutionCount = maxSolutionCountInput;
-                        config.appendFileName = appendDataFile;
                         config.outputFileName = outputDataFile;
                         config.partialSolutionCount = 0;
                         config.stopWorking = false;
@@ -763,7 +757,6 @@ int main(int argc, char** argv) {
                                 config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
                                 addRingCps(config, ringCps);
                                 clearFile(config.outputFileName);
-                                writeSolutionFileProlog(config.appendFileName, inputDataFile, config.limit, isExactAlgorithm, maxRepeatNodesToAdd > 0, repeatNodesTurnedOff);
                                 algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout]() mutable {
                                     config.weights = createAtspMatrixFromInput(config.weights);
                                     std::fill(config.condWeights[0].back().begin(), config.condWeights[0].back().end(), 0);
@@ -776,7 +769,6 @@ int main(int argc, char** argv) {
                                     }
                                     config.stopWorking = true;
                                     timerThread.join();
-                                    writeSolutionFileEpilog(config.appendFileName, taskWasCanceled, endedWithTimeout);
                                     overwriteFileWithSortedSolutions(config.outputFileName, config.maxSolutionCount, config.solutionsVec, config.repeatNodeMatrix, config.useRespawnMatrix);
                                     timer.stop();
                                 });
