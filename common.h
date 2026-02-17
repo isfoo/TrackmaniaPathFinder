@@ -4,14 +4,49 @@
 #include <cstdint>
 #include "utility.h"
 
-struct ConditionalCost {
-    int cost;
-    uint8_t srcNode;
+struct ConnectionFinderSettings {
+    int testedConnectionTime = 0;
+    int minConnectionTime = 600;
+    int maxConnectionTime = 100'000;
+    int minDistance = 0;
+    int maxDistance = 100'000;
+    int minHeightDiff = -100'000;
+    int maxHeightDiff = 100'000;
+};
 
-    ConditionalCost(int cost, uint8_t srcNode = std::numeric_limits<uint8_t>::max()) : cost(cost), srcNode(srcNode) {}
+struct InputData {
+    int ignoredValue = 600;
+    int limitValue = 100'000;
+    int maxRepeatNodesToAdd = 100'000;
+    int maxSolutionCount = 100;
+    int maxTime = 10;
 
-    bool isRemainingClause() {
-        return srcNode == std::numeric_limits<uint8_t>::max();
+    char inputDataFile[1024] = { 0 };
+    char outputDataFile[1024] = { 0 };
+    char outputPositionsFile[1024] = { 0 };
+    char outputSpreadsheetFile[1024] = { 0 };
+
+    char positionReplayFile[1024] = { 0 };
+    char positionReplayFilePath[1024] = { 0 };
+    char replayFolderPath[1024] = { 0 };
+
+    char ringCps[1024] = { 0 };
+    char turnedOffRepeatNodes[1024] = { 0 };
+    char cpOrder[1024] = { 0 };
+    char routeString[1024] = { 0 };
+    char searchSourceNodes[1024] = { 0 };
+
+    ConnectionFinderSettings connectionFinderSettings;
+    bool isConnectionSearchAlgorithm = false;
+    bool sortConnectionSearchResultsByConnection = false;
+
+    bool showAdvancedSettings = false;
+    bool showResultsFilter = false;
+
+    InputData() {
+        strcpy(outputDataFile, "out.txt");
+        strcpy(outputPositionsFile, "CP_positions.txt");
+        strcpy(outputSpreadsheetFile, "spreadsheet.csv");
     }
 };
 
@@ -33,6 +68,88 @@ struct BestSolution {
     Edge addedConnection;
     int time;
 };
+
+struct FilterConnection {
+    enum Status {
+        Required, Banned, Optional, AutoBanned
+    };
+    FilterConnection() {}
+    FilterConnection(std::pair<int, int> connection, Status status) : connection(connection), status(status) {}
+
+    std::pair<int, int> connection;
+    Status status;
+};
+
+struct State {
+    std::string errorMsg;
+    std::vector<BestSolution> bestFoundSolutions;
+
+    std::future<void> algorithmRunTask;
+    std::atomic<bool> taskWasCanceled = false;
+
+    std::vector<int> calculatedCpOrder;
+    double outputRouteCalcTime = 0;
+
+    Timer timer;
+
+    std::future<void> matrixCreateTask;
+    std::vector<std::vector<int>> createdMatrix;
+    std::string createdMatrixLog;
+    std::mutex createdMatrixLogMutex;
+    Timer spreadSheetTimer;
+
+    std::vector<Position> calculatedCpPositions;
+    std::vector<Position> pathToVisualize;
+
+    bool isHeuristicAlgorithm = false;
+    bool endedWithTimeout = false;
+    std::thread timerThread;
+
+    bool isGraphWindowOpen = false;
+    std::vector<int16_t> solutionToShowInGraphWindow;
+    std::vector<int16_t> solutionToCompareToInGraphWindow;
+    int solutionToShowId = -1;
+    int solutionToCompareId = -1;
+    std::vector<Position> cpPositionsVis;
+    bool realCpPositionView = false;
+
+    bool isVariationsWindowOpen = false;
+    BestSolution solutionToShowVariation;
+    int solutionToShowVariationId = -1;
+    bool showRepeatNodeVariations = true;
+
+    std::pair<NodeType, NodeType> hoveredConnection = { 0, 0 };
+
+    bool isOnPathFinderTab = true;
+
+    bool copiedBestSolutionsAfterAlgorithmDone = false;
+
+    std::vector<Edge> connectionsToTest;
+
+    std::vector<FilterConnection> resultRequiredConnections;
+    std::vector<FilterConnection> resultOptionalConnections;
+
+    State() {
+        timer = Timer();
+        timer.stop();
+
+        spreadSheetTimer = Timer();
+        spreadSheetTimer.stop();
+    }
+};
+
+struct ConditionalCost {
+    int cost;
+    uint8_t srcNode;
+
+    ConditionalCost(int cost, uint8_t srcNode = std::numeric_limits<uint8_t>::max()) : cost(cost), srcNode(srcNode) {}
+
+    bool isRemainingClause() {
+        return srcNode == std::numeric_limits<uint8_t>::max();
+    }
+};
+
+
 struct SolutionConfig {
     std::vector<std::vector<int>> weights;
     std::vector<std::vector<std::vector<int>>> condWeights;

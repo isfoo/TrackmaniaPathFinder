@@ -739,7 +739,7 @@ void findSolutions(SolutionConfig& config, AssignmentSolution& assignmentSolutio
     }
 }
 
-void findSolutionsPriority(SolutionConfig& config) {
+void findSolutionsAssignment(SolutionConfig& config) {
     ArrayOfPoolAllocators freeLists(1024, { 
         AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), config.useExtendedMatrix),
         AssignmentSolution::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 2), config.useExtendedMatrix),

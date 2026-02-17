@@ -149,3 +149,13 @@ void overwriteFileWithSortedSolutions(const std::string& outputFileName, int max
 void clearFile(const std::string& outputFileName) {
     std::ofstream solutionsFile(outputFileName, std::ios::trunc);
 }
+
+std::vector<Position> readPositionsFile(const std::string& positionsFilePath) {
+    std::ifstream positionsFile(positionsFilePath);
+    std::vector<Position> cpPositions;
+    Position pos;
+    while (positionsFile >> pos.x >> pos.y >> pos.z) {
+        cpPositions.push_back(pos);
+    }
+    return cpPositions;
+}

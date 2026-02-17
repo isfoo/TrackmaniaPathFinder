@@ -206,112 +206,7 @@ void folderExplorer(char* outFilePath) {
     }
 }
 
-std::vector<Position> readPositionsFile(const std::string& positionsFilePath) {
-    std::ifstream positionsFile(positionsFilePath);
-    std::vector<Position> cpPositions;
-    Position pos;
-    while (positionsFile >> pos.x >> pos.y >> pos.z) {
-        cpPositions.push_back(pos);
-    }
-    return cpPositions;
-}
-
-struct FilterConnection {
-    enum Status {
-        Required, Banned, Optional, AutoBanned
-    };
-    FilterConnection() {}
-    FilterConnection(std::pair<int, int> connection, Status status) : connection(connection), status(status) {}
-
-    std::pair<int, int> connection;
-    Status status;
-};
-
-struct ConnectionFinderSettings {
-    int testedConnectionTime = 0;
-    int minConnectionTime = 600;
-    int maxConnectionTime = 100'000;
-    int minDistance = 0;
-    int maxDistance = 100'000;
-    int minHeightDiff = -100'000;
-    int maxHeightDiff = 100'000;
-};
-
-int main(int argc, char** argv) {
-    CoInitialize(NULL);
-    MyImGui::Init(u"Trackmania Path Finder");
-
-    int ignoredValueInput = 600;
-    int inputLimitValue = 100'000;
-    int maxRepeatNodesToAdd = 100'000;
-    int maxSolutionCountInput = 100;
-    int maxTime = 10;
-    constexpr int MinFontSize = 8;
-    constexpr int MaxFontSize = 30;
-    int fontSize = 16;
-    std::vector<BestSolution> bestFoundSolutions;
-
-    char inputDataFile[1024] = { 0 };
-    char inputPositionReplayFile[1024] = { 0 };
-    char inputPositionReplayFilePath[1024] = { 0 };
-    char inputReplayFolderPath[1024] = { 0 };
-    char outputDataFile[1024] = { 0 };
-    strcpy(outputDataFile, "out.txt");
-    char outputPositionsFile[1024] = { 0 };
-    strcpy(outputPositionsFile, "CP_positions.txt");
-    char outputSpreadsheetFile[1024] = { 0 };
-    strcpy(outputSpreadsheetFile, "spreadsheet.csv");
-
-    std::string errorMsg;
-    std::future<void> algorithmRunTask;
-    std::atomic<bool> taskWasCanceled = false;
-
-    char inputRingCps[1024] = { 0 };
-    char inputTurnedOffRepeatNodes[1024] = { 0 };
-
-    std::vector<int> calculatedCpOrder;
-    char inputCpOrder[1024] = { 0 };
-
-    char inputRouteString[1024] = { 0 };
-    double outputRouteCalcTime = 0;
-
-    std::future<void> matrixCreateTask;
-    std::vector<std::vector<int>> createdMatrix;
-    std::string createdMatrixLog;
-    std::mutex createdMatrixLogMutex;
-    Timer spreadSheetTimer;
-    spreadSheetTimer.stop();
-
-    std::vector<Position> calculatedCpPositions;
-
-    std::vector<Position> pathToVisualize;
-
-    bool isHeuristicAlgorithm = false;
-    bool endedWithTimeout = false;
-    std::thread timerThread;
-
-    auto timer = Timer();
-    timer.stop();
-
-    std::atomic<bool> stopWorkingForConfig;
-    SolutionConfig config(stopWorkingForConfig);
-    config.maxSolutionCount = maxSolutionCountInput;
-    config.partialSolutionCount = 0;
-    config.stopWorking = false;
-
-    bool isGraphWindowOpen = false;
-    std::vector<int16_t> solutionToShowInGraphWindow;
-    std::vector<int16_t> solutionToCompareToInGraphWindow;
-    int solutionToShowId = -1;
-    int solutionToCompareId = -1;
-    std::vector<Position> cpPositionsVis;
-    bool realCpPositionView = false;
-
-    bool isVariationsWindowOpen = false;
-    BestSolution solutionToShowVariation;
-    int solutionToShowVariationId = -1;
-    bool showRepeatNodeVariations = true;
-
+ImFont* setGuiStyle() {
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->AddFontDefault();
 
@@ -330,23 +225,28 @@ int main(int argc, char** argv) {
     style->ItemSpacing = ImVec2(hspacing, vspacing);
     style->ItemInnerSpacing = ImVec2(hspacing, vspacing);
     style->CellPadding = ImVec2(hspacing, vspacing);
-    std::pair<NodeType, NodeType> hoveredConnection = { 0, 0 };
 
-    bool isOnPathFinderTab = true;
-    bool showAdvancedSettings = false;
+    return guiFont;
+}
 
-    bool copiedBestSolutionsAfterAlgorithmDone = false;
+int main(int argc, char** argv) {
+    CoInitialize(NULL);
+    MyImGui::Init(u"Trackmania Path Finder");
 
-    ConnectionFinderSettings connectionFinderSettingsInput;
-    ConnectionFinderSettings connectionFinderSettings;
-    bool isConnectionSearchAlgorithm = false;
-    std::vector<Edge> connectionsToTest;
-    bool sortConnectionSearchResultsByConnection = false;
-    char inputSearchSourceNodes[1024] = { 0 };
+    constexpr int MinFontSize = 8;
+    constexpr int MaxFontSize = 30;
+    int fontSize = 16;
 
-    bool showResultsFilter = false;
-    std::vector<FilterConnection> resultRequiredConnections;
-    std::vector<FilterConnection> resultOptionalConnections;
+    InputData input;
+    State state;
+
+    std::atomic<bool> stopWorkingForConfig;
+    SolutionConfig config(stopWorkingForConfig);
+    config.maxSolutionCount = input.maxSolutionCount;
+    config.partialSolutionCount = 0;
+    config.stopWorking = false;
+
+    auto guiFont = setGuiStyle();
 
     MyImGui::Run([&] {
         guiFont->Scale = fontSize / 22.0f;
@@ -388,10 +288,10 @@ int main(int argc, char** argv) {
                 }
             });
         };
-        auto tableInputEntryIntDisabledIfNoPositionData = [&tableInputEntryInt, &inputPositionReplayFilePath](const std::string& label, int& inputInt, int minValue, int maxValue, const std::string& helpText) {
-            if (inputPositionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
+        auto tableInputEntryIntDisabledIfNoPositionData = [&tableInputEntryInt, &input](const std::string& label, int& inputInt, int minValue, int maxValue, const std::string& helpText) {
+            if (input.positionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
             tableInputEntryInt(label, inputInt, minValue, maxValue, helpText);
-            if (inputPositionReplayFilePath[0] == '\0') ImGui::EndDisabled();
+            if (input.positionReplayFilePath[0] == '\0') ImGui::EndDisabled();
         };
         auto tableInputEntryFile = [&tableInputEntry](const std::string& label, char(&inputText)[1024], const char* filter, const std::string& helpText) {
             tableInputEntry(label, helpText, [&]() {
@@ -418,53 +318,53 @@ int main(int argc, char** argv) {
             ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
             ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
             tableInputEntryInt("font size", fontSize, MinFontSize, MaxFontSize, "You can use CTRL + Mouse wheel to change font size");
-            if (isOnPathFinderTab) {
+            if (state.isOnPathFinderTab) {
                 ImGui::TableNextColumn();
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(-1);
-                ImGui::Checkbox("show advanced settings", &showAdvancedSettings);
+                ImGui::Checkbox("show advanced settings", &input.showAdvancedSettings);
             }
             ImGui::EndTable();
         }
 
         if (ImGui::BeginTabBar("#Tabs", ImGuiTabBarFlags_None)) {
             if (ImGui::BeginTabItem("Path Finder")) {
-                isOnPathFinderTab = true;
+                state.isOnPathFinderTab = true;
                 if (ImGui::BeginTable("menuTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
                     ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
                     ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
-                    if (showAdvancedSettings) {
-                        tableInputEntryInt("max connection time", ignoredValueInput, 1, 100'000, "Connections with this or higher time\nwill not be considered in the solutions");
-                        tableInputEntryInt("max route time", inputLimitValue, 1, 100'000, "");
+                    if (input.showAdvancedSettings) {
+                        tableInputEntryInt("max connection time", input.ignoredValue, 1, 100'000, "Connections with this or higher time\nwill not be considered in the solutions");
+                        tableInputEntryInt("max route time", input.limitValue, 1, 100'000, "");
                     }
-                    tableInputEntryInt("max nr of routes", maxSolutionCountInput, 1, 100'000, "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable");
-                    tableInputEntryInt("max search time", maxTime, 1, 100'000, "Max time in seconds you want to search for.\n\nIt's mostly useful for heuristic algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems\n\nMight need to increase that time for some problems - you have to experiment yourself.");
-                    if (showAdvancedSettings) {
-                        tableInputEntryInt("max repeat CPs to add", maxRepeatNodesToAdd, 0, 100'000, "");
-                        tableInputEntryText("turned off repeat CPs", inputTurnedOffRepeatNodes, "List of CP numbers you want to ban from repeating");
-                        tableInputEntryText("output data file", outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.");
-                        tableInputEntryText("ring CPs", inputRingCps, "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP");
+                    tableInputEntryInt("max nr of routes", input.maxSolutionCount, 1, 100'000, "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable");
+                    tableInputEntryInt("max search time", input.maxTime, 1, 100'000, "Max time in seconds you want to search for.\n\nIt's mostly useful for heuristic algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems\n\nMight need to increase that time for some problems - you have to experiment yourself.");
+                    if (input.showAdvancedSettings) {
+                        tableInputEntryInt("max repeat CPs to add", input.maxRepeatNodesToAdd, 0, 100'000, "");
+                        tableInputEntryText("turned off repeat CPs", input.turnedOffRepeatNodes, "List of CP numbers you want to ban from repeating");
+                        tableInputEntryText("output data file", input.outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.");
+                        tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP");
                         if (config.weights.size() > 0) {
                             tableInputEntry("calculate route time", "", [&]() {
                                 ImGui::PushID("Calculate route button");
                                 if (ImGui::Button("Calculate time")) {
-                                    std::string routeString = inputRouteString;
+                                    std::string routeString = input.routeString;
                                     auto [sol, routeTime] = createSolutionFromString(routeString, config);
-                                    outputRouteCalcTime = routeTime;
+                                    state.outputRouteCalcTime = routeTime;
                                 }
                                 ImGui::PopID();
                                 ImGui::SameLine();
                                 ImGui::SetNextItemWidth(-1);
-                                ImGui::InputText("##input route string", inputRouteString, sizeof(inputRouteString));
+                                ImGui::InputText("##input route string", input.routeString, sizeof(input.routeString));
                             });
                             ImGui::TableNextColumn();
                             ImGui::SetNextItemWidth(-1);
-                            if (outputRouteCalcTime == -1.0) {
+                            if (state.outputRouteCalcTime == -1.0) {
                                 ImGui::Text("Error");
                             } else {
-                                ImGui::Text("Time = %.1f", outputRouteCalcTime);
+                                ImGui::Text("Time = %.1f", state.outputRouteCalcTime);
                             }
                         }
                     }
@@ -475,17 +375,17 @@ int main(int argc, char** argv) {
                     ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
             
-                    if (showAdvancedSettings) {
-                        tableInputEntryFile("CP positions file", inputPositionReplayFilePath, "txt\0*.txt\0All\0*.*\0", "Optional for visualization only.\nFile containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.\n\nWhen provided it enables graph view to show 2D view of the route");
+                    if (input.showAdvancedSettings) {
+                        tableInputEntryFile("CP positions file", input.positionReplayFilePath, "txt\0*.txt\0All\0*.*\0", "Optional for visualization only.\nFile containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.\n\nWhen provided it enables graph view to show 2D view of the route");
                     }
-                    tableInputEntryFile("input data file", inputDataFile, "All\0*.*\0CSV\0*.CSV\0", "Format is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.");
+                    tableInputEntryFile("input data file", input.inputDataFile, "All\0*.*\0CSV\0*.CSV\0", "Format is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.");
                     ImGui::EndTable();
                 }
 
                 auto sortBestFoundSolutionsSolutions = [&]() {
-                    std::sort(bestFoundSolutions.begin(), bestFoundSolutions.end(), [&](BestSolution& a, auto& b) {
-                        if (isConnectionSearchAlgorithm) {
-                            if (!sortConnectionSearchResultsByConnection) {
+                    std::sort(state.bestFoundSolutions.begin(), state.bestFoundSolutions.end(), [&](BestSolution& a, auto& b) {
+                        if (input.isConnectionSearchAlgorithm) {
+                            if (!input.sortConnectionSearchResultsByConnection) {
                                 if (a.time < b.time)
                                     return true;
                                 if (a.time > b.time)
@@ -505,232 +405,91 @@ int main(int argc, char** argv) {
                     });
                 };
 
-                if (showAdvancedSettings) {
-                    ImGui::Checkbox("Connection finder mode", &isConnectionSearchAlgorithm);
+                if (input.showAdvancedSettings) {
+                    ImGui::Checkbox("Connection finder mode", &input.isConnectionSearchAlgorithm);
                 }
-                if (showAdvancedSettings && isConnectionSearchAlgorithm) {
+                if (input.showAdvancedSettings && input.isConnectionSearchAlgorithm) {
                     if (ImGui::BeginTable("ConnectionFinderTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                         ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
                         ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
                         ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
                         ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
-                        tableInputEntryInt("min connection time", connectionFinderSettingsInput.minConnectionTime, 0, 100'000, "Connections with this or higher time\nwill be tried to be replaced with tested time");
-                        tableInputEntryInt("max connection time", connectionFinderSettingsInput.maxConnectionTime, 0, 100'000, "Connections with this or lower time\nwill be tried to be replaced with tested time");
-                        tableInputEntryIntDisabledIfNoPositionData("min distance", connectionFinderSettingsInput.minDistance, 0, 100'000, "Connections with this or higher distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
-                        tableInputEntryIntDisabledIfNoPositionData("max distance", connectionFinderSettingsInput.maxDistance, 0, 100'000, "Connections with this or lower distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
-                        tableInputEntryIntDisabledIfNoPositionData("min height difference", connectionFinderSettingsInput.minHeightDiff, -100'000, 100'000, "Connections with this or higher Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
-                        tableInputEntryIntDisabledIfNoPositionData("max height difference", connectionFinderSettingsInput.maxHeightDiff, -100'000, 100'000, "Connections with this or lower Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
-                        tableInputEntryInt("tested time", connectionFinderSettingsInput.testedConnectionTime, 0, 100'000, "Time that will be inserted into tested connections");
-                        tableInputEntryText("source CPs", inputSearchSourceNodes, "List of source CP numbers that should be considered while searching.\nIf empty - all CPs are considered");
+                        tableInputEntryInt("min connection time", input.connectionFinderSettings.minConnectionTime, 0, 100'000, "Connections with this or higher time\nwill be tried to be replaced with tested time");
+                        tableInputEntryInt("max connection time", input.connectionFinderSettings.maxConnectionTime, 0, 100'000, "Connections with this or lower time\nwill be tried to be replaced with tested time");
+                        tableInputEntryIntDisabledIfNoPositionData("min distance", input.connectionFinderSettings.minDistance, 0, 100'000, "Connections with this or higher distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
+                        tableInputEntryIntDisabledIfNoPositionData("max distance", input.connectionFinderSettings.maxDistance, 0, 100'000, "Connections with this or lower distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
+                        tableInputEntryIntDisabledIfNoPositionData("min height difference", input.connectionFinderSettings.minHeightDiff, -100'000, 100'000, "Connections with this or higher Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
+                        tableInputEntryIntDisabledIfNoPositionData("max height difference", input.connectionFinderSettings.maxHeightDiff, -100'000, 100'000, "Connections with this or lower Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
+                        tableInputEntryInt("tested time", input.connectionFinderSettings.testedConnectionTime, 0, 100'000, "Time that will be inserted into tested connections");
+                        tableInputEntryText("source CPs", input.searchSourceNodes, "List of source CP numbers that should be considered while searching.\nIf empty - all CPs are considered");
 
                         ImGui::TableNextColumn();
                         ImGui::SetNextItemWidth(-1);
-                        if (ImGui::Checkbox("sort by connection", &sortConnectionSearchResultsByConnection)) {
+                        if (ImGui::Checkbox("sort by connection", &input.sortConnectionSearchResultsByConnection)) {
                             sortBestFoundSolutionsSolutions();
                         }
                         ImGui::EndTable();
                     }
                 }
 
-                if (!errorMsg.empty()) {
+                if (!state.errorMsg.empty()) {
                     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 0, 0, 255));
-                    ImGui::Text("Error: %s", errorMsg.c_str());
+                    ImGui::Text("Error: %s", state.errorMsg.c_str());
                     ImGui::PopStyleColor();
                 }
 
-                auto startAlgorithm = [&](bool isExactAlgorithm) {
-                    if (!isRunning(algorithmRunTask)) {
-                        errorMsg = "";
-                        taskWasCanceled = false;
-                        endedWithTimeout = false;
-                        bestFoundSolutions.clear();
-
-                        isGraphWindowOpen = false;
-                        solutionToShowInGraphWindow.clear();
-                        solutionToCompareToInGraphWindow.clear();
-
-                        copiedBestSolutionsAfterAlgorithmDone = false;
-                        showResultsFilter = false;
-                        resultRequiredConnections.clear();
-                        resultOptionalConnections.clear();
-
-                        config.limit = inputLimitValue * 10;
-                        config.ignoredValue = ignoredValueInput * 10;
-                        config.maxSolutionCount = maxSolutionCountInput;
-                        config.outputFileName = outputDataFile;
-                        config.partialSolutionCount = 0;
-                        config.stopWorking = false;
-                        config.repeatNodeMatrix.clear();
-                        config.solutionsVec.clear();
-                        config.addedConnection = NullEdge;
-
-                        auto [A_, B_] = loadCsvData(inputDataFile, config.ignoredValue, errorMsg);
-                        config.weights = A_;
-                        config.condWeights = B_;
-                        config.useRespawnMatrix = Vector3d<Bool>(int(config.condWeights.size()));
-
-                        cpPositionsVis.clear();
-                        if (inputPositionReplayFilePath[0] != '\0') {
-                            cpPositionsVis = readPositionsFile(inputPositionReplayFilePath);
-                            if (cpPositionsVis.size() != config.weights.size()) {
-                                errorMsg = "incorrect CP position file - wrong number of CPs";
-                            }
-                        }
-
-                        auto ringCps = parseIntList(inputRingCps, 1, config.weights.size() - 2, "ring CPs list", errorMsg);
-                        auto repeatNodesTurnedOff = parseIntList(inputTurnedOffRepeatNodes, 0, config.weights.size() - 2, "turned off repeat nodes", errorMsg);
-                        auto searchSourceNodes = parseIntList(inputSearchSourceNodes, 0, config.weights.size() - 2, "search source CPs list", errorMsg);
-
-                        if (errorMsg.empty()) {
-                            timer = Timer();
-                            timerThread = std::thread([&taskWasCanceled, &timer, maxTime, &config, &endedWithTimeout]() {
-                                while (!config.stopWorking && !taskWasCanceled && timer.getTime() < maxTime) {
-                                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                                }
-                                endedWithTimeout = timer.getTime() >= maxTime;
-                                config.stopWorking = true;
-                            });
-                            if (isConnectionSearchAlgorithm) {
-                                connectionFinderSettings = connectionFinderSettingsInput;
-                                connectionFinderSettings.minConnectionTime *= 10;
-                                connectionFinderSettings.maxConnectionTime *= 10;
-                                connectionFinderSettings.testedConnectionTime *= 10;
-                                config.useExtendedMatrix = isUsingExtendedMatrix(config.condWeights);
-                                config.bestSolutions.clear();
-                                connectionsToTest.clear();
-                                algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout, &maxRepeatNodesToAdd, &repeatNodesTurnedOff, &cpPositionsVis, &ringCps, &connectionFinderSettings, &connectionsToTest, &searchSourceNodes]() mutable {
-                                    auto privateConfig = config;
-                                    privateConfig.maxSolutionCount = 1;
-
-                                    for (int src = 0; src < config.weights.size() - 1; ++src) {
-                                        if (!searchSourceNodes.empty() && std::find(searchSourceNodes.begin(), searchSourceNodes.end(), src) == searchSourceNodes.end())
-                                            continue;
-                                        for (int dst = 1; dst < config.weights.size(); ++dst) {
-                                            if (src == dst)
-                                                continue;
-
-                                            if (config.weights[dst][src] > connectionFinderSettings.maxConnectionTime)
-                                                continue;
-                                            if (config.weights[dst][src] < connectionFinderSettings.minConnectionTime)
-                                                continue;
-
-                                            if (!cpPositionsVis.empty()) {
-                                                auto srcPos = cpPositionsVis[src];
-                                                auto dstPos = cpPositionsVis[dst];
-                                                if (dstPos.y - srcPos.y > connectionFinderSettings.maxHeightDiff)
-                                                    continue;
-                                                if (dstPos.y - srcPos.y < connectionFinderSettings.minHeightDiff)
-                                                    continue;
-                                                if (dist3d(srcPos, dstPos) > connectionFinderSettings.maxDistance)
-                                                    continue;
-                                                if (dist3d(srcPos, dstPos) < connectionFinderSettings.minDistance)
-                                                    continue;
-                                            }
-                                            connectionsToTest.emplace_back(src, dst);
-                                        }
-                                    }
-                                    for (auto [src, dst] : connectionsToTest) {
-                                        if (config.stopWorking)
-                                            break;
-
-                                        privateConfig.addedConnection = Edge{ src, dst };
-                                        privateConfig.weights[dst][src] = connectionFinderSettings.testedConnectionTime;
-                                        privateConfig.bestSolutions.clear();
-                                        privateConfig.solutionsVec.clear();
-                                        privateConfig.limit = config.limit;
-                                        std::fill(privateConfig.condWeights[dst][src].begin(), privateConfig.condWeights[dst][src].end(), privateConfig.weights[dst][src]);
-                                        privateConfig.repeatNodeMatrix = addRepeatNodeEdges(privateConfig.weights, privateConfig.condWeights, privateConfig.ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
-                                        addRingCps(config, ringCps);
-                                        privateConfig.weights = createAtspMatrixFromInput(privateConfig.weights);
-                                        std::fill(privateConfig.condWeights[0].back().begin(), privateConfig.condWeights[0].back().end(), 0);
-                                        if (isExactAlgorithm) {
-                                            findSolutionsPriority(privateConfig);
-                                        } else {
-                                            findSolutionsHeuristic(privateConfig);
-                                        }
-
-                                        if (!privateConfig.bestSolutions.empty()) {
-                                            auto& newSolution = privateConfig.bestSolutions[0];
-                                            config.solutionsVec.push_back_not_thread_safe(newSolution);
-                                            insertSorted(config.bestSolutions, newSolution, [](auto& a, auto& b) {
-                                                if (a.time < b.time)
-                                                    return true;
-                                                if (a.time > b.time)
-                                                    return false;
-                                                return a.solution < b.solution;
-                                            });
-                                            if (config.bestSolutions.size() >= config.maxSolutionCount) {
-                                                config.limit = config.bestSolutions.back().time;
-                                                config.bestSolutions.pop_back();
-                                            }
-                                        }
-
-                                        privateConfig.weights = config.weights;
-                                        privateConfig.condWeights = config.condWeights;
-                                        config.partialSolutionCount += 1;
-                                    }
-                                    config.stopWorking = true;
-                                    timerThread.join();
-                                    timer.stop();
-                                });
-                            } else {
-                                config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, maxRepeatNodesToAdd, repeatNodesTurnedOff);
-                                addRingCps(config, ringCps);
-                                clearFile(config.outputFileName);
-                                algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [isExactAlgorithm, &timer, &config, &taskWasCanceled, &timerThread, &endedWithTimeout]() mutable {
-                                    config.weights = createAtspMatrixFromInput(config.weights);
-                                    std::fill(config.condWeights[0].back().begin(), config.condWeights[0].back().end(), 0);
-                                    config.useExtendedMatrix = isUsingExtendedMatrix(config.condWeights);
-                                    config.bestSolutions.clear();
-                                    if (isExactAlgorithm) {
-                                        findSolutionsPriority(config);
-                                    } else {
-                                        findSolutionsHeuristic(config);
-                                    }
-                                    config.stopWorking = true;
-                                    timerThread.join();
-                                    overwriteFileWithSortedSolutions(config.outputFileName, config.maxSolutionCount, config.solutionsVec, config.repeatNodeMatrix, config.useRespawnMatrix);
-                                    timer.stop();
-                                });
-                            }
-                        }
-                    } else {
-                        errorMsg = "Already running";
+                auto startAlgorithm = [&](Algorithm algorithm) {
+                    if (isRunning(state.algorithmRunTask)) {
+                        state.errorMsg = "Already running";
+                        return;
                     }
+                    state.errorMsg = "";
+                    state.bestFoundSolutions.clear();
+                    state.copiedBestSolutionsAfterAlgorithmDone = false;
+
+                    input.showResultsFilter = false;
+                    state.resultRequiredConnections.clear();
+                    state.resultOptionalConnections.clear();
+
+                    state.isGraphWindowOpen = false;
+                    state.solutionToShowInGraphWindow.clear();
+                    state.solutionToCompareToInGraphWindow.clear();
+
+                    runAlgorithm(algorithm, config, input, state);
                 };
-                bool disableAlgorithmButtons = isRunning(algorithmRunTask);
+                bool disableAlgorithmButtons = isRunning(state.algorithmRunTask);
                 if (disableAlgorithmButtons)
                     ImGui::BeginDisabled();
                 if (ImGui::Button("Run exact algorithm")) {
-                    isHeuristicAlgorithm = false;
-                    startAlgorithm(true);
+                    state.isHeuristicAlgorithm = false;
+                    startAlgorithm(Algorithm::Assignment);
                 }
-                if (showAdvancedSettings) {
+                if (input.showAdvancedSettings) {
                     ImGui::SameLine();
                     if (ImGui::Button("Run heuristic algorithm")) {
-                        isHeuristicAlgorithm = true;
-                        startAlgorithm(false);
+                        state.isHeuristicAlgorithm = true;
+                        startAlgorithm(Algorithm::LinKernighan);
                     }
                 }
                 if (disableAlgorithmButtons)
                     ImGui::EndDisabled();
-                if (isRunning(algorithmRunTask)) {
+                if (isRunning(state.algorithmRunTask)) {
                     ImGui::SameLine();
                     if (ImGui::Button("Cancel")) {
-                        taskWasCanceled = true;
+                        state.taskWasCanceled = true;
                     }
                 }
-                if (copiedBestSolutionsAfterAlgorithmDone) {
+                if (state.copiedBestSolutionsAfterAlgorithmDone) {
                     ImGui::SameLine();
-                    ImGui::Checkbox("Show results connection filter", &showResultsFilter);
+                    ImGui::Checkbox("Show results connection filter", &input.showResultsFilter);
                 }
 
                 auto getRequiredAndOptionalConnectionSets = [&]() -> std::pair<FastSet2d, FastSet2d> {
-                    if (bestFoundSolutions.empty())
+                    if (state.bestFoundSolutions.empty())
                         return {};
-                    auto allConnectionsSet = bestFoundSolutions[0].solutionConnections;
-                    auto commonConnectionsSet = bestFoundSolutions[0].solutionConnections;
-                    for (auto& solution : bestFoundSolutions) {
+                    auto allConnectionsSet = state.bestFoundSolutions[0].solutionConnections;
+                    auto commonConnectionsSet = state.bestFoundSolutions[0].solutionConnections;
+                    for (auto& solution : state.bestFoundSolutions) {
                         allConnectionsSet |= solution.solutionConnections;
                         commonConnectionsSet &= solution.solutionConnections;
                     }
@@ -740,7 +499,7 @@ int main(int argc, char** argv) {
                     return { commonConnectionsSet, diffConnectionsSet };
                 };
 
-                if (showResultsFilter) {
+                if (input.showResultsFilter) {
                     ImVec2 buttonSize(fontSize * 5.5f, 0);
                     ImVec4 colRequired = ImVec4(0.133f, 0.694f, 0.298f, 1.00f);
                     ImVec4 colBanned = ImVec4(0.922f, 0.2f, 0.141f, 1.00f);
@@ -765,28 +524,28 @@ int main(int argc, char** argv) {
 
                     ImGui::Text("Required connections:");
                     float windowVisibleX = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
-                    for (int i = 0; i < resultRequiredConnections.size(); ++i) {
+                    for (int i = 0; i < state.resultRequiredConnections.size(); ++i) {
                         ImGui::PushID(("Required connection" + std::to_string(i)).c_str());
-                        addConnectionButton(resultRequiredConnections[i], true);
+                        addConnectionButton(state.resultRequiredConnections[i], true);
                         float lastButtonX = ImGui::GetItemRectMax().x;
                         float nextButtonX = lastButtonX + style.ItemSpacing.x + buttonSize.x;
-                        if (i + 1 < resultRequiredConnections.size() && nextButtonX < windowVisibleX)
+                        if (i + 1 < state.resultRequiredConnections.size() && nextButtonX < windowVisibleX)
                             ImGui::SameLine();
                         ImGui::PopID();
                     }
 
                     ImGui::Text("Optional connections:");
-                    for (int i = 0; i < resultOptionalConnections.size(); ++i) {
+                    for (int i = 0; i < state.resultOptionalConnections.size(); ++i) {
                         ImGui::PushID(("Optional connection" + std::to_string(i)).c_str());
-                        if (addConnectionButton(resultOptionalConnections[i])) {
-                            if (resultOptionalConnections[i].status == FilterConnection::Optional)
-                                resultOptionalConnections[i].status = FilterConnection::Banned;
-                            else if (resultOptionalConnections[i].status == FilterConnection::Banned)
-                                resultOptionalConnections[i].status = FilterConnection::Optional;
+                        if (addConnectionButton(state.resultOptionalConnections[i])) {
+                            if (state.resultOptionalConnections[i].status == FilterConnection::Optional)
+                                state.resultOptionalConnections[i].status = FilterConnection::Banned;
+                            else if (state.resultOptionalConnections[i].status == FilterConnection::Banned)
+                                state.resultOptionalConnections[i].status = FilterConnection::Optional;
 
-                            bestFoundSolutions.clear();
+                            state.bestFoundSolutions.clear();
                             FastSet2d bannedConnections(config.weights.size());
-                            for (auto& c : resultOptionalConnections) {
+                            for (auto& c : state.resultOptionalConnections) {
                                 if (c.status == FilterConnection::Banned) {
                                     bannedConnections.set(c.connection.first, c.connection.second);
                                 }
@@ -795,12 +554,12 @@ int main(int argc, char** argv) {
                                 auto set = s.solutionConnections;
                                 set &= bannedConnections;
                                 if (!set.any()) {
-                                    bestFoundSolutions.push_back(s);
+                                    state.bestFoundSolutions.push_back(s);
                                 }
                             }
                             auto [commonConnectionsSet, optionalConnectionsSet] = getRequiredAndOptionalConnectionSets();
 
-                            for (auto& c : resultOptionalConnections) {
+                            for (auto& c : state.resultOptionalConnections) {
                                 if (bannedConnections.test(c.connection.first, c.connection.second)) {
                                     c.status = FilterConnection::Banned;
                                 } else if (commonConnectionsSet.test(c.connection.first, c.connection.second)) {
@@ -814,7 +573,7 @@ int main(int argc, char** argv) {
                         }
                         float lastButtonX = ImGui::GetItemRectMax().x;
                         float nextButtonX = lastButtonX + style.ItemSpacing.x + buttonSize.x;
-                        if (i + 1 < resultOptionalConnections.size() && nextButtonX < windowVisibleX)
+                        if (i + 1 < state.resultOptionalConnections.size() && nextButtonX < windowVisibleX)
                             ImGui::SameLine();
                         ImGui::PopID();
                     }
@@ -837,19 +596,19 @@ int main(int argc, char** argv) {
                     ImGui::TableHeadersRow();
                     ImGui::TableNextColumn();
                     std::string status;
-                    if (!algorithmRunTask.valid()) {
+                    if (!state.algorithmRunTask.valid()) {
                         status = "Waiting for start";
-                    } else if (endedWithTimeout) {
-                        if (isRunning(algorithmRunTask))
+                    } else if (state.endedWithTimeout) {
+                        if (isRunning(state.algorithmRunTask))
                             status = "Timeout (Still running)";
                         else
                             status = "Timeout";
-                    } else if (taskWasCanceled) {
-                        if (isRunning(algorithmRunTask))
+                    } else if (state.taskWasCanceled) {
+                        if (isRunning(state.algorithmRunTask))
                             status = "Canceled (Still running)";
                         else
                             status = "Canceled";
-                    } else if (isRunning(algorithmRunTask)) {
+                    } else if (isRunning(state.algorithmRunTask)) {
                         status = "Running";
                     } else {
                         status = "Done";
@@ -857,15 +616,15 @@ int main(int argc, char** argv) {
                     ImGui::Text("%s", status.c_str());
 
                     ImGui::TableNextColumn();
-                    ImGui::Text("%.1f [s]", timer.getTime());
+                    ImGui::Text("%.1f [s]", state.timer.getTime());
 
                     ImGui::TableNextColumn();
                     ImGui::Text("%d", config.solutionsVec.size());
 
                     ImGui::TableNextColumn();
-                    if (isConnectionSearchAlgorithm) {
-                        ImGui::Text("Checked %d / %d connections", config.partialSolutionCount.load(), connectionsToTest.size());
-                    } else if (isHeuristicAlgorithm) {
+                    if (input.isConnectionSearchAlgorithm) {
+                        ImGui::Text("Checked %d / %d connections", config.partialSolutionCount.load(), state.connectionsToTest.size());
+                    } else if (state.isHeuristicAlgorithm) {
                         auto n = config.partialSolutionCount.load();
                         auto optVal = n >> 32;
                         auto tryVal = n & 0xffffffff;
@@ -880,25 +639,25 @@ int main(int argc, char** argv) {
                     ImGui::EndTable();
                 }
 
-                if (config.stopWorking && !copiedBestSolutionsAfterAlgorithmDone) {
-                    copiedBestSolutionsAfterAlgorithmDone = true;
-                    bestFoundSolutions = config.bestSolutions;
+                if (config.stopWorking && !state.copiedBestSolutionsAfterAlgorithmDone) {
+                    state.copiedBestSolutionsAfterAlgorithmDone = true;
+                    state.bestFoundSolutions = config.bestSolutions;
                     sortBestFoundSolutionsSolutions();
                     auto [commonConnectionsSet, optionalConnectionsSet] = getRequiredAndOptionalConnectionSets();
                     for (auto& connection : commonConnectionsSet.toSortedList()) {
-                        resultRequiredConnections.emplace_back(connection, FilterConnection::Required);
+                        state.resultRequiredConnections.emplace_back(connection, FilterConnection::Required);
                     }
                     for (auto& connection : optionalConnectionsSet.toSortedList()) {
-                        resultOptionalConnections.emplace_back(connection, FilterConnection::Optional);
+                        state.resultOptionalConnections.emplace_back(connection, FilterConnection::Optional);
                     }
-                } else if (!copiedBestSolutionsAfterAlgorithmDone && config.solutionsVec.size() > bestFoundSolutions.size()) {
-                    for (int i = int(bestFoundSolutions.size()); i < config.solutionsVec.size(); ++i) {
-                        bestFoundSolutions.push_back(config.solutionsVec[i]);
+                } else if (!state.copiedBestSolutionsAfterAlgorithmDone && config.solutionsVec.size() > state.bestFoundSolutions.size()) {
+                    for (int i = int(state.bestFoundSolutions.size()); i < config.solutionsVec.size(); ++i) {
+                        state.bestFoundSolutions.push_back(config.solutionsVec[i]);
                     }
                     sortBestFoundSolutionsSolutions();
                 }
-                auto bestSolutionCount = std::min<int>(int(bestFoundSolutions.size()), config.maxSolutionCount);
-                auto maxSolutionTime = bestFoundSolutions.empty() ? 0 : std::max_element(bestFoundSolutions.begin(), bestFoundSolutions.begin() + bestSolutionCount, [](auto& a, auto& b) { return a.time < b.time; })->time;
+                auto bestSolutionCount = std::min<int>(int(state.bestFoundSolutions.size()), config.maxSolutionCount);
+                auto maxSolutionTime = state.bestFoundSolutions.empty() ? 0 : std::max_element(state.bestFoundSolutions.begin(), state.bestFoundSolutions.begin() + bestSolutionCount, [](auto& a, auto& b) { return a.time < b.time; })->time;
                 auto textDigitWidth = ImGui::CalcTextSize("0").x;
 
                 auto updateSolutionId = [&](int& id, std::vector<int16_t>& solution) {
@@ -911,7 +670,7 @@ int main(int argc, char** argv) {
                         return;
                     }
                     for (int i = id; i < bestSolutionCount; ++i) {
-                        if (bestFoundSolutions[i].solution == solution) {
+                        if (state.bestFoundSolutions[i].solution == solution) {
                             id = i;
                             return;
                         }
@@ -919,14 +678,14 @@ int main(int argc, char** argv) {
                     id = -1;
                     solution.clear();
                 };
-                updateSolutionId(solutionToShowId, solutionToShowInGraphWindow);
-                updateSolutionId(solutionToCompareId, solutionToCompareToInGraphWindow);
+                updateSolutionId(state.solutionToShowId, state.solutionToShowInGraphWindow);
+                updateSolutionId(state.solutionToCompareId, state.solutionToCompareToInGraphWindow);
                 
                 if (ImGui::BeginTable("solutionsTable", 5, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::to_string(config.maxSolutionCount).size() + 1), 0);
                     ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::max(4, int(std::to_string(maxSolutionTime).size())) + 1), 1);
                     ImGui::TableSetupColumn("Graph", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 3.5f, 2);
-                    if (isConnectionSearchAlgorithm) {
+                    if (input.isConnectionSearchAlgorithm) {
                         ImGui::TableSetupColumn("Connection", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 5.5f, 3);
                     } else {
                         ImGui::TableSetupColumn("Variations", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 5.5f, 3);
@@ -938,9 +697,9 @@ int main(int argc, char** argv) {
                     clipper.Begin(bestSolutionCount);
                     while (clipper.Step()) {
                         for (int j = clipper.DisplayStart; j < clipper.DisplayEnd; ++j) {
-                            auto& B_ = bestFoundSolutions[j].solution;
-                            auto time = bestFoundSolutions[j].time;
-                            auto solStr = bestFoundSolutions[j].solutionString;// std::string("");// createSolutionString(B_, config.repeatNodeMatrix, config.useRespawnMatrix);
+                            auto& B_ = state.bestFoundSolutions[j].solution;
+                            auto time = state.bestFoundSolutions[j].time;
+                            auto solStr = state.bestFoundSolutions[j].solutionString;
                     
                             ImGui::TableNextColumn();
                             addNumberPadding(j + 1, config.maxSolutionCount);
@@ -953,17 +712,17 @@ int main(int argc, char** argv) {
                             ImGui::TableNextColumn();
                             ImGui::PushID((std::to_string(j) + "_solution_button").c_str());
                             if (ImGui::Button("Graph")) {
-                                isGraphWindowOpen = true;
-                                solutionToShowId = j;
-                                solutionToShowInGraphWindow = B_;
+                                state.isGraphWindowOpen = true;
+                                state.solutionToShowId = j;
+                                state.solutionToShowInGraphWindow = B_;
                             }
                             if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
-                                if (solutionToCompareToInGraphWindow == B_) {
-                                    solutionToCompareId = -1;
-                                    solutionToCompareToInGraphWindow.clear();
+                                if (state.solutionToCompareToInGraphWindow == B_) {
+                                    state.solutionToCompareId = -1;
+                                    state.solutionToCompareToInGraphWindow.clear();
                                 } else {
-                                    solutionToCompareId = j;
-                                    solutionToCompareToInGraphWindow = B_;
+                                    state.solutionToCompareId = j;
+                                    state.solutionToCompareToInGraphWindow = B_;
                                 }
                             }
                             ImGui::PopID();
@@ -971,35 +730,35 @@ int main(int argc, char** argv) {
                                 ImGui::SetNextWindowSize(ImVec2(350, 375));
                                 ImGui::BeginTooltip();
                                 auto pos = ImGui::GetWindowPos();
-                                drawSolutionGraph(B_, solutionToCompareToInGraphWindow, pos, ImVec2(350, 350));
+                                drawSolutionGraph(B_, state.solutionToCompareToInGraphWindow, pos, ImVec2(350, 350));
                                 auto& drawList = *ImGui::GetWindowDrawList();
-                                std::string text = (solutionToCompareToInGraphWindow == B_) ? "Right-click to disable compare" : "Right-click to compare against";
+                                std::string text = (state.solutionToCompareToInGraphWindow == B_) ? "Right-click to disable compare" : "Right-click to compare against";
                                 drawList.AddText(ImGui::GetDefaultFont(), 20, ImVec2(pos.x + 10, pos.y + 350), ImColor(255, 255, 255), text.c_str());
                                 ImGui::EndTooltip();
                             }
                             ImGui::TableNextColumn();
-                            if (bestFoundSolutions[j].addedConnection != NullEdge) {
-                                auto& c = bestFoundSolutions[j].addedConnection;
+                            if (state.bestFoundSolutions[j].addedConnection != NullEdge) {
+                                auto& c = state.bestFoundSolutions[j].addedConnection;
                                 ImGui::Text((std::to_string(c.first) + "->" + std::to_string(c.second)).c_str());
                             } else {
                                 ImGui::PushID((std::to_string(j) + "_variations_button").c_str());
                                 std::string variationButtonLabel = "Var(";
-                                if (copiedBestSolutionsAfterAlgorithmDone) {
-                                    variationButtonLabel += std::to_string(bestFoundSolutions[j].allVariations.size());
+                                if (state.copiedBestSolutionsAfterAlgorithmDone) {
+                                    variationButtonLabel += std::to_string(state.bestFoundSolutions[j].allVariations.size());
                                 } else {
                                     variationButtonLabel += "???";
                                 }
                                 variationButtonLabel += ")";
-                                if (!copiedBestSolutionsAfterAlgorithmDone || bestFoundSolutions[j].allVariations.size() == 1) {
+                                if (!state.copiedBestSolutionsAfterAlgorithmDone || state.bestFoundSolutions[j].allVariations.size() == 1) {
                                     ImGui::BeginDisabled();
                                 }
                                 ImGui::SetNextItemWidth(-1);
                                 if (ImGui::Button(variationButtonLabel.c_str(), ImVec2(-1, 0))) {
-                                    isVariationsWindowOpen = true;
-                                    solutionToShowVariationId = j;
-                                    solutionToShowVariation = bestFoundSolutions[j];
+                                    state.isVariationsWindowOpen = true;
+                                    state.solutionToShowVariationId = j;
+                                    state.solutionToShowVariation = state.bestFoundSolutions[j];
                                 }
-                                if (!copiedBestSolutionsAfterAlgorithmDone || bestFoundSolutions[j].allVariations.size() == 1) {
+                                if (!state.copiedBestSolutionsAfterAlgorithmDone || state.bestFoundSolutions[j].allVariations.size() == 1) {
                                     ImGui::EndDisabled();
                                 }
                                 ImGui::PopID();
@@ -1014,7 +773,7 @@ int main(int argc, char** argv) {
                 }
                 ImGui::EndTabItem();
             } else {
-                isOnPathFinderTab = false;
+                state.isOnPathFinderTab = false;
             }
             if (ImGui::BeginTabItem("CP positions creator (experimental)")) {
                 static std::string cpPositionsErrorMsg;
@@ -1022,29 +781,29 @@ int main(int argc, char** argv) {
                 if (ImGui::BeginTable("menuTableCp", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-                    tableInputEntryFile("Full Replay Gbx", inputPositionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0", "Can be either Replay or Ghost file in Gbx format.\nIt's assumed that it is a full replay from start to finish");
-                    tableInputEntryText("CP order (optional)", inputCpOrder, "Comma separated full list of CP numbers in order they were driven.\nIt's useful if you have no replay at hand that drives all CPs in the correct order.");
-                    tableInputEntryText("output positions file", outputPositionsFile, "Text file that will contain positions of start, CPs and finish.\nThis is used for automatic generation of spreadsheet values and visualizations.");
+                    tableInputEntryFile("Full Replay Gbx", input.positionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0", "Can be either Replay or Ghost file in Gbx format.\nIt's assumed that it is a full replay from start to finish");
+                    tableInputEntryText("CP order (optional)", input.cpOrder, "Comma separated full list of CP numbers in order they were driven.\nIt's useful if you have no replay at hand that drives all CPs in the correct order.");
+                    tableInputEntryText("output positions file", input.outputPositionsFile, "Text file that will contain positions of start, CPs and finish.\nThis is used for automatic generation of spreadsheet values and visualizations.");
                     ImGui::EndTable();
                 }
                 if (ImGui::Button("Create positions file")) {
                     cpPositionsErrorMsg.clear();
-                    calculatedCpPositions.clear();
-                    auto replayData = getReplayData(std::wstring(inputPositionReplayFile, inputPositionReplayFile + strlen(inputPositionReplayFile)), cpPositionsErrorMsg);
+                    state.calculatedCpPositions.clear();
+                    auto replayData = getReplayData(std::wstring(input.positionReplayFile, input.positionReplayFile + strlen(input.positionReplayFile)), cpPositionsErrorMsg);
                     if (cpPositionsErrorMsg.empty()) {
-                        calculatedCpPositions = getCpPositions(replayData);
-                        auto cpOrder = parseIntList(inputCpOrder, 1, calculatedCpPositions.size() - 2, "CP order list", cpPositionsErrorMsg);
-                        if (calculatedCpPositions.empty()) {
+                        state.calculatedCpPositions = getCpPositions(replayData);
+                        auto cpOrder = parseIntList(input.cpOrder, 1, state.calculatedCpPositions.size() - 2, "CP order list", cpPositionsErrorMsg);
+                        if (state.calculatedCpPositions.empty()) {
                             cpPositionsErrorMsg = "Failed to read positions";
-                        } else if (calculatedCpPositions.size() == 1) {
+                        } else if (state.calculatedCpPositions.size() == 1) {
                             cpPositionsErrorMsg = "Failed to find CP positions in replay file";
                         } else if (!cpOrder.empty()) {
-                            std::vector<int> path(calculatedCpPositions.size() - 2);
+                            std::vector<int> path(state.calculatedCpPositions.size() - 2);
                             std::iota(path.begin(), path.end(), 1);
                             auto sortedCpOrder = cpOrder;
                             std::sort(sortedCpOrder.begin(), sortedCpOrder.end());
                             if (sortedCpOrder != path) {
-                                calculatedCpPositions.clear();
+                                state.calculatedCpPositions.clear();
                                 if (path.empty()) {
                                     cpPositionsErrorMsg = "There are only 2 positions (assumed start and finish) in replay, so cannot apply CP order list";
                                 } else if (sortedCpOrder.size() > path.size()) {
@@ -1072,30 +831,30 @@ int main(int argc, char** argv) {
                                     cpPositionsErrorMsg = "Unexpected problem with CP order list";
                                 }
                             } else {
-                                calculatedCpOrder = cpOrder;
-                                calculatedCpOrder.insert(calculatedCpOrder.begin(), 0);
-                                calculatedCpOrder.push_back(calculatedCpOrder.size());
-                                std::vector<Position> newPositions(calculatedCpPositions.size());
-                                for (int i = 0; i < calculatedCpOrder.size(); ++i) {
-                                    newPositions[calculatedCpOrder[i]] = calculatedCpPositions[i];
+                                state.calculatedCpOrder = cpOrder;
+                                state.calculatedCpOrder.insert(state.calculatedCpOrder.begin(), 0);
+                                state.calculatedCpOrder.push_back(state.calculatedCpOrder.size());
+                                std::vector<Position> newPositions(state.calculatedCpPositions.size());
+                                for (int i = 0; i < state.calculatedCpOrder.size(); ++i) {
+                                    newPositions[state.calculatedCpOrder[i]] = state.calculatedCpPositions[i];
                                 }
-                                calculatedCpPositions = newPositions;
+                                state.calculatedCpPositions = newPositions;
                             }
                         } else {
-                            calculatedCpOrder.resize(calculatedCpPositions.size());
-                            std::iota(calculatedCpOrder.begin(), calculatedCpOrder.end(), 0);
+                            state.calculatedCpOrder.resize(state.calculatedCpPositions.size());
+                            std::iota(state.calculatedCpOrder.begin(), state.calculatedCpOrder.end(), 0);
                         }
                     }
                     if (cpPositionsErrorMsg.empty()) {
-                        std::ofstream positionsFile(outputPositionsFile, std::ios::trunc);
+                        std::ofstream positionsFile(input.outputPositionsFile, std::ios::trunc);
                         positionsFile << std::setprecision(2) << std::fixed;
-                        for (auto& pos : calculatedCpPositions) {
+                        for (auto& pos : state.calculatedCpPositions) {
                             positionsFile << pos.x << '\t' << pos.y << '\t' << pos.z << '\n';
                         }
                     }
                 }
                 ImGui::SameLine();
-                std::string status = calculatedCpPositions.empty() ? "Waiting for start" : "Done";
+                std::string status = state.calculatedCpPositions.empty() ? "Waiting for start" : "Done";
                 ImGui::Text(" Status: %s", status.c_str());
 
                 ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 0, 0, 255));
@@ -1106,15 +865,15 @@ int main(int argc, char** argv) {
                 }
                 ImGui::PopStyleColor();
 
-                if (!calculatedCpPositions.empty()) {
-                    auto path = calculatedCpOrder;
+                if (!state.calculatedCpPositions.empty()) {
+                    auto path = state.calculatedCpOrder;
                     path.erase(path.begin());
                     std::vector<int16_t> path16Bit;
                     for (auto& node : path)
                         path16Bit.push_back(node);
                     auto pos = ImGui::GetCursorPos();
                     auto size = ImVec2(ImGui::GetWindowSize().x - pos.x, ImGui::GetWindowSize().y - pos.y);
-                    drawSolutionGraph(calculatedCpPositions, path16Bit, {}, pos, size);
+                    drawSolutionGraph(state.calculatedCpPositions, path16Bit, {}, pos, size);
                 }
 
                 ImGui::EndTabItem();
@@ -1123,39 +882,39 @@ int main(int argc, char** argv) {
                 if (ImGui::BeginTable("menuTableSpreadsheet", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-                    tableInputEntryFile("folder with replays", inputReplayFolderPath, nullptr, "Folder containing all .Gbx replay/ghost files to be used for spreadsheet creation.\nIt searches all sub-folders.\nOnly files with .gbx extension are considered.\n\nWARNING: make sure all .gbx files in folder were driven on the correct map, otherwise you might include wrong data");
-                    tableInputEntryFile("positions file", inputPositionReplayFilePath, "txt\0*.txt\0All\0*.*\0", "File containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.");
-                    tableInputEntryText("output file", outputSpreadsheetFile, "Text file that will contain positions of start, CPs and finish.\nThis is used for automatic generation of spreadsheet values and visualizations.");
+                    tableInputEntryFile("folder with replays", input.replayFolderPath, nullptr, "Folder containing all .Gbx replay/ghost files to be used for spreadsheet creation.\nIt searches all sub-folders.\nOnly files with .gbx extension are considered.\n\nWARNING: make sure all .gbx files in folder were driven on the correct map, otherwise you might include wrong data");
+                    tableInputEntryFile("positions file", input.positionReplayFilePath, "txt\0*.txt\0All\0*.*\0", "File containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.");
+                    tableInputEntryText("output file", input.outputSpreadsheetFile, "Text file that will contain positions of start, CPs and finish.\nThis is used for automatic generation of spreadsheet values and visualizations.");
                     ImGui::EndTable();
                 }
                 static std::atomic<uint64_t> processedFilesTotalSize = 0;
 
                 if (ImGui::Button("Create spreadsheet")) {
-                    if (!isRunning(matrixCreateTask)) {
-                        std::scoped_lock l{ createdMatrixLogMutex };
-                        createdMatrixLog.clear();
-                        createdMatrix.clear();
-                        spreadSheetTimer = Timer();
+                    if (!isRunning(state.matrixCreateTask)) {
+                        std::scoped_lock l{ state.createdMatrixLogMutex };
+                        state.createdMatrixLog.clear();
+                        state.createdMatrix.clear();
+                        state.spreadSheetTimer = Timer();
                         processedFilesTotalSize = 0;
-                        matrixCreateTask = std::async(std::launch::async, [&]() {
-                            std::ofstream spreadsheetFile(outputSpreadsheetFile);
-                            auto cpPositions = readPositionsFile(inputPositionReplayFilePath);
+                        state.matrixCreateTask = std::async(std::launch::async, [&]() {
+                            std::ofstream spreadsheetFile(input.outputSpreadsheetFile);
+                            auto cpPositions = readPositionsFile(input.positionReplayFilePath);
                             if (cpPositions.empty()) {
-                                std::scoped_lock l{ createdMatrixLogMutex };
-                                createdMatrixLog = "Failed to read CP positions file";
+                                std::scoped_lock l{ state.createdMatrixLogMutex };
+                                state.createdMatrixLog = "Failed to read CP positions file";
                                 return;
                             }
-                            createdMatrix.resize(cpPositions.size(), std::vector<int>(cpPositions.size(), 10000));
+                            state.createdMatrix.resize(cpPositions.size(), std::vector<int>(cpPositions.size(), 10000));
                             std::mutex matrixMutex;
                             ThreadPool threadPool;
-                            for (const auto& dirEntry : std::filesystem::recursive_directory_iterator(inputReplayFolderPath)) {
+                            for (const auto& dirEntry : std::filesystem::recursive_directory_iterator(input.replayFolderPath)) {
                                 if (!dirEntry.is_regular_file())
                                     continue;
                                 auto extension = dirEntry.path().extension().string();
                                 std::transform(extension.begin(), extension.end(), extension.begin(), [](auto& c) { return std::tolower(c); });
                                 if (extension != ".gbx")
                                     continue;
-                                threadPool.addTask([dirEntry, &createdMatrix, &matrixMutex, &createdMatrixLog, &createdMatrixLogMutex, &cpPositions](int) {
+                                threadPool.addTask([dirEntry, &state, &matrixMutex, &cpPositions](int) {
                                     char out[512];
                                     auto wString = dirEntry.path().wstring();
                                     ImTextStrToUtf8(out, sizeof(out), (ImWchar*)wString.c_str(), (ImWchar*)wString.c_str() + wString.size());
@@ -1165,48 +924,48 @@ int main(int argc, char** argv) {
                                     processedFilesTotalSize += fileSize;
                                     std::string logEntry = std::string(out) + '\n';
                                     if (!error.empty()) {
-                                        std::scoped_lock l{ createdMatrixLogMutex };
-                                        createdMatrixLog.insert(0, logEntry + "\t\t" + error + "\n");
+                                        std::scoped_lock l{ state.createdMatrixLogMutex };
+                                        state.createdMatrixLog.insert(0, logEntry + "\t\t" + error + "\n");
                                         return;
                                     }
                                     auto connections = getConnections(repData, cpPositions);
                                     for (auto& connection : connections) {
                                         logEntry += "\t\t" + std::to_string(connection.src) + " -> " + std::to_string(connection.dst) + " time = " + floatToString(connection.time / 10.f, 1) + "\n";
                                         std::scoped_lock l{ matrixMutex };
-                                        if (createdMatrix[connection.dst][connection.src] > connection.time) {
-                                            createdMatrix[connection.dst][connection.src] = connection.time;
+                                        if (state.createdMatrix[connection.dst][connection.src] > connection.time) {
+                                            state.createdMatrix[connection.dst][connection.src] = connection.time;
                                         }
                                     }
-                                    std::scoped_lock l{ createdMatrixLogMutex };
-                                    createdMatrixLog += logEntry;
+                                    std::scoped_lock l{ state.createdMatrixLogMutex };
+                                    state.createdMatrixLog += logEntry;
                                 });
                             }
                             threadPool.wait();
                             spreadsheetFile << std::setprecision(1) << std::fixed;
-                            for (int i = 1; i < createdMatrix.size(); ++i) {
-                                for (int j = 0; j < createdMatrix.size() - 1; ++j) {
-                                    spreadsheetFile << createdMatrix[i][j] / 10.f << "\t";
+                            for (int i = 1; i < state.createdMatrix.size(); ++i) {
+                                for (int j = 0; j < state.createdMatrix.size() - 1; ++j) {
+                                    spreadsheetFile << state.createdMatrix[i][j] / 10.f << "\t";
                                 }
                                 spreadsheetFile << '\n';
                             }
-                            spreadSheetTimer.stop();
+                            state.spreadSheetTimer.stop();
                         });
                     }
                 }
                 std::string status;
-                if (!matrixCreateTask.valid()) {
+                if (!state.matrixCreateTask.valid()) {
                     status = "Waiting for start";
-                } else if (isRunning(matrixCreateTask)) {
+                } else if (isRunning(state.matrixCreateTask)) {
                     status = "Running";
                 } else {
                     status = "Done";
                 }
                 ImGui::Text("Status: %s", status.c_str());
                 if (processedFilesTotalSize != 0) {
-                    if (spreadSheetTimer.getTime() > 0.2) {
-                        ImGui::Text("Time: %.1f [s] (%d MB/s)", spreadSheetTimer.getTime(), int(processedFilesTotalSize.load() / 1'000'000 / spreadSheetTimer.getTime()));
+                    if (state.spreadSheetTimer.getTime() > 0.2) {
+                        ImGui::Text("Time: %.1f [s] (%d MB/s)", state.spreadSheetTimer.getTime(), int(processedFilesTotalSize.load() / 1'000'000 / state.spreadSheetTimer.getTime()));
                     } else {
-                        ImGui::Text("Time: %.1f [s]", spreadSheetTimer.getTime());
+                        ImGui::Text("Time: %.1f [s]", state.spreadSheetTimer.getTime());
                     }
                 } else {
                     ImGui::Text("");
@@ -1214,8 +973,8 @@ int main(int argc, char** argv) {
 
                 ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 1));
                 {
-                    std::scoped_lock l{ createdMatrixLogMutex };
-                    ImGui::InputTextMultiline("##", (char*)createdMatrixLog.c_str(), createdMatrixLog.size(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
+                    std::scoped_lock l{ state.createdMatrixLogMutex };
+                    ImGui::InputTextMultiline("##", (char*)state.createdMatrixLog.c_str(), state.createdMatrixLog.size(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
                 }
                 ImGui::PopStyleColor();
                 ImGui::EndTabItem();
@@ -1225,13 +984,13 @@ int main(int argc, char** argv) {
                 if (ImGui::BeginTable("menuTableReplayVisualizer", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-                    tableInputEntryFile("Replay/Ghost file", inputPositionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0", "Can be either Replay or Ghost file in Gbx format.");
+                    tableInputEntryFile("Replay/Ghost file", input.positionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0", "Can be either Replay or Ghost file in Gbx format.");
                     ImGui::EndTable();
                 }
                 if (ImGui::Button("Visualize")) {
-                    pathToVisualize.clear();
+                    state.pathToVisualize.clear();
                     replayVisulizerErrorMsg.clear();
-                    auto replayData = getReplayData(std::wstring(inputPositionReplayFile, inputPositionReplayFile + strlen(inputPositionReplayFile)), replayVisulizerErrorMsg);
+                    auto replayData = getReplayData(std::wstring(input.positionReplayFile, input.positionReplayFile + strlen(input.positionReplayFile)), replayVisulizerErrorMsg);
 
                     if (replayVisulizerErrorMsg.empty()) {
                         if (replayData.empty()) {
@@ -1239,7 +998,7 @@ int main(int argc, char** argv) {
                         }
                         for (auto& rep : replayData) {
                             for (auto& sample : rep.ghostSamples) {
-                                pathToVisualize.push_back(sample.pos);
+                                state.pathToVisualize.push_back(sample.pos);
                             }
                         }
                     }
@@ -1253,10 +1012,10 @@ int main(int argc, char** argv) {
                 }
                 ImGui::PopStyleColor();
 
-                if (!pathToVisualize.empty()) {
+                if (!state.pathToVisualize.empty()) {
                     auto pos = ImGui::GetCursorPos();
                     auto size = ImVec2(ImGui::GetWindowSize().x - pos.x, ImGui::GetWindowSize().y - pos.y);
-                    auto pathToVisualizeCopy = pathToVisualize;
+                    auto pathToVisualizeCopy = state.pathToVisualize;
                     scaleAndTranslatePositionsToFit(pathToVisualizeCopy, pos, size, 5.0f);
                     drawPath(pathToVisualizeCopy);
                 }
@@ -1267,11 +1026,11 @@ int main(int argc, char** argv) {
         }
         ImGui::End();
 
-        if (isGraphWindowOpen) {
+        if (state.isGraphWindowOpen) {
             ImGui::SetNextWindowPos(ImVec2(200, 50), ImGuiCond_Once);
             ImGui::SetNextWindowSize(ImVec2(680 + 200, 680), ImGuiCond_Once);
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 1));
-            ImGui::Begin("Solution graph", &isGraphWindowOpen, ImGuiWindowFlags_NoCollapse);
+            ImGui::Begin("Solution graph", &state.isGraphWindowOpen, ImGuiWindowFlags_NoCollapse);
             auto size = ImGui::GetWindowSize();
             size.y -= fontSize * 1.5f;
             auto pos = ImGui::GetWindowPos();
@@ -1282,13 +1041,13 @@ int main(int argc, char** argv) {
             ImGui::PushFont(guiFont);
             float tableWidth = (guiFont->Scale / 0.6f) * 200;
 
-            if (solutionToShowId != -1) {
+            if (state.solutionToShowId != -1) {
                 auto graphSize = size;
                 graphSize.x -= tableWidth;
-                if (!cpPositionsVis.empty() && realCpPositionView) {
-                    drawSolutionGraph(cpPositionsVis, solutionToShowInGraphWindow, {}, pos, graphSize, hoveredConnection);
+                if (!state.cpPositionsVis.empty() && state.realCpPositionView) {
+                    drawSolutionGraph(state.cpPositionsVis, state.solutionToShowInGraphWindow, {}, pos, graphSize, state.hoveredConnection);
                 } else {
-                    drawSolutionGraph(solutionToShowInGraphWindow, solutionToCompareToInGraphWindow, pos, graphSize, hoveredConnection);
+                    drawSolutionGraph(state.solutionToShowInGraphWindow, state.solutionToCompareToInGraphWindow, pos, graphSize, state.hoveredConnection);
                 }
             }
 
@@ -1296,15 +1055,15 @@ int main(int argc, char** argv) {
             auto tablePosX = size.x - tableWidth - 2.0f;
             auto graphMenuTableSizeY = 5 * (2.0f + ImGui::GetTextLineHeight());
             auto diffTableSizeY = size.y - fontSize * 1.5f - graphMenuTableSizeY;
-            if (solutionToShowId != -1 && solutionToCompareId != -1) {
-                auto N = solutionToShowInGraphWindow.size();
+            if (state.solutionToShowId != -1 && state.solutionToCompareId != -1) {
+                auto N = state.solutionToShowInGraphWindow.size();
                 std::vector<int16_t> solution1(N);
                 std::vector<int16_t> solution2(N);
-                solution1[0] = solutionToShowInGraphWindow[0];
-                solution2[0] = solutionToCompareToInGraphWindow[0];
+                solution1[0] = state.solutionToShowInGraphWindow[0];
+                solution2[0] = state.solutionToCompareToInGraphWindow[0];
                 for (int i = 1; i < N; ++i) {
-                    solution1[solutionToShowInGraphWindow[i - 1]] = solutionToShowInGraphWindow[i];
-                    solution2[solutionToCompareToInGraphWindow[i - 1]] = solutionToCompareToInGraphWindow[i];
+                    solution1[state.solutionToShowInGraphWindow[i - 1]] = state.solutionToShowInGraphWindow[i];
+                    solution2[state.solutionToCompareToInGraphWindow[i - 1]] = state.solutionToCompareToInGraphWindow[i];
                 }
                 std::vector<int16_t> revSolution1(N + 1);
                 std::vector<int16_t> revSolution2(N + 1);
@@ -1319,13 +1078,13 @@ int main(int argc, char** argv) {
                 if (ImGui::BeginTable("diffTable", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(tableWidth, diffTableSizeY))) {
                     std::string deltaTimeStr = { char(0xCE), char(0x94) }; // Utf-8 delta symbol
                     deltaTimeStr += "Time";
-                    ImGui::TableSetupColumn(std::to_string(solutionToShowId + 1).c_str(), 0, 1.0f);
-                    ImGui::TableSetupColumn(std::to_string(solutionToCompareId + 1).c_str(), 0, 1.0f);
+                    ImGui::TableSetupColumn(std::to_string(state.solutionToShowId + 1).c_str(), 0, 1.0f);
+                    ImGui::TableSetupColumn(std::to_string(state.solutionToCompareId + 1).c_str(), 0, 1.0f);
                     ImGui::TableSetupColumn(deltaTimeStr.c_str(), 0, 0.8f);
                     ImGui::TableSetupScrollFreeze(0, 1);
                     ImGui::TableHeadersRow();
 
-                    hoveredConnection = { 0,0 };
+                    state.hoveredConnection = { 0,0 };
                     for (int i = 0; i < N; ++i) {
                         if (solution1[i] != solution2[i]) {
                             ImGui::TableNextColumn();
@@ -1333,7 +1092,7 @@ int main(int argc, char** argv) {
                             ImGui::PushID((std::to_string(i) + "_diffTable").c_str());
                             ImGui::Selectable("##", isSelected, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, ImGui::GetTextLineHeight()));
                             if (ImGui::IsItemHovered()) {
-                                hoveredConnection = { NodeType(i), NodeType(solution1[i]) };
+                                state.hoveredConnection = { NodeType(i), NodeType(solution1[i]) };
                             }
                             ImGui::PopID();
                             ImGui::SameLine();
@@ -1356,39 +1115,39 @@ int main(int argc, char** argv) {
             if (ImGui::BeginTable("graphMenuTable", 1, ImGuiTableFlags_SizingStretchSame, ImVec2(tableWidth, 0.0f))) {
                 ImGui::TableSetupColumn("graphMenuTableColumn");
                 ImGui::TableNextColumn();
-                if (!cpPositionsVis.empty()) {
-                    if (realCpPositionView) {
+                if (!state.cpPositionsVis.empty()) {
+                    if (state.realCpPositionView) {
                         if (ImGui::Button("Change to abstract view", ImVec2(tableWidth, 0.f))) {
-                            realCpPositionView = false;
+                            state.realCpPositionView = false;
                         }
                     } else {
                         if (ImGui::Button("Change to real view", ImVec2(tableWidth, 0.f))) {
-                            realCpPositionView = true;
+                            state.realCpPositionView = true;
                         }
                     }
                 }
                 ImGui::TableNextColumn();
-                if (solutionToShowId != -1) {
-                    if (solutionToCompareToInGraphWindow != solutionToShowInGraphWindow) {
+                if (state.solutionToShowId != -1) {
+                    if (state.solutionToCompareToInGraphWindow != state.solutionToShowInGraphWindow) {
                         if (ImGui::Button("Set to compare", ImVec2(tableWidth, 0.f))) {
-                            solutionToCompareToInGraphWindow = solutionToShowInGraphWindow;
-                            solutionToCompareId = solutionToShowId;
+                            state.solutionToCompareToInGraphWindow = state.solutionToShowInGraphWindow;
+                            state.solutionToCompareId = state.solutionToShowId;
                         }
                     }
                 }
                 ImGui::TableNextColumn();
-                if (solutionToCompareId != -1) {
+                if (state.solutionToCompareId != -1) {
                     if (ImGui::Button("Disable compare", ImVec2(tableWidth, 0.f))) {
-                        solutionToCompareToInGraphWindow.clear();
+                        state.solutionToCompareToInGraphWindow.clear();
                     }
                 }
                 ImGui::TableNextColumn();
-                if (solutionToShowId != -1) {
-                    ImGui::Text("Viewing Solution %d", solutionToShowId + 1);
+                if (state.solutionToShowId != -1) {
+                    ImGui::Text("Viewing Solution %d", state.solutionToShowId + 1);
                 }
                 ImGui::TableNextColumn();
-                if (solutionToCompareId != -1) {
-                    ImGui::Text("Comparing against %d", solutionToCompareId + 1);
+                if (state.solutionToCompareId != -1) {
+                    ImGui::Text("Comparing against %d", state.solutionToCompareId + 1);
                 }
                 ImGui::EndTable();
             }
@@ -1397,27 +1156,27 @@ int main(int argc, char** argv) {
             ImGui::End();
             ImGui::PopStyleColor();
         }
-        if (solutionToShowVariationId == -1) {
-            isVariationsWindowOpen = false;
+        if (state.solutionToShowVariationId == -1) {
+            state.isVariationsWindowOpen = false;
         }
-        if (isVariationsWindowOpen) {
+        if (state.isVariationsWindowOpen) {
             ImGui::SetNextWindowPos(ImVec2(200, 50), ImGuiCond_Once);
             ImGui::SetNextWindowSize(ImVec2(680 + 200, 680), ImGuiCond_Once);
-            ImGui::Begin("Variations", &isVariationsWindowOpen, ImGuiWindowFlags_NoCollapse);
+            ImGui::Begin("Variations", &state.isVariationsWindowOpen, ImGuiWindowFlags_NoCollapse);
 
             if (ImGui::BeginTable("infoTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                 ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 0);
                 ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(-1);
-                ImGui::Text("solution ID = %d", solutionToShowVariationId);
+                ImGui::Text("solution ID = %d", state.solutionToShowVariationId);
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(-1);
-                ImGui::Checkbox("include repeat node variations", &showRepeatNodeVariations);
+                ImGui::Checkbox("include repeat node variations", &state.showRepeatNodeVariations);
                 ImGui::EndTable();
             }
 
-            auto& variations = showRepeatNodeVariations ? solutionToShowVariation.allVariations : solutionToShowVariation.variations;
+            auto& variations = state.showRepeatNodeVariations ? state.solutionToShowVariation.allVariations : state.solutionToShowVariation.variations;
             for (int i = 0; i < variations.size(); ++i) {
                 auto solStr = createSolutionString(variations[i], config.repeatNodeMatrix, config.useRespawnMatrix);
                 ImGui::SetNextItemWidth(-1);

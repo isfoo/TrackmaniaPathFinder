@@ -20,7 +20,11 @@
 #include <filesystem>
 #include <numeric>
 
+void findSolutionsAssignment(SolutionConfig& config);
+void findSolutionsLinKernighan(SolutionConfig& config);
+
 enum Direction { Out, In };
+enum class Algorithm { Assignment, LinKernighan };
 constexpr NodeType NullNode = NodeType(-1);
 constexpr Edge NullEdge = { NullNode, NullNode };
 constexpr EdgeCostType Inf = 100'000'000;
@@ -244,4 +248,151 @@ bool isUsingExtendedMatrix(std::vector<std::vector<std::vector<int>>> B) {
         }
     }
     return false;
+}
+
+
+void runAlgorithm(Algorithm algorithm, SolutionConfig& config, const InputData& input, State& state) {
+    state.taskWasCanceled = false;
+    state.endedWithTimeout = false;
+
+    config.limit = input.limitValue * 10;
+    config.ignoredValue = input.ignoredValue * 10;
+    config.maxSolutionCount = input.maxSolutionCount;
+    config.outputFileName = input.outputDataFile;
+    config.partialSolutionCount = 0;
+    config.stopWorking = false;
+    config.repeatNodeMatrix.clear();
+    config.solutionsVec.clear();
+    config.addedConnection = NullEdge;
+
+    auto [A_, B_] = loadCsvData(input.inputDataFile, config.ignoredValue, state.errorMsg);
+    config.weights = A_;
+    config.condWeights = B_;
+    config.useRespawnMatrix = Vector3d<Bool>(int(config.condWeights.size()));
+
+    state.cpPositionsVis.clear();
+    if (input.positionReplayFilePath[0] != '\0') {
+        state.cpPositionsVis = readPositionsFile(input.positionReplayFilePath);
+        if (state.cpPositionsVis.size() != config.weights.size()) {
+            state.errorMsg = "incorrect CP position file - wrong number of CPs";
+        }
+    }
+
+    auto ringCps = parseIntList(input.ringCps, 1, config.weights.size() - 2, "ring CPs list", state.errorMsg);
+    auto repeatNodesTurnedOff = parseIntList(input.turnedOffRepeatNodes, 0, config.weights.size() - 2, "turned off repeat nodes", state.errorMsg);
+    auto searchSourceNodes = parseIntList(input.searchSourceNodes, 0, config.weights.size() - 2, "search source CPs list", state.errorMsg);
+
+    if (state.errorMsg.empty()) {
+        state.timer = Timer();
+        state.timerThread = std::thread([&state, maxTime=input.maxTime, &config]() {
+            while (!config.stopWorking && !state.taskWasCanceled && state.timer.getTime() < maxTime) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            state.endedWithTimeout = state.timer.getTime() >= maxTime;
+            config.stopWorking = true;
+        });
+        if (input.isConnectionSearchAlgorithm) {
+            auto connectionFinderSettings = input.connectionFinderSettings;
+            connectionFinderSettings.minConnectionTime *= 10;
+            connectionFinderSettings.maxConnectionTime *= 10;
+            connectionFinderSettings.testedConnectionTime *= 10;
+            config.useExtendedMatrix = isUsingExtendedMatrix(config.condWeights);
+            config.bestSolutions.clear();
+            state.connectionsToTest.clear();
+            state.algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [algorithm, &input, &state, &config, ringCps, repeatNodesTurnedOff, searchSourceNodes, connectionFinderSettings]() mutable {
+                auto privateConfig = config;
+                privateConfig.maxSolutionCount = 1;
+
+                for (int src = 0; src < config.weights.size() - 1; ++src) {
+                    if (!searchSourceNodes.empty() && std::find(searchSourceNodes.begin(), searchSourceNodes.end(), src) == searchSourceNodes.end())
+                        continue;
+                    for (int dst = 1; dst < config.weights.size(); ++dst) {
+                        if (src == dst)
+                            continue;
+
+                        if (config.weights[dst][src] > connectionFinderSettings.maxConnectionTime)
+                            continue;
+                        if (config.weights[dst][src] < connectionFinderSettings.minConnectionTime)
+                            continue;
+
+                        if (!state.cpPositionsVis.empty()) {
+                            auto srcPos = state.cpPositionsVis[src];
+                            auto dstPos = state.cpPositionsVis[dst];
+                            if (dstPos.y - srcPos.y > connectionFinderSettings.maxHeightDiff)
+                                continue;
+                            if (dstPos.y - srcPos.y < connectionFinderSettings.minHeightDiff)
+                                continue;
+                            if (dist3d(srcPos, dstPos) > connectionFinderSettings.maxDistance)
+                                continue;
+                            if (dist3d(srcPos, dstPos) < connectionFinderSettings.minDistance)
+                                continue;
+                        }
+                        state.connectionsToTest.emplace_back(src, dst);
+                    }
+                }
+                for (auto [src, dst] : state.connectionsToTest) {
+                    if (config.stopWorking)
+                        break;
+
+                    privateConfig.addedConnection = Edge{ src, dst };
+                    privateConfig.weights[dst][src] = connectionFinderSettings.testedConnectionTime;
+                    privateConfig.bestSolutions.clear();
+                    privateConfig.solutionsVec.clear();
+                    privateConfig.limit = config.limit;
+                    std::fill(privateConfig.condWeights[dst][src].begin(), privateConfig.condWeights[dst][src].end(), privateConfig.weights[dst][src]);
+                    privateConfig.repeatNodeMatrix = addRepeatNodeEdges(privateConfig.weights, privateConfig.condWeights, privateConfig.ignoredValue, input.maxRepeatNodesToAdd, repeatNodesTurnedOff);
+                    addRingCps(config, ringCps);
+                    privateConfig.weights = createAtspMatrixFromInput(privateConfig.weights);
+                    std::fill(privateConfig.condWeights[0].back().begin(), privateConfig.condWeights[0].back().end(), 0);
+                    if (algorithm == Algorithm::Assignment) {
+                        findSolutionsAssignment(privateConfig);
+                    } else {
+                        findSolutionsLinKernighan(privateConfig);
+                    }
+
+                    if (!privateConfig.bestSolutions.empty()) {
+                        auto& newSolution = privateConfig.bestSolutions[0];
+                        config.solutionsVec.push_back_not_thread_safe(newSolution);
+                        insertSorted(config.bestSolutions, newSolution, [](auto& a, auto& b) {
+                            if (a.time < b.time)
+                                return true;
+                            if (a.time > b.time)
+                                return false;
+                            return a.solution < b.solution;
+                        });
+                        if (config.bestSolutions.size() >= config.maxSolutionCount) {
+                            config.limit = config.bestSolutions.back().time;
+                            config.bestSolutions.pop_back();
+                        }
+                    }
+
+                    privateConfig.weights = config.weights;
+                    privateConfig.condWeights = config.condWeights;
+                    config.partialSolutionCount += 1;
+                }
+                config.stopWorking = true;
+                state.timerThread.join();
+                state.timer.stop();
+            });
+        } else {
+            config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, input.maxRepeatNodesToAdd, repeatNodesTurnedOff);
+            addRingCps(config, ringCps);
+            clearFile(config.outputFileName);
+            state.algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [algorithm, &state, &config]() mutable {
+                config.weights = createAtspMatrixFromInput(config.weights);
+                std::fill(config.condWeights[0].back().begin(), config.condWeights[0].back().end(), 0);
+                config.useExtendedMatrix = isUsingExtendedMatrix(config.condWeights);
+                config.bestSolutions.clear();
+                if (algorithm == Algorithm::Assignment) {
+                    findSolutionsAssignment(config);
+                } else {
+                    findSolutionsLinKernighan(config);
+                }
+                config.stopWorking = true;
+                state.timerThread.join();
+                overwriteFileWithSortedSolutions(config.outputFileName, config.maxSolutionCount, config.solutionsVec, config.repeatNodeMatrix, config.useRespawnMatrix);
+                state.timer.stop();
+            });
+        }
+    }
 }

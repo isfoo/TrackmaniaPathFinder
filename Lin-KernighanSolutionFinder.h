@@ -212,7 +212,7 @@ std::vector<NodeType> generateRandomSolution(int tryId, XorShift64& rng, EdgeCos
     solution.back() = 0;
     return solution;
 }
-void findSolutionsHeuristic(SolutionConfig& config) {
+void findSolutionsLinKernighan(SolutionConfig& config) {
     auto N = int(config.weights.size());
     auto& cost = config.weights;
     auto& costEx = config.condWeights;
