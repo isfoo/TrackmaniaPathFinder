@@ -312,14 +312,27 @@ int main(int argc, char** argv) {
             });
         };
 
-        if (ImGui::BeginTable("menuTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
-            ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
+        if (ImGui::BeginTable("menuTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
             ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-            ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 2);
-            ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
-            tableInputEntryInt("font size", input.fontSize, MinFontSize, MaxFontSize, "You can use CTRL + Mouse wheel to change font size");
+            ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 2);
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-1);
+            ImGui::PushID("Reset button");
+            auto [r, g, b] = std::tuple{ 147.f / 255, 36.f / 255, 25.f / 255 };
+            auto RedButton = ImVec4(r, g, b, 1.00f);
+            auto RedButtonHovered = ImVec4(r * 1.25f, g * 1.25f, b * 1.25f, 1.00f);
+            auto RedButtonClicked = ImVec4(r * 1.5f, g * 1.5f, b * 1.5f, 1.00f);
+            ImGui::PushStyleColor(ImGuiCol_Button, RedButton);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, RedButtonHovered);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, RedButtonClicked);
+            if (ImGui::Button("Reset all to default values", {-1, 0})) {
+                input = InputData();
+            }
+            ImGui::PopStyleColor();
+            ImGui::PopStyleColor();
+            ImGui::PopStyleColor();
+            ImGui::PopID();
             if (state.isOnPathFinderTab) {
-                ImGui::TableNextColumn();
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(-1);
                 ImGui::Checkbox("show advanced settings", &input.showAdvancedSettings);
