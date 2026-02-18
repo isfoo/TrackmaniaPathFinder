@@ -18,7 +18,7 @@ template<typename T> struct ArrayWithSize {
     T* end()         { return data + size_; }
 };
 
-struct AdjList2 {
+struct AdjList {
     #pragma pack(push, 1)
     struct ArrayViewData {
         NodeType size_;
@@ -218,8 +218,8 @@ struct AssignmentSolution {
     ArrayWithSize<NodeType> nodesInZ;
 
     // special initialized data (do full copy, but the size is not constant)
-    AdjList2 adjList;
-    AdjList2 revAdjList;
+    AdjList adjList;
+    AdjList revAdjList;
 
     static int InitializedSectionSize(int problemSize, bool useExtendedMatrix) {
         int size = 0;
@@ -316,7 +316,7 @@ struct AssignmentSolution {
         unassignedDstNodes.size_ = other.unassignedDstNodes.size();
         partialRoutes.size_ = other.partialRoutes.size();
     }
-    static void copyAdjList(AdjList2& dst, const AdjList2& src) {
+    static void copyAdjList(AdjList& dst, const AdjList& src) {
         dst.data_.size_ = src.data_.size_;
         dst.stride_ = src.stride_;
         std::memcpy(dst.data_.data, src.data_.data, src.stride_ * src.data_.size_ * sizeof(NodeType));
@@ -369,7 +369,7 @@ struct AssignmentSolution {
         adjList.init(*costMatrix, ignoredValue);
         revAdjList.init(*costMatrix, ignoredValue, true);
 
-        auto lockSingleEdges = [this](Direction d, AdjList2& adj, NodeType startNode, NodeType endNode) {
+        auto lockSingleEdges = [this](Direction d, AdjList& adj, NodeType startNode, NodeType endNode) {
             for (int i = startNode; i <= endNode; ++i) {
                 if (adj[i].size() == 1) {
                     lockEdge(d, { i, adj[i][0] });
@@ -419,7 +419,7 @@ struct AssignmentSolution {
         lockedOutEdges[edge.first] = edge.second;
         lockedInEdges[edge.second] = edge.first;
 
-        auto removeAllOtherEdges = [this](Direction d, AdjList2& adj, Edge edge) -> bool {
+        auto removeAllOtherEdges = [this](Direction d, AdjList& adj, Edge edge) -> bool {
             for (int i = 0; i < adj[edge.first].size(); ++i) {
                 if (adj[edge.first][i] == edge.second) {
                     std::swap(adj[edge.first][0], adj[edge.first][i]);
@@ -487,7 +487,7 @@ struct AssignmentSolution {
         if (revAdjList[edge.second].size() <= 1)
             return false;
 
-        auto eraseEdge = [](AdjList2& adj, Edge edge) -> Edge {
+        auto eraseEdge = [](AdjList& adj, Edge edge) -> Edge {
             for (int i = 0; i < adj[edge.first].size(); ++i) {
                 if (adj[edge.first][i] == edge.second) {
                     adj[edge.first].erase(i);
@@ -561,7 +561,7 @@ struct AssignmentSolution {
             would at a first glance lead to the biggest increase in cost.
             We do this by summing 2nd lowest element in row and column of each edge
         */
-        auto findMin = [this](AdjList2& adj, NodeType i, NodeType ignoreNode, bool rev) -> EdgeCostType {
+        auto findMin = [this](AdjList& adj, NodeType i, NodeType ignoreNode, bool rev) -> EdgeCostType {
             EdgeCostType min = Inf;
             for (int k = 0; k < adj[i].size(); ++k) {
                 auto j = adj[i][k];
