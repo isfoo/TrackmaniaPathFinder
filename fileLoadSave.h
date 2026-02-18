@@ -179,3 +179,37 @@ std::optional<fs::path> getLocalAppDataProgramDirectory() {
     fs::create_directory(path);
     return path;
 }
+
+std::pair<std::string, std::string> getSpreadsheetIdAndGidFromLink(const std::string& link) {
+    std::string strBeforeSpreadsheetId = "docs.google.com/spreadsheets/d/";
+    auto ind = link.find(strBeforeSpreadsheetId);
+    if (ind == std::string::npos)
+        return {};
+    auto linkStr = link.substr(ind + strBeforeSpreadsheetId.size());
+
+    auto spreadSheetIdEndIndex = linkStr.find_first_of('/');
+    if (spreadSheetIdEndIndex == std::string::npos)
+        return {};
+    auto spreadsheetId = linkStr.substr(0, spreadSheetIdEndIndex);
+    linkStr = linkStr.substr(spreadSheetIdEndIndex);
+
+    ind = linkStr.find("gid=");
+    if (ind == std::string::npos)
+        return {};
+    linkStr = linkStr.substr(ind + 4);
+    auto gid = linkStr.substr(0, linkStr.find_first_not_of("0123456789"));
+
+    return { spreadsheetId, gid };
+}
+bool downloadGoogleSpreadsheet(const std::string& spreadsheetId, const std::string& gid, const std::string& outputFilePath) {
+    httplib::Client cli("https://docs.google.com");
+    cli.set_follow_location(true);
+    if (auto res = cli.Get("/spreadsheets/d/" + spreadsheetId + "/export?gid=" + gid + "&format=csv&range=B2:ZZ300")) {
+        if (res->status == httplib::OK_200) {
+            std::ofstream outFile(outputFilePath);
+            outFile << res->body;
+            return true;
+        }
+    }
+    return false;
+}

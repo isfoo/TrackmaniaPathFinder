@@ -249,10 +249,30 @@ bool isUsingExtendedMatrix(std::vector<std::vector<std::vector<int>>> B) {
     return false;
 }
 
-
-void runAlgorithm(Algorithm algorithm, SolutionConfig& config, const InputData& input, State& state) {
+void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input, State& state) {
     state.taskWasCanceled = false;
     state.endedWithTimeout = false;
+
+    std::string inputDataFile = input.inputDataFile;
+    if (input.inputDataLink[0] != '\0') {
+        auto [spreadsheetId, gid] = getSpreadsheetIdAndGidFromLink(input.inputDataLink);
+        if (spreadsheetId.empty() || gid.empty()) {
+            state.errorMsg = "Failed to read spreadsheet ID or the sheet/tab ID (gid)";
+            return;
+        }
+        auto dataFilePath = (state.workingDir / (spreadsheetId + "#" + gid + ".csv"));
+        if (input.downloadSpreadsheet) {
+            if (!downloadGoogleSpreadsheet(spreadsheetId, gid, dataFilePath.string())) {
+                state.errorMsg = "Failed to download spreadsheet";
+                return;
+            }
+        } else if (!fs::exists(dataFilePath)) {
+            state.errorMsg = "Download checkbox turned off, but couldn't find any previously downloaded version of that sheet";
+            return;
+        }
+        input.downloadSpreadsheet = false;
+        inputDataFile = dataFilePath.string();
+    }
 
     config.limit = input.limitValue * 10;
     config.ignoredValue = input.ignoredValue * 10;
@@ -264,7 +284,7 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, const InputData& 
     config.solutionsVec.clear();
     config.addedConnection = NullEdge;
 
-    auto [A_, B_] = loadCsvData(input.inputDataFile, config.ignoredValue, state.errorMsg);
+    auto [A_, B_] = loadCsvData(inputDataFile, config.ignoredValue, state.errorMsg);
     if (!state.errorMsg.empty())
         return;
     config.weights = A_;

@@ -2,7 +2,10 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <filesystem>
 #include "utility.h"
+
+namespace fs = std::filesystem;
 
 enum class Algorithm { None, Assignment, LinKernighan };
 
@@ -35,6 +38,8 @@ struct InputData {
     char routeString[1024] = { 0 };
     char positionReplayFilePath[1024] = { 0 };
     char inputDataFile[1024] = { 0 };
+    char inputDataLink[1024] = { 0 };
+    bool downloadSpreadsheet = true;
 
     bool isConnectionSearchAlgorithm = false;
     ConnectionFinderSettings connectionFinderSettings;
@@ -70,6 +75,8 @@ struct InputData {
         file << "routeString " << routeString << '\n';
         file << "positionReplayFilePath " << positionReplayFilePath << '\n';
         file << "inputDataFile " << inputDataFile << '\n';
+        file << "inputDataLink " << inputDataLink << '\n';
+        file << "downloadSpreadsheet " << downloadSpreadsheet << '\n';
 
         file << "isConnectionSearchAlgorithm " << isConnectionSearchAlgorithm << '\n';
         file << "connectionFinderSettings.testedConnectionTime " << connectionFinderSettings.testedConnectionTime << '\n';
@@ -118,6 +125,10 @@ struct InputData {
                 strcpy(positionReplayFilePath, value.c_str() + 1);
             } else if (key == "inputDataFile") {
                 strcpy(inputDataFile, value.c_str() + 1);
+            } else if (key == "inputDataLink") {
+                strcpy(inputDataLink, value.c_str() + 1);
+            } else if (key == "downloadSpreadsheet") {
+                downloadSpreadsheet = stoi(value);
             } else if (key == "isConnectionSearchAlgorithm") {
                 isConnectionSearchAlgorithm = stoi(value);
             } else if (key == "connectionFinderSettings.testedConnectionTime") {
@@ -180,6 +191,8 @@ struct FilterConnection {
 };
 
 struct State {
+    fs::path workingDir;
+
     std::string errorMsg;
     std::vector<BestSolution> bestFoundSolutions;
 

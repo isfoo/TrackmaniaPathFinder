@@ -1,3 +1,5 @@
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+#include "httplib.h"
 #define NOMINMAX
 #include <windows.h>
 #include <ShlObj.h>
@@ -243,8 +245,11 @@ int main(int argc, char** argv) {
 
     auto appDataDir = getLocalAppDataProgramDirectory();
     if (appDataDir) {
-        input.loadFromFile((*appDataDir / "inputData.txt").string());
+        state.workingDir = *appDataDir;
+    } else {
+        state.workingDir = std::filesystem::current_path();
     }
+    input.loadFromFile((state.workingDir / "inputData.txt").string());
 
     std::atomic<bool> stopWorkingForConfig;
     SolutionConfig config(stopWorkingForConfig);
@@ -393,7 +398,19 @@ int main(int argc, char** argv) {
                     if (input.showAdvancedSettings) {
                         tableInputEntryFile("CP positions file", input.positionReplayFilePath, "txt\0*.txt\0All\0*.*\0", "Optional for visualization only.\nFile containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.\n\nWhen provided it enables graph view to show 2D view of the route");
                     }
+                    if (input.inputDataLink[0] != '\0') ImGui::BeginDisabled();
                     tableInputEntryFile("input data file", input.inputDataFile, "All\0*.*\0CSV\0*.CSV\0", "Format is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.");
+                    if (input.inputDataLink[0] != '\0') ImGui::EndDisabled();
+                    if (input.inputDataFile[0] != '\0') ImGui::BeginDisabled();
+                    tableInputEntry("input data link", "Link to sheet in google spreadsheet that contains the input data starting at cell B2.\n\nThe data is only downloaded if the checkbox is set. Otherwise it uses the last downloaded version\n\nFor more information see github.com/isfoo/TrackmaniaPathFinder", [&]() {
+                        ImGui::Checkbox("download on next run", &input.downloadSpreadsheet);
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(-1);
+                        if (ImGui::InputText("##input data link", input.inputDataLink, sizeof(input.inputDataLink))) {
+                            input.downloadSpreadsheet = true;
+                        }
+                    });
+                    if (input.inputDataFile[0] != '\0') ImGui::EndDisabled();
                     ImGui::EndTable();
                 }
                 if (input.showAdvancedSettings) {
@@ -1078,8 +1095,6 @@ int main(int argc, char** argv) {
         }
         ImGui::PopFont();
     });
-    if (appDataDir) {
-        input.saveToFile((*appDataDir / "inputData.txt").string());
-    }
+    input.saveToFile((state.workingDir / "inputData.txt").string());
     std::quick_exit(0);
 }
