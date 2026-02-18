@@ -358,7 +358,7 @@ struct DataBuffer {
     }
 };
 
-ReplayData readSamplesData(DataBuffer& entRecordBuffer) {
+ReplayData readSamplesData(DataBuffer& entRecordBuffer, int version) {
     ReplayData replayData;
     entRecordBuffer.skipNext(sizeof(u32) * 2); // start and end of sample range
 
@@ -388,11 +388,38 @@ ReplayData readSamplesData(DataBuffer& entRecordBuffer) {
 
         if (entRecordClassIds[type] == CSceneVehicleVis && (u4 == 0 || u4 == 0xED00000 || u4 == 0xDA00000 || u4 == 0xDC00000 || u4 == 0xEB00000)) {
             ReplaySamples samples;
-            while (entRecordBuffer.readNext<byte>()) {
-                auto [time, size] = entRecordBuffer.readNext<u32, u32>();
-                auto sample = entRecordBuffer.readNextGetPtr<EntRecordSample>(size);
-                auto speed = 3.6f * std::exp(sample->speed / 1000.0f);
-                samples.ghostSamples.push_back(GhostSample{ time, Position{sample->position.x, sample->position.y, sample->position.z}, speed });
+            if (version == 10) {
+                while (entRecordBuffer.readNext<byte>()) {
+                    auto [time, size] = entRecordBuffer.readNext<u32, u32>();
+                    auto sample = entRecordBuffer.readNextGetPtr<EntRecordSample>(size);
+                    auto speed = 3.6f * std::exp(sample->speed / 1000.0f);
+                    samples.ghostSamples.push_back(GhostSample{ time, Position{sample->position.x, sample->position.y, sample->position.z}, speed });
+                }
+            } else {
+                auto sampleCount = entRecordBuffer.readNext<u32>();
+                if (sampleCount != 0) {
+                    auto sampleSize = entRecordBuffer.readNext<u32>();
+                    std::vector<std::pair<u32, std::vector<byte>>> sampleBuffers;
+                    for (int i = 0; i < sampleCount; ++i) {
+                        auto deltaTime = entRecordBuffer.readNext<u32>();
+                        sampleBuffers.push_back({ deltaTime, std::vector<byte>(sampleSize) });
+                    }
+                    for (int i = 0; i < sampleSize; ++i) {
+                        auto slice = entRecordBuffer.readNextGetPtr<byte>(sampleCount);
+                        byte accumulator = 0;
+                        for (int b = 0; b < sampleCount; ++b) {
+                            accumulator += slice[b];
+                            sampleBuffers[b].second[i] = accumulator;
+                        }
+                    }
+                    u32 time = 0;
+                    for (int i = 0; i < sampleBuffers.size(); ++i) {
+                        time += sampleBuffers[i].first;
+                        auto sample = (EntRecordSample*)sampleBuffers[i].second.data();
+                        auto speed = 3.6f * std::exp(sample->speed / 1000.0f);
+                        samples.ghostSamples.push_back(GhostSample{ time, Position{sample->position.x, sample->position.y, sample->position.z}, speed });
+                    }
+                }
             }
             hasNextElement = entRecordBuffer.readNext<byte>();
             while (entRecordBuffer.readNext<byte>()) {
@@ -410,9 +437,17 @@ ReplayData readSamplesData(DataBuffer& entRecordBuffer) {
         } else if (entRecordClassIds[type] == CGameArenaPlayer && (u4 == 0 || u4 == 0xED00000 || u4 == 0xDA00000)) {
             std::vector<u32> cpTimes;
             int cpNumber = 1;
-            while (entRecordBuffer.readNext<byte>()) {
-                entRecordBuffer.skipNext(sizeof(u32));
-                entRecordBuffer.skipNextArray();
+            if (version == 10) {
+                while (entRecordBuffer.readNext<byte>()) {
+                    entRecordBuffer.skipNext(sizeof(u32));
+                    entRecordBuffer.skipNextArray();
+                }
+            } else {
+                auto sampleCount = entRecordBuffer.readNext<u32>();
+                if (sampleCount != 0) {
+                    auto sampleSize = entRecordBuffer.readNext<u32>();
+                    entRecordBuffer.skipNext(sampleCount * (4 + sampleSize));
+                }
             }
             hasNextElement = entRecordBuffer.readNext<byte>();
             while (entRecordBuffer.readNext<byte>()) {
@@ -427,9 +462,17 @@ ReplayData readSamplesData(DataBuffer& entRecordBuffer) {
             }
             replayData.cpTimes = cpTimes;
         } else {
-            while (entRecordBuffer.readNext<byte>()) {
-                entRecordBuffer.skipNext(sizeof(u32));
-                entRecordBuffer.skipNextArray();
+            if (version == 10) {
+                while (entRecordBuffer.readNext<byte>()) {
+                    entRecordBuffer.skipNext(sizeof(u32));
+                    entRecordBuffer.skipNextArray();
+                }
+            } else {
+                auto sampleCount = entRecordBuffer.readNext<u32>();
+                if (sampleCount != 0) {
+                    auto sampleSize = entRecordBuffer.readNext<u32>();
+                    entRecordBuffer.skipNext(sampleCount * (4 + sampleSize));
+                }
             }
             hasNextElement = entRecordBuffer.readNext<byte>();
             while (entRecordBuffer.readNext<byte>()) {
@@ -509,7 +552,7 @@ BodyReadState::ErrorType readBody(DataBuffer& buffer, ReplayData& replayData, bo
 
             // skip chunks:
             std::vector<u32> skipChunks;
-            for (u32 chunkPart : ranges(0x07, 0x08, 0x0F, 0x13, 0x18, std::pair(0x1A, 0x23), std::pair(0x25, 0x28)))
+            for (u32 chunkPart : ranges(0x07, 0x08, 0x0F, 0x13, 0x18, std::pair(0x1A, 0x23), std::pair(0x25, 0x29)))
                 skipChunks.push_back(0x03093000 | chunkPart); // CGameCtnReplay
             skipChunks.push_back(0x0303F007); // CGameGhost
             for (u32 chunkPart : ranges(0x04, 0x05, 0x08, 0x09, 0x0A, 0x0B, 0x13, 0x14, 0x17, 0x1A, 0x1B, 0x1D, 0x1F, std::pair(0x21, 0x2E)))
@@ -525,10 +568,11 @@ BodyReadState::ErrorType readBody(DataBuffer& buffer, ReplayData& replayData, bo
 
             // CPlugEntRecordData:
             functions.emplace(CPlugEntRecordData, [](BodyReadState& state) {
-                AssertReturnWithError(state.buffer.readNext<u32>() == 10, BodyReadState::ErrorType::UnknownRecordDataVersion);
+                auto recordDataVersion = state.buffer.readNext<u32>();
+                AssertReturnWithError(recordDataVersion == 10 || recordDataVersion == 11, BodyReadState::ErrorType::UnknownRecordDataVersion);
                 auto entRecordBuffer = state.buffer.readNextCompressed(zlibDecompress);
                 if (state.replayData.replaySamples.empty()) {
-                    state.replayData = readSamplesData(entRecordBuffer);
+                    state.replayData = readSamplesData(entRecordBuffer, recordDataVersion);
                 } else {
                     state.error = BodyReadState::ErrorType::MultipleRecordDataEntries;
                 }
