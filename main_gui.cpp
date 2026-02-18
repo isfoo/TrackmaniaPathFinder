@@ -306,7 +306,7 @@ int main(int argc, char** argv) {
                 ImGui::PopID();
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(-1);
-                ImGui::InputText("##input data file", inputText, sizeof(inputText));
+                ImGui::InputText(("##" + label).c_str(), inputText, sizeof(inputText));
             });
         };
 
