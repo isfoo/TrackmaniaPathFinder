@@ -914,7 +914,7 @@ int main(int argc, char** argv) {
             auto minXY = std::min(size.x, size.y);
             guiFont->Scale = std::max(0.5f, (minXY / 680) * 0.8f);
             ImGui::PushFont(guiFont);
-            float tableWidth = (guiFont->Scale / 0.6f) * 200;
+            float tableWidth = (guiFont->Scale / 0.6f) * 250;
 
             if (state.solutionToShowId != -1) {
                 auto graphSize = size;
@@ -960,8 +960,9 @@ int main(int argc, char** argv) {
                     ImGui::TableHeadersRow();
 
                     state.hoveredConnection = { 0,0 };
-                    for (int i = 0; i < N; ++i) {
-                        if (solution1[i] != solution2[i]) {
+                    for (int i = 1; i < N; ++i) {
+                        auto diffTime = config.condWeights[solution1[i]][i][revSolution1[i]] - config.condWeights[solution2[i]][i][revSolution2[i]];
+                        if (solution1[i] != solution2[i] || diffTime != 0) {
                             ImGui::TableNextColumn();
                             bool isSelected = false;
                             ImGui::PushID((std::to_string(i) + "_diffTable").c_str());
@@ -971,11 +972,10 @@ int main(int argc, char** argv) {
                             }
                             ImGui::PopID();
                             ImGui::SameLine();
-                            ImGui::Text("%d-%d", i, solution1[i]);
+                            ImGui::Text("[%d],%d,%d", revSolution1[i], i, solution1[i]);
                             ImGui::TableNextColumn();
-                            ImGui::Text("%d-%d", i, solution2[i]);
+                            ImGui::Text("[%d],%d,%d", revSolution2[i], i, solution2[i]);
                             ImGui::TableNextColumn();
-                            auto diffTime = config.condWeights[solution1[i]][i][revSolution1[i]] - config.condWeights[solution2[i]][i][revSolution2[i]];
                             auto diffTimeLength = std::to_string(std::abs(diffTime)).size() + (std::abs(diffTime) < 10);
                             auto diffTimeTextWidth = diffTimeLength * ImGui::CalcTextSize("0").x + (diffTime < 0 ? ImGui::CalcTextSize("-.").x : ImGui::CalcTextSize(".").x);
                             ImGui::Dummy(ImVec2((0.8f/2.8f * tableWidth) - diffTimeTextWidth - tableWidth / 8, 0.0f));
