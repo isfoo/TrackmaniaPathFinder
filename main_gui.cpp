@@ -338,12 +338,14 @@ int main(int argc, char** argv) {
                         tableInputEntryInt("max route time", input.limitValue, 1, 100'000, "");
                     }
                     tableInputEntryInt("max nr of routes", input.maxSolutionCount, 1, 100'000, "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable");
-                    tableInputEntryInt("max search time", input.maxTime, 0, 100'000, "Max time in seconds you want to search for. 0 means infinity.\n\nIt's mostly useful for heuristic algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems, but if left at infinity for large problems it will likely never end.");
                     if (input.showAdvancedSettings) {
+                        tableInputEntryInt("max search time", input.maxTime, 0, 100'000, "Max time in seconds you want to search for. 0 means infinity.\n\nIt's mostly useful for heuristic algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems, but if left at infinity for large problems it will likely never end.");
                         tableInputEntryInt("max repeat CPs to add", input.maxRepeatNodesToAdd, 0, 100'000, "");
                         tableInputEntryText("turned off repeat CPs", input.turnedOffRepeatNodes, "List of CP numbers you want to ban from repeating");
                         tableInputEntryText("output data file", input.outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.\nIf left empty then no file is created.");
-                        tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP");
+                    }
+                    tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP");
+                    if (input.showAdvancedSettings) {
                         if (config.weights.size() > 0) {
                             tableInputEntry("calculate route time", "", [&]() {
                                 ImGui::PushID("Calculate route button");
