@@ -338,7 +338,7 @@ int main(int argc, char** argv) {
                         tableInputEntryInt("max route time", input.limitValue, 1, 100'000, "");
                     }
                     tableInputEntryInt("max nr of routes", input.maxSolutionCount, 1, 100'000, "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable");
-                    tableInputEntryInt("max search time", input.maxTime, 1, 100'000, "Max time in seconds you want to search for.\n\nIt's mostly useful for heuristic algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems\n\nMight need to increase that time for some problems - you have to experiment yourself.");
+                    tableInputEntryInt("max search time", input.maxTime, 0, 100'000, "Max time in seconds you want to search for. 0 means infinity.\n\nIt's mostly useful for heuristic algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems, but if left at infinity for large problems it will likely never end.");
                     if (input.showAdvancedSettings) {
                         tableInputEntryInt("max repeat CPs to add", input.maxRepeatNodesToAdd, 0, 100'000, "");
                         tableInputEntryText("turned off repeat CPs", input.turnedOffRepeatNodes, "List of CP numbers you want to ban from repeating");

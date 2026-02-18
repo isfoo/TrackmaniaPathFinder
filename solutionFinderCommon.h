@@ -288,10 +288,10 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, const InputData& 
 
     state.timer = Timer();
     state.timerThread = std::thread([&state, maxTime=input.maxTime, &config]() {
-        while (!config.stopWorking && !state.taskWasCanceled && state.timer.getTime() < maxTime) {
+        while (!config.stopWorking && !state.taskWasCanceled && (maxTime == 0 || state.timer.getTime() < maxTime)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        state.endedWithTimeout = state.timer.getTime() >= maxTime;
+        state.endedWithTimeout = maxTime != 0 && state.timer.getTime() >= maxTime;
         config.stopWorking = true;
     });
     if (input.isConnectionSearchAlgorithm) {

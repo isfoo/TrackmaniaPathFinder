@@ -21,7 +21,7 @@ struct InputData {
     int limitValue = 100'000;
     int maxRepeatNodesToAdd = 100'000;
     int maxSolutionCount = 100;
-    int maxTime = 10;
+    int maxTime = 0;
 
     char inputDataFile[1024] = { 0 };
     char outputDataFile[1024] = { 0 };
