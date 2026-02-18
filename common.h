@@ -14,38 +14,138 @@ struct ConnectionFinderSettings {
     int maxDistance = 100'000;
     int minHeightDiff = -100'000;
     int maxHeightDiff = 100'000;
+    char searchSourceNodes[1024] = { 0 };
 };
 
 struct InputData {
+    // general
+    int fontSize = 16;
+    bool showAdvancedSettings = false;
+
+    // Path Finder tab
     int ignoredValue = 600;
     int limitValue = 100'000;
-    int maxRepeatNodesToAdd = 100'000;
     int maxSolutionCount = 100;
     int maxTime = 0;
-
-    char inputDataFile[1024] = { 0 };
-    char outputDataFile[1024] = { 0 };
-    char outputPositionsFile[1024] = { 0 };
-
-    char positionReplayFile[1024] = { 0 };
-    char positionReplayFilePath[1024] = { 0 };
-    char replayFolderPath[1024] = { 0 };
-
-    char ringCps[1024] = { 0 };
+    int maxRepeatNodesToAdd = 100'000;
     char turnedOffRepeatNodes[1024] = { 0 };
-    char cpOrder[1024] = { 0 };
-    char routeString[1024] = { 0 };
-    char searchSourceNodes[1024] = { 0 };
 
-    ConnectionFinderSettings connectionFinderSettings;
+    char outputDataFile[1024] = { 0 };
+    char ringCps[1024] = { 0 };
+    char routeString[1024] = { 0 };
+    char positionReplayFilePath[1024] = { 0 };
+    char inputDataFile[1024] = { 0 };
+
     bool isConnectionSearchAlgorithm = false;
+    ConnectionFinderSettings connectionFinderSettings;
     bool sortConnectionSearchResultsByConnection = false;
 
-    bool showAdvancedSettings = false;
-    bool showResultsFilter = false;
+    bool showResultsFilter = false; // Don't save to file
+
+    // CP positions creator / replay visualizer tabs
+    char positionReplayFile[1024] = { 0 };
+    char cpOrder[1024] = { 0 };
+    char outputPositionsFile[1024] = { 0 };
 
     InputData() {
         strcpy(outputPositionsFile, "CP_positions.txt");
+    }
+
+    void saveToFile(const std::string& filePath) {
+        std::ofstream file(filePath);
+        if (!file)
+            return;
+        file << "fontSize " << fontSize << '\n';
+        file << "showAdvancedSettings " << showAdvancedSettings << '\n';
+
+        file << "ignoredValue " << ignoredValue << '\n';
+        file << "limitValue " << limitValue << '\n';
+        file << "maxSolutionCount " << maxSolutionCount << '\n';
+        file << "maxTime " << maxTime << '\n';
+        file << "maxRepeatNodesToAdd " << maxRepeatNodesToAdd << '\n';
+        file << "turnedOffRepeatNodes " << turnedOffRepeatNodes << '\n';
+
+        file << "outputDataFile " << outputDataFile << '\n';
+        file << "ringCps " << ringCps << '\n';
+        file << "routeString " << routeString << '\n';
+        file << "positionReplayFilePath " << positionReplayFilePath << '\n';
+        file << "inputDataFile " << inputDataFile << '\n';
+
+        file << "isConnectionSearchAlgorithm " << isConnectionSearchAlgorithm << '\n';
+        file << "connectionFinderSettings.testedConnectionTime " << connectionFinderSettings.testedConnectionTime << '\n';
+        file << "connectionFinderSettings.minConnectionTime " << connectionFinderSettings.minConnectionTime << '\n';
+        file << "connectionFinderSettings.maxConnectionTime " << connectionFinderSettings.maxConnectionTime << '\n';
+        file << "connectionFinderSettings.minDistance " << connectionFinderSettings.minDistance << '\n';
+        file << "connectionFinderSettings.maxDistance " << connectionFinderSettings.maxDistance << '\n';
+        file << "connectionFinderSettings.minHeightDiff " << connectionFinderSettings.minHeightDiff << '\n';
+        file << "connectionFinderSettings.maxHeightDiff " << connectionFinderSettings.maxHeightDiff << '\n';
+        file << "connectionFinderSettings.searchSourceNodes " << connectionFinderSettings.searchSourceNodes << '\n';
+        file << "sortConnectionSearchResultsByConnection " << sortConnectionSearchResultsByConnection << '\n';
+
+        file << "positionReplayFile " << positionReplayFile << '\n';
+        file << "cpOrder " << cpOrder << '\n';
+        file << "outputPositionsFile " << outputPositionsFile << '\n';
+    }
+    void loadFromFile(const std::string& filePath) {
+        std::ifstream file(filePath);
+        std::string key;
+        while (file >> key) {
+            std::string value;
+            std::getline(file, value);
+            if (key == "fontSize") {
+                fontSize = stoi(value);
+            } else if (key == "showAdvancedSettings") {
+                showAdvancedSettings = stoi(value);
+            } else if (key == "ignoredValue") {
+                ignoredValue = stoi(value);
+            } else if (key == "limitValue") {
+                limitValue = stoi(value);
+            } else if (key == "maxSolutionCount") {
+                maxSolutionCount = stoi(value);
+            } else if (key == "maxTime") {
+                maxTime = stoi(value);
+            } else if (key == "maxRepeatNodesToAdd") {
+                maxRepeatNodesToAdd = stoi(value);
+            } else if (key == "turnedOffRepeatNodes") {
+                strcpy(turnedOffRepeatNodes, value.c_str() + 1);
+            } else if (key == "outputDataFile") {
+                strcpy(outputDataFile, value.c_str() + 1);
+            } else if (key == "ringCps") {
+                strcpy(ringCps, value.c_str() + 1);
+            } else if (key == "routeString") {
+                strcpy(routeString, value.c_str() + 1);
+            } else if (key == "positionReplayFilePath") {
+                strcpy(positionReplayFilePath, value.c_str() + 1);
+            } else if (key == "inputDataFile") {
+                strcpy(inputDataFile, value.c_str() + 1);
+            } else if (key == "isConnectionSearchAlgorithm") {
+                isConnectionSearchAlgorithm = stoi(value);
+            } else if (key == "connectionFinderSettings.testedConnectionTime") {
+                connectionFinderSettings.testedConnectionTime = stoi(value);
+            } else if (key == "connectionFinderSettings.minConnectionTime") {
+                connectionFinderSettings.minConnectionTime = stoi(value);
+            } else if (key == "connectionFinderSettings.maxConnectionTime") {
+                connectionFinderSettings.maxConnectionTime = stoi(value);
+            } else if (key == "connectionFinderSettings.minDistance") {
+                connectionFinderSettings.minDistance = stoi(value);
+            } else if (key == "connectionFinderSettings.maxDistance") {
+                connectionFinderSettings.maxDistance = stoi(value);
+            } else if (key == "connectionFinderSettings.minHeightDiff") {
+                connectionFinderSettings.minHeightDiff = stoi(value);
+            } else if (key == "connectionFinderSettings.maxHeightDiff") {
+                connectionFinderSettings.maxHeightDiff = stoi(value);
+            } else if (key == "connectionFinderSettings.searchSourceNodes") {
+                strcpy(connectionFinderSettings.searchSourceNodes, value.c_str() + 1);
+            } else if (key == "sortConnectionSearchResultsByConnection") {
+                sortConnectionSearchResultsByConnection = stoi(value);
+            } else if (key == "positionReplayFile") {
+                strcpy(positionReplayFile, value.c_str() + 1);
+            } else if (key == "cpOrder") {
+                strcpy(cpOrder, value.c_str() + 1);
+            } else if (key == "outputPositionsFile") {
+                strcpy(outputPositionsFile, value.c_str() + 1);
+            }
+        }
     }
 };
 

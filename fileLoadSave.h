@@ -6,6 +6,8 @@
 #include <string>
 #include <charconv>
 
+namespace fs = std::filesystem;
+
 std::vector<std::vector<ConditionalCost>> splitLineToConditionalCosts(std::string_view str, std::string& errorMsg) {
     constexpr auto PossiblyFloatChars = "0123456789.";
     std::vector<std::vector<ConditionalCost>> result;
@@ -162,4 +164,18 @@ std::vector<Position> readPositionsFile(const std::string& positionsFilePath) {
         cpPositions.push_back(pos);
     }
     return cpPositions;
+}
+
+std::optional<fs::path> getLocalAppDataProgramDirectory() {
+    PWSTR windowsPath;
+    auto result = SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &windowsPath);
+    if (result != S_OK) {
+        CoTaskMemFree(windowsPath);
+        return std::nullopt;
+    }
+    fs::path path = windowsPath;
+    CoTaskMemFree(windowsPath);
+    path /= "TrackmaniaPathFinder";
+    fs::create_directory(path);
+    return path;
 }

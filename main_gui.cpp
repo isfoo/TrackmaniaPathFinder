@@ -13,8 +13,6 @@
 #include "fileLoadSave.h"
 #include "imgui_directX11.h"
 
-namespace fs = std::filesystem;
-
 void HelpMarker(const char* desc) {
     ImGui::TextDisabled("(?)");
     if (ImGui::IsItemHovered()) {
@@ -239,10 +237,14 @@ int main(int argc, char** argv) {
 
     constexpr int MinFontSize = 8;
     constexpr int MaxFontSize = 30;
-    int fontSize = 16;
 
     InputData input;
     State state;
+
+    auto appDataDir = getLocalAppDataProgramDirectory();
+    if (appDataDir) {
+        input.loadFromFile((*appDataDir / "inputData.txt").string());
+    }
 
     std::atomic<bool> stopWorkingForConfig;
     SolutionConfig config(stopWorkingForConfig);
@@ -253,7 +255,7 @@ int main(int argc, char** argv) {
     auto guiFont = setGuiStyle();
 
     MyImGui::Run([&] {
-        guiFont->Scale = fontSize / 22.0f;
+        guiFont->Scale = input.fontSize / 22.0f;
         ImGui::PushFont(guiFont);
 
         auto io = ImGui::GetIO();
@@ -263,10 +265,10 @@ int main(int argc, char** argv) {
 
         if (ImGui::GetIO().KeyCtrl) {
             if (ImGui::GetIO().MouseWheel > 0) {
-                fontSize = std::clamp(fontSize + 1, MinFontSize, MaxFontSize);
+                input.fontSize = std::clamp(input.fontSize + 1, MinFontSize, MaxFontSize);
             }
             if (ImGui::GetIO().MouseWheel < 0) {
-                fontSize = std::clamp(fontSize - 1, MinFontSize, MaxFontSize);
+                input.fontSize = std::clamp(input.fontSize - 1, MinFontSize, MaxFontSize);
             }
         }
 
@@ -311,11 +313,11 @@ int main(int argc, char** argv) {
         };
 
         if (ImGui::BeginTable("menuTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
-            ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
+            ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
             ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-            ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
+            ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 2);
             ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
-            tableInputEntryInt("font size", fontSize, MinFontSize, MaxFontSize, "You can use CTRL + Mouse wheel to change font size");
+            tableInputEntryInt("font size", input.fontSize, MinFontSize, MaxFontSize, "You can use CTRL + Mouse wheel to change font size");
             if (state.isOnPathFinderTab) {
                 ImGui::TableNextColumn();
                 ImGui::TableNextColumn();
@@ -329,9 +331,9 @@ int main(int argc, char** argv) {
             if (ImGui::BeginTabItem("Path Finder")) {
                 state.isOnPathFinderTab = true;
                 if (ImGui::BeginTable("menuTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
-                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
+                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-                    ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
+                    ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 2);
                     ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
                     if (input.showAdvancedSettings) {
                         tableInputEntryInt("max connection time", input.ignoredValue, 1, 100'000, "Connections with this or higher time\nwill not be considered in the solutions");
@@ -372,7 +374,7 @@ int main(int argc, char** argv) {
                 }
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 1);
                 if (ImGui::BeginTable("menuTable2", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
-                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
+                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
             
                     if (input.showAdvancedSettings) {
@@ -386,9 +388,9 @@ int main(int argc, char** argv) {
                 }
                 if (input.showAdvancedSettings && input.isConnectionSearchAlgorithm) {
                     if (ImGui::BeginTable("ConnectionFinderTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
-                        ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
+                        ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
                         ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-                        ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 2);
+                        ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 2);
                         ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
                         tableInputEntryInt("min connection time", input.connectionFinderSettings.minConnectionTime, 0, 100'000, "Connections with this or higher time\nwill be tried to be replaced with tested time");
                         tableInputEntryInt("max connection time", input.connectionFinderSettings.maxConnectionTime, 0, 100'000, "Connections with this or lower time\nwill be tried to be replaced with tested time");
@@ -397,7 +399,7 @@ int main(int argc, char** argv) {
                         tableInputEntryIntDisabledIfNoPositionData("min height difference", input.connectionFinderSettings.minHeightDiff, -100'000, 100'000, "Connections with this or higher Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
                         tableInputEntryIntDisabledIfNoPositionData("max height difference", input.connectionFinderSettings.maxHeightDiff, -100'000, 100'000, "Connections with this or lower Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
                         tableInputEntryInt("tested time", input.connectionFinderSettings.testedConnectionTime, 0, 100'000, "Time that will be inserted into tested connections");
-                        tableInputEntryText("source CPs", input.searchSourceNodes, "List of source CP numbers that should be considered while searching.\nIf empty - all CPs are considered");
+                        tableInputEntryText("source CPs", input.connectionFinderSettings.searchSourceNodes, "List of source CP numbers that should be considered while searching.\nIf empty - all CPs are considered");
 
                         ImGui::TableNextColumn();
                         ImGui::SetNextItemWidth(-1);
@@ -476,7 +478,7 @@ int main(int argc, char** argv) {
                 };
 
                 if (input.showResultsFilter) {
-                    ImVec2 buttonSize(fontSize * 5.5f, 0);
+                    ImVec2 buttonSize(input.fontSize * 5.5f, 0);
                     ImVec4 colRequired = ImVec4(0.133f, 0.694f, 0.298f, 1.00f);
                     ImVec4 colBanned = ImVec4(0.922f, 0.2f, 0.141f, 1.00f);
                     ImVec4 colAutoBanned = colBanned;
@@ -662,11 +664,11 @@ int main(int argc, char** argv) {
                 if (ImGui::BeginTable("solutionsTable", 5, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::to_string(config.maxSolutionCount).size() + 1), 0);
                     ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::max(4, int(std::to_string(maxSolutionTime).size())) + 1), 1);
-                    ImGui::TableSetupColumn("Graph", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 3.5f, 2);
+                    ImGui::TableSetupColumn("Graph", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 3.5f, 2);
                     if (input.isConnectionSearchAlgorithm) {
-                        ImGui::TableSetupColumn("Connection", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 5.5f, 3);
+                        ImGui::TableSetupColumn("Connection", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 5.5f, 3);
                     } else {
-                        ImGui::TableSetupColumn("Variations", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 5.5f, 3);
+                        ImGui::TableSetupColumn("Variations", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 5.5f, 3);
                     }
                     ImGui::TableSetupColumn("Route", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 4);
                     ImGui::TableHeadersRow();
@@ -757,7 +759,7 @@ int main(int argc, char** argv) {
                 static std::string cpPositionsErrorMsg;
 
                 if (ImGui::BeginTable("menuTableCp", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
-                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
+                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
                     tableInputEntryFile("Full Replay Gbx", input.positionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0", "Can be either Replay or Ghost file in Gbx format.\nIt's assumed that it is a full replay from start to finish");
                     tableInputEntryText("CP order (optional)", input.cpOrder, "Comma separated full list of CP numbers in order they were driven.\nIt's useful if you have no replay at hand that drives all CPs in the correct order.");
@@ -859,7 +861,7 @@ int main(int argc, char** argv) {
             if (ImGui::BeginTabItem("Replay visualizer (experimental)")) {
                 static std::string replayVisulizerErrorMsg;
                 if (ImGui::BeginTable("menuTableReplayVisualizer", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
-                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, fontSize * 12.0f, 0);
+                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
                     tableInputEntryFile("Replay/Ghost file", input.positionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0", "Can be either Replay or Ghost file in Gbx format.");
                     ImGui::EndTable();
@@ -909,9 +911,9 @@ int main(int argc, char** argv) {
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 1));
             ImGui::Begin("Solution graph", &state.isGraphWindowOpen, ImGuiWindowFlags_NoCollapse);
             auto size = ImGui::GetWindowSize();
-            size.y -= fontSize * 1.5f;
+            size.y -= input.fontSize * 1.5f;
             auto pos = ImGui::GetWindowPos();
-            pos.y += fontSize * 1.5f;
+            pos.y += input.fontSize * 1.5f;
             
             auto minXY = std::min(size.x, size.y);
             guiFont->Scale = std::max(0.5f, (minXY / 680) * 0.8f);
@@ -931,7 +933,7 @@ int main(int argc, char** argv) {
 
             auto tablePosX = size.x - tableWidth - 2.0f;
             auto graphMenuTableSizeY = 5 * (2.0f + ImGui::GetTextLineHeight());
-            auto diffTableSizeY = size.y - fontSize * 1.5f - graphMenuTableSizeY;
+            auto diffTableSizeY = size.y - input.fontSize * 1.5f - graphMenuTableSizeY;
             if (state.solutionToShowId != -1 && state.solutionToCompareId != -1) {
                 auto N = state.solutionToShowInGraphWindow.size();
                 std::vector<int16_t> solution1(N);
@@ -951,7 +953,7 @@ int main(int argc, char** argv) {
                 revSolution1[0] = int16_t(N);
                 revSolution2[0] = int16_t(N);
 
-                ImGui::SetCursorPos(ImVec2(tablePosX, fontSize * 1.5f));
+                ImGui::SetCursorPos(ImVec2(tablePosX, input.fontSize * 1.5f));
                 if (ImGui::BeginTable("diffTable", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(tableWidth, diffTableSizeY))) {
                     std::string deltaTimeStr = { char(0xCE), char(0x94) }; // Utf-8 delta symbol
                     deltaTimeStr += "Time";
@@ -988,7 +990,7 @@ int main(int argc, char** argv) {
                     ImGui::EndTable();
                 }
             }
-            ImGui::SetCursorPos(ImVec2(tablePosX, fontSize * 1.5f + diffTableSizeY));
+            ImGui::SetCursorPos(ImVec2(tablePosX, input.fontSize * 1.5f + diffTableSizeY));
             if (ImGui::BeginTable("graphMenuTable", 1, ImGuiTableFlags_SizingStretchSame, ImVec2(tableWidth, 0.0f))) {
                 ImGui::TableSetupColumn("graphMenuTableColumn");
                 ImGui::TableNextColumn();
@@ -1063,5 +1065,8 @@ int main(int argc, char** argv) {
         }
         ImGui::PopFont();
     });
+    if (appDataDir) {
+        input.saveToFile((*appDataDir / "inputData.txt").string());
+    }
     std::quick_exit(0);
 }

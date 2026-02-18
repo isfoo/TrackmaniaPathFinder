@@ -282,7 +282,7 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, const InputData& 
 
     auto ringCps = parseIntList(input.ringCps, 1, config.weights.size() - 2, "ring CPs list", state.errorMsg);
     auto repeatNodesTurnedOff = parseIntList(input.turnedOffRepeatNodes, 0, config.weights.size() - 2, "turned off repeat nodes", state.errorMsg);
-    auto searchSourceNodes = parseIntList(input.searchSourceNodes, 0, config.weights.size() - 2, "search source CPs list", state.errorMsg);
+    auto searchSourceNodes = parseIntList(input.connectionFinderSettings.searchSourceNodes, 0, config.weights.size() - 2, "search source CPs list", state.errorMsg);
     if (!state.errorMsg.empty())
         return;
 
