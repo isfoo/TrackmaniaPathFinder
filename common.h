@@ -45,7 +45,6 @@ struct InputData {
     bool showResultsFilter = false;
 
     InputData() {
-        strcpy(outputDataFile, "out.txt");
         strcpy(outputPositionsFile, "CP_positions.txt");
     }
 };

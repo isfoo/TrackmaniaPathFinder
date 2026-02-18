@@ -128,13 +128,15 @@ void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t
     solutionsFile << createSolutionString(solution, repeatNodeMatrix, useRespawnMatrix) << '\n';
 }
 void writeSolutionToFile(const std::string& outputFileName, const std::vector<int16_t>& solution, int time, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
-    if (!outputFileName.empty()) {
-        std::ofstream solutionsFile(outputFileName, std::ios::app);
-        writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix, useRespawnMatrix);
-    }
+    if (outputFileName.empty())
+        return;
+    std::ofstream solutionsFile(outputFileName, std::ios::app);
+    writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix, useRespawnMatrix);
 }
 
 void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<BestSolution>& solutionsView, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
+    if (outputFileName.empty())
+        return;
     std::vector<BestSolution> sortedSolutions;
     for (int i = 0; i < solutionsView.size(); ++i) {
         sortedSolutions.push_back(solutionsView[i]);
@@ -147,6 +149,8 @@ void overwriteFileWithSortedSolutions(const std::string& outputFileName, int max
 }
 
 void clearFile(const std::string& outputFileName) {
+    if (outputFileName.empty())
+        return;
     std::ofstream solutionsFile(outputFileName, std::ios::trunc);
 }
 

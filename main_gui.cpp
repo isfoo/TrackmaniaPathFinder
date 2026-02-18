@@ -342,7 +342,7 @@ int main(int argc, char** argv) {
                     if (input.showAdvancedSettings) {
                         tableInputEntryInt("max repeat CPs to add", input.maxRepeatNodesToAdd, 0, 100'000, "");
                         tableInputEntryText("turned off repeat CPs", input.turnedOffRepeatNodes, "List of CP numbers you want to ban from repeating");
-                        tableInputEntryText("output data file", input.outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.");
+                        tableInputEntryText("output data file", input.outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.\nIf left empty then no file is created.");
                         tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP");
                         if (config.weights.size() > 0) {
                             tableInputEntry("calculate route time", "", [&]() {
