@@ -691,7 +691,7 @@ int main(int argc, char** argv) {
                 updateSolutionId(state.solutionToShowId, state.solutionToShowInGraphWindow);
                 updateSolutionId(state.solutionToCompareId, state.solutionToCompareToInGraphWindow);
                 
-                if (ImGui::BeginTable("solutionsTable", 5, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
+                if (ImGui::BeginTable("solutionsTable", 6, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::to_string(config.maxSolutionCount).size() + 1), 0);
                     ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, textDigitWidth * (std::max(4, int(std::to_string(maxSolutionTime).size())) + 1), 1);
                     ImGui::TableSetupColumn("Graph", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 3.5f, 2);
@@ -700,7 +700,8 @@ int main(int argc, char** argv) {
                     } else {
                         ImGui::TableSetupColumn("Variations", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 5.5f, 3);
                     }
-                    ImGui::TableSetupColumn("Route", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 4);
+                    ImGui::TableSetupColumn("UnVer.", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 3.5f, 4);
+                    ImGui::TableSetupColumn("Route", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 5);
                     ImGui::TableHeadersRow();
 
                     ImGuiListClipper clipper;
@@ -773,6 +774,39 @@ int main(int argc, char** argv) {
                                 }
                                 ImGui::PopID();
                             }
+
+                            ImGui::TableNextColumn();
+                            ImGui::PushID((std::to_string(j) + "_verified_connections_button").c_str());
+                            std::string verifiedConnectionsButtonLabel = "";
+                            auto unverifiedConnectionsCount = state.bestFoundSolutions[j].unverifiedConnections.size();
+                            verifiedConnectionsButtonLabel = std::to_string(unverifiedConnectionsCount);
+
+                            auto oldDisabledAlpha = ImGui::GetStyle().DisabledAlpha;
+                            ImGui::GetStyle().DisabledAlpha = 1.f;
+                            if (unverifiedConnectionsCount == 0)
+                                ImGui::BeginDisabled();
+                            ImGui::SetNextItemWidth(-1);
+
+                            ImVec4 Green = ImVec4(28.f/255, 148.f/255, 64.f/255, 1.f);
+                            ImVec4 Red = ImVec4(166.f/255, 20.f/255, 24.f/255, 1.f);
+                            ImVec4 RedMinusGreen = Red - Green;
+                            float maxSize = config.weights.size() - 1;
+                            ImVec4 Step = ImVec4(RedMinusGreen.x / maxSize, RedMinusGreen.y / maxSize, RedMinusGreen.z / maxSize, 0.f);
+                            auto buttonColor = ImVec4(Green.x + Step.x * unverifiedConnectionsCount, Green.y + Step.y * unverifiedConnectionsCount, Green.z + Step.z * unverifiedConnectionsCount, 1.00f);
+                            ImGui::PushStyleColor(ImGuiCol_Button, buttonColor);
+
+                            if (ImGui::Button(verifiedConnectionsButtonLabel.c_str(), ImVec2(-1, 0))) {
+                                state.isUnverifiedConnectionsWindowOpen = true;
+                                state.solutionToShowUnverifiedConnectionsId = j;
+                                state.solutionToShowUnverifiedConnections = state.bestFoundSolutions[j];
+                            }
+
+                            ImGui::PopStyleColor();
+                            if (unverifiedConnectionsCount == 0)
+                                ImGui::EndDisabled();
+                            ImGui::GetStyle().DisabledAlpha = oldDisabledAlpha;
+                            ImGui::PopID();
+
                             ImGui::TableNextColumn();
                             ImGui::SetNextItemWidth(-1);
                             ImGui::InputText(("##solution" + std::to_string(j)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
@@ -1091,6 +1125,23 @@ int main(int argc, char** argv) {
                 ImGui::SetNextItemWidth(-1);
                 ImGui::InputText(("##variation" + std::to_string(i)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
             }
+            ImGui::End();
+        }
+        if (state.solutionToShowUnverifiedConnectionsId == -1) {
+            state.isUnverifiedConnectionsWindowOpen = false;
+        }
+        if (state.isUnverifiedConnectionsWindowOpen) {
+            ImGui::SetNextWindowPos(ImVec2(200, 50), ImGuiCond_Once);
+            ImGui::SetNextWindowSize(ImVec2(680 + 200, 680), ImGuiCond_Once);
+            ImGui::Begin("Unverified connections", &state.isUnverifiedConnectionsWindowOpen, ImGuiWindowFlags_NoCollapse);
+            std::string strUnverifiedConnectionsList = "";
+            for (auto [a, b, c] : state.solutionToShowUnverifiedConnections.unverifiedConnections) {
+                std::string prevNode = a >= (config.weights.size() - 1) ? "X" : std::to_string(a);
+                strUnverifiedConnectionsList += prevNode + "\t" + std::to_string(b) + "\t" + std::to_string(c) + "\n";
+            }
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(14.f / 255, 14.f / 255, 14.f / 255, 1));
+            ImGui::InputTextMultiline("##Unverified connections text box", strUnverifiedConnectionsList.data(), strUnverifiedConnectionsList.size(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
+            ImGui::PopStyleColor();
             ImGui::End();
         }
         ImGui::PopFont();

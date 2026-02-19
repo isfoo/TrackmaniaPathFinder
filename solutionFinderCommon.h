@@ -63,6 +63,18 @@ FastSet2d solutionConnectionsSet(const std::vector<int16_t>& solutionWithRepeats
     }
     return result;
 }
+std::vector<std::array<int16_t, 3>> solutionUnverifiedConnectionsList(const SolutionConfig& config, const std::vector<int16_t>& solution) {
+    std::vector<std::array<int16_t, 3>> result;
+    auto B = solution;
+    B.insert(B.begin(), 0);
+    B.insert(B.begin(), int16_t(config.weights.size() - 1));
+    for (int i = 2; i < B.size(); ++i) {
+        if (!config.isVerifiedConnection[B[i]][B[i - 1]][B[i - 2]]) {
+            result.push_back({ B[i - 2], B[i - 1], B[i] });
+        }
+    }
+    return result;
+}
 template<typename T, typename Pred> void insertSorted(std::vector<T>& vec, const T& val, Pred pred) {
     vec.insert(std::upper_bound(vec.begin(), vec.end(), val, pred), val);
 }
@@ -102,8 +114,9 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, std::pair<std::vector<in
     }
     auto sortedSolution = getSortedSolutionIfPossible(config, solution.first);
     auto solutionString = createSolutionString(solution.first, config.repeatNodeMatrix, config.useRespawnMatrix);
+    auto unverifiedConnections = solutionUnverifiedConnectionsList(config, solution.first);
 
-    auto newSolution = BestSolution(solution.first, sortedSolution, solutionWithRepeats, solutionConnections, solutionString, config.addedConnection, solution.second);
+    auto newSolution = BestSolution(solution.first, sortedSolution, solutionWithRepeats, solutionConnections, unverifiedConnections, solutionString, config.addedConnection, solution.second);
     config.solutionsVec.push_back_not_thread_safe(newSolution);
     insertSorted(config.bestSolutions, newSolution, [](auto& a, auto& b) {
         if (a.time < b.time)
@@ -284,11 +297,12 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
     config.solutionsVec.clear();
     config.addedConnection = NullEdge;
 
-    auto [A_, B_] = loadCsvData(inputDataFile, config.ignoredValue, state.errorMsg);
+    auto algorithmData = loadCsvData(inputDataFile, config.ignoredValue, state.errorMsg);
     if (!state.errorMsg.empty())
         return;
-    config.weights = A_;
-    config.condWeights = B_;
+    config.weights = std::move(algorithmData.weights);
+    config.condWeights = std::move(algorithmData.condWeights);
+    config.isVerifiedConnection = std::move(algorithmData.isVerifiedConnection);
     config.useRespawnMatrix = Vector3d<Bool>(int(config.condWeights.size()));
 
     state.cpPositionsVis.clear();

@@ -80,48 +80,135 @@ std::vector<std::vector<int>> splitLineToConditionalCostsMatrix(std::string_view
     return costs;
 }
 
+struct InputAlgorithmData {
+    std::vector<std::vector<int>> weights;
+    std::vector<std::vector<std::vector<int>>> condWeights;
+    std::vector<std::vector<std::vector<bool>>> isVerifiedConnection;
+};
 
-std::pair<std::vector<std::vector<int>>, std::vector<std::vector<std::vector<int>>>> loadCsvData(const std::string& inputFileName, int ignoredValue, std::string& errorMsg) {
+template<typename Func> auto parseNext(Func func, const char* chars, std::string& str) -> std::optional<decltype(func(""))> {
+    auto start = str.find_first_of(chars);
+    if (start == std::string::npos)
+        return std::nullopt;
+    str = str.substr(start);
+
+    auto end = str.find_first_not_of(chars);
+    if (end == std::string::npos)
+        return std::nullopt;
+    auto result = func(str.substr(0, end).c_str());
+
+    str = str.substr(end);
+    return result;
+}
+std::optional<int> parseNextInt(std::string& str) {
+    return parseNext(std::atoi, "0123456789", str);
+}
+std::optional<double> parseNextDouble(std::string& str) {
+    return parseNext(std::atof, "-0123456789.", str);
+}
+bool loadVerifiedConnection(InputAlgorithmData& data, std::string line) {
+    std::array<int, 3> nodes; // prev, src, dst
+    int i = 0;
+    if (line[0] == 'X' || line[0] == 'x') {
+        nodes[i++] = -1;
+    }
+    for (; i < nodes.size(); ++i) {
+        auto res = parseNextInt(line);
+        if (!res || *res < 0 || *res >= data.weights.size())
+            return false;
+        nodes[i] = *res;
+    }
+    bool isDelta = true;
+    if (auto pos = line.find("Set"); pos != std::string::npos) {
+        line = line.substr(pos + 3);
+        isDelta = false;
+    } else if (auto pos = line.find("set"); pos != std::string::npos) {
+        line = line.substr(pos + 3);
+        isDelta = false;
+    }
+    auto parsedTime = parseNextDouble(line);
+    if (!parsedTime)
+        return false;
+    int time = std::round(*parsedTime * 10);
+
+    auto updateWeights = [&data, isDelta, time](int dst, int src, int prev) {
+        int newTime = 0;
+        if (isDelta) {
+            newTime = data.condWeights[dst][src][prev] += time;
+        } else {
+            newTime = data.condWeights[dst][src][prev] = time;
+        }
+        data.weights[dst][src] = std::min(data.weights[dst][src], newTime);
+        data.isVerifiedConnection[dst][src][prev] = true;
+    };
+    if (nodes[0] == -1) {
+        for (int i = 0; i < data.condWeights[nodes[2]][nodes[1]].size(); ++i) {
+            updateWeights(nodes[2], nodes[1], i);
+        }
+    } else {
+        updateWeights(nodes[2], nodes[1], nodes[0]);
+    }
+
+    return true;
+}
+
+InputAlgorithmData loadCsvData(const std::string& inputFileName, int ignoredValue, std::string& errorMsg) {
     std::ifstream inFile(inputFileName);
     if (!inFile) {
         errorMsg = "Couldn't open input file";
         return {};
     }
-    std::vector<std::vector<int>> A;
-    std::vector<std::vector<std::vector<int>>> B;
-    A.emplace_back(); // first row to be filled later
-    B.emplace_back();
+    InputAlgorithmData data;
+    data.weights.emplace_back(); // first row to be filled later
+    data.condWeights.emplace_back();
     std::string line;
     while (std::getline(inFile, line)) {
+        auto firstNonSpacePos = line.find_first_not_of(' \t');
+        if (firstNonSpacePos != std::string::npos && line[firstNonSpacePos] == '#')
+            break;
         auto condCostMatrix = splitLineToConditionalCostsMatrix(line, ignoredValue, errorMsg);
         if (!errorMsg.empty()) {
-            errorMsg += std::to_string(B.size()) + " row";
+            errorMsg += std::to_string(data.condWeights.size()) + " row";
             return {};
         }
-        B.push_back(condCostMatrix);
+        data.condWeights.push_back(condCostMatrix);
         std::vector<int> minimums(condCostMatrix.size());
         for (int i = 0; i < condCostMatrix.size(); ++i) {
             minimums[i] = *std::min_element(condCostMatrix[i].begin(), condCostMatrix[i].end());
         }
-        A.push_back(minimums);
+        data.weights.push_back(minimums);
     }
-    if (A.size() <= 1) {
+    if (data.weights.size() <= 1) {
         errorMsg = "Couldn't load data from file";
         return {};
     }
-    B[0].resize(B[1].size(), std::vector<int>(B[1].size(), ignoredValue));
-    A[0].resize(A[1].size(), ignoredValue);
-    if (A[0].size() != A.size()) {
-        errorMsg = "Found " + std::to_string(A.size() - 1) + " rows but there are " + std::to_string(A[0].size() - 1) + " columns in the first row";
+    data.condWeights[0].resize(data.condWeights[1].size(), std::vector<int>(data.condWeights[1].size(), ignoredValue));
+    data.weights[0].resize(data.weights[1].size(), ignoredValue);
+    if (data.weights[0].size() != data.weights.size()) {
+        errorMsg = "Found " + std::to_string(data.weights.size() - 1) + " rows but there are " + std::to_string(data.weights[0].size() - 1) + " columns in the first row";
         return {};
     }
-    for (int i = 0; i < A.size(); ++i) {
-        if (A[i].size() != A[0].size()) {
-            errorMsg = "First row has " + std::to_string(A[0].size() - 1) + " values, but " + std::to_string(i) + " row has " + std::to_string(A[i].size() - 1);
+    for (int i = 0; i < data.weights.size(); ++i) {
+        if (data.weights[i].size() != data.weights[0].size()) {
+            errorMsg = "First row has " + std::to_string(data.weights[0].size() - 1) + " values, but " + std::to_string(i) + " row has " + std::to_string(data.weights[i].size() - 1);
             return {};
         }
     }
-    return { A, B };
+
+    data.isVerifiedConnection.resize(data.condWeights.size(), std::vector<std::vector<bool>>(data.condWeights[0].size(), std::vector<bool>(data.condWeights[0][0].size(), false)));
+    int verifiedLineNr = 1;
+    while (std::getline(inFile, line)) {
+        auto firstRealChar = line.find_first_of("#Xx-0123456789.");
+        if (firstRealChar == std::string::npos || line[firstRealChar] == '#')
+            continue;
+        line = line.substr(firstRealChar);
+        if (!loadVerifiedConnection(data, line)) {
+            errorMsg = "Failed to parse line " + std::to_string(verifiedLineNr) + " in verified connections list";
+            return {};
+        }
+        verifiedLineNr += 1;
+    }
+    return data;
 }
 
 void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t>& solution, int time, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {

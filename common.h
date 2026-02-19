@@ -162,8 +162,8 @@ struct InputData {
 
 struct BestSolution {
     BestSolution() : solutionConnections(0) {}
-    BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& sortedSolution, const std::vector<int16_t>& solutionWithRepeats, const FastSet2d& solutionConnections, const std::string& solutionString, Edge addedConnection, int time) :
-        solution(sortedSolution), solutionConnections(solutionConnections), solutionString(solutionString), addedConnection(addedConnection), time(time)
+    BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& sortedSolution, const std::vector<int16_t>& solutionWithRepeats, const FastSet2d& solutionConnections, const std::vector<std::array<int16_t, 3>>& unverifiedConnections, const std::string& solutionString, Edge addedConnection, int time) :
+        solution(sortedSolution), solutionConnections(solutionConnections), unverifiedConnections(unverifiedConnections), solutionString(solutionString), addedConnection(addedConnection), time(time)
     {
         allVariations.push_back(solution);
         variations.push_back(sortedSolution);
@@ -173,6 +173,7 @@ struct BestSolution {
     std::vector<std::vector<int16_t>> allVariations;
     std::vector<std::vector<int16_t>> variations;
     std::vector<std::vector<int16_t>> variationsWithRepeats;
+    std::vector<std::array<int16_t, 3>> unverifiedConnections;
     std::string solutionString;
     FastSet2d solutionConnections;
     Edge addedConnection;
@@ -224,6 +225,10 @@ struct State {
     int solutionToShowVariationId = -1;
     bool showRepeatNodeVariations = true;
 
+    bool isUnverifiedConnectionsWindowOpen = false;
+    BestSolution solutionToShowUnverifiedConnections;
+    int solutionToShowUnverifiedConnectionsId = -1;
+
     std::pair<NodeType, NodeType> hoveredConnection = { 0, 0 };
 
     bool isOnPathFinderTab = true;
@@ -256,6 +261,7 @@ struct ConditionalCost {
 struct SolutionConfig {
     std::vector<std::vector<int>> weights;
     std::vector<std::vector<std::vector<int>>> condWeights;
+    std::vector<std::vector<std::vector<bool>>> isVerifiedConnection;
     int maxSolutionCount;
     int limit;
     int ignoredValue;
@@ -273,6 +279,7 @@ struct SolutionConfig {
     SolutionConfig(const SolutionConfig& other) : stopWorking(other.stopWorking) {
         weights = other.weights;
         condWeights = other.condWeights;
+        isVerifiedConnection = other.isVerifiedConnection;
         maxSolutionCount = other.maxSolutionCount;
         limit = other.limit;
         ignoredValue = other.ignoredValue;
