@@ -274,7 +274,7 @@ std::optional<int> parseFloatAsInt(const std::string& s, int multiplyFactor=1) {
         return std::nullopt;
     if (s[0] == '0')
         return 0;
-    auto result = int(atof(s.c_str()) * multiplyFactor);
+    auto result = int(std::round(atof(s.c_str()) * multiplyFactor));
     return result != 0 ? std::optional{ result } : std::nullopt;
 }
 
