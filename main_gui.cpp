@@ -937,6 +937,60 @@ int main(int argc, char** argv) {
 
                 ImGui::EndTabItem();
             }
+            if (ImGui::BeginTabItem("Distance matrix creator")) {
+                static std::string distanceMatrixErrorMsg;
+
+                if (ImGui::BeginTable("menuTableDistMatrix", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
+                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
+                    ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
+                    tableInputEntryFile("CP positions file", input.positionReplayFilePath, "txt\0*.txt\0All\0*.*\0", "File containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.");
+                    tableInputEntryText("output matrix file", input.outputDistanceMatrixFile, "File that will contain distances between each CP in the same format as input for \"Path Finder\" tab.");
+                    ImGui::EndTable();
+                }
+                if (input.positionReplayFilePath[0] == '\0' || input.outputDistanceMatrixFile[0] == '\0')
+                    BeginDisabled();
+                if (ImGui::Button("Create distance matrix file")) {
+                    state.createdDistanceMatrix = false;
+                    distanceMatrixErrorMsg.clear();
+                    auto positions = readPositionsFile(input.positionReplayFilePath);
+                    if (positions.empty()) {
+                        distanceMatrixErrorMsg = "Failed to load positions file";
+                    } else {
+                        std::ofstream outFile(input.outputDistanceMatrixFile);
+                        auto dist = [](const Position& a, const Position& b) {
+                            return std::sqrt(std::pow(a.x - b.x, 2) + std::pow(a.y - b.y, 2) + std::pow(a.z - b.z, 2));
+                        };
+                        for (int i = 1; i < positions.size(); ++i) {
+                            if (i != 1)
+                                outFile << '\n';
+                            for (int j = 0; j < positions.size() - 1; ++j) {
+                                if (j != 0)
+                                    outFile << ",";
+                                if (i == j || (i == positions.size() - 1 && j == 0)) {
+                                    outFile << 9'999;
+                                } else {
+                                    outFile << std::fixed << std::setprecision(1) << dist(positions[i], positions[j]);
+                                }
+                            }
+                        }
+                        state.createdDistanceMatrix = true;
+                    }
+                }
+                if (input.positionReplayFilePath[0] == '\0' || input.outputDistanceMatrixFile[0] == '\0')
+                    EndDisabled();
+                ImGui::SameLine();
+                std::string status = state.createdDistanceMatrix ?  "Done" : "Waiting for start";
+                ImGui::Text(" Status: %s", status.c_str());
+
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 0, 0, 255));
+                if (distanceMatrixErrorMsg.empty()) {
+                    ImGui::Text("");
+                } else {
+                    ImGui::Text("Error: %s", distanceMatrixErrorMsg.c_str());
+                }
+                ImGui::PopStyleColor();
+                ImGui::EndTabItem();
+            }
             if (ImGui::BeginTabItem("Replay visualizer")) {
                 static std::string replayVisulizerErrorMsg;
                 if (ImGui::BeginTable("menuTableReplayVisualizer", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {

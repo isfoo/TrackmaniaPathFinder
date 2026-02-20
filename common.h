@@ -52,8 +52,12 @@ struct InputData {
     char cpOrder[1024] = { 0 };
     char outputPositionsFile[1024] = { 0 };
 
+    // Distance matrix creator
+    char outputDistanceMatrixFile[1024] = { 0 };
+
     InputData() {
         strcpy(outputPositionsFile, "CP_positions.txt");
+        strcpy(outputDistanceMatrixFile, "DistanceMatrix.csv");
     }
 
     void saveToFile(const std::string& filePath) {
@@ -92,6 +96,8 @@ struct InputData {
         file << "positionReplayFile " << positionReplayFile << '\n';
         file << "cpOrder " << cpOrder << '\n';
         file << "outputPositionsFile " << outputPositionsFile << '\n';
+
+        file << "outputDistanceMatrixFile " << outputDistanceMatrixFile << '\n';
     }
     void loadFromFile(const std::string& filePath) {
         std::ifstream file(filePath);
@@ -155,6 +161,8 @@ struct InputData {
                 strcpy(cpOrder, value.c_str() + 1);
             } else if (key == "outputPositionsFile") {
                 strcpy(outputPositionsFile, value.c_str() + 1);
+            } else if (key == "outputDistanceMatrixFile") {
+                strcpy(outputDistanceMatrixFile, value.c_str() + 1);
             }
         }
     }
@@ -239,6 +247,8 @@ struct State {
 
     std::vector<FilterConnection> resultRequiredConnections;
     std::vector<FilterConnection> resultOptionalConnections;
+
+    bool createdDistanceMatrix = false;
 
     int isDisabledStackCount = 0;
 
