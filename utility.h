@@ -259,53 +259,83 @@ private:
 };
 
 
-std::string floatToString(float value, int precision) {
-    std::array<char, 64> buf;
-    auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value, std::chars_format::fixed, precision);
-    return std::string(buf.data(), ptr);
+int strToInt(std::string_view s) {
+    int value = 0;
+    std::from_chars(s.data(), s.data() + s.size(), value);
+    return value;
 }
-std::optional<int> parseInt(const std::string& s) {
-    if (s.empty() || !std::all_of(s.begin(), s.end(), ::isdigit))
-        return std::nullopt;
-    return std::optional{ atoi(s.c_str()) };
+int strToFloatAsInt(std::string_view s) {
+    double value = 0;
+    std::from_chars(s.data(), s.data() + s.size(), value);
+    return std::round(value * 10);
 }
-std::optional<int> parseFloatAsInt(const std::string& s, int multiplyFactor=1) {
-    if (s.empty())
-        return std::nullopt;
-    if (s[0] == '0')
-        return 0;
-    auto result = int(std::round(atof(s.c_str()) * multiplyFactor));
-    return result != 0 ? std::optional{ result } : std::nullopt;
-}
-
-std::vector<int> parseIntList(std::string_view str, int allowedRangeMin, int allowedRangeMax, std::string listName, std::string& errorMsg) {
-    constexpr auto Digits = "0123456789";
-    std::vector<int> result;
-
-    auto pos = str.find_first_of(Digits);
-    if (pos == std::string::npos)
-        return result;
-    str = str.substr(pos);
-    while (true) {
-        auto pos = str.find_first_not_of(Digits);
-        auto value = parseInt(std::string(str.substr(0, pos)));
-        if (value) {
-            result.emplace_back(*value);
-        } else {
-            errorMsg = "Unkown error while parsing " + listName;
-            return {};
-        }
-        if (result.back() < allowedRangeMin || result.back() > allowedRangeMax) {
-            errorMsg = "Found value outside of allowed range [" + std::to_string(allowedRangeMin) + ", " + std::to_string(allowedRangeMax) + "] while parsing " + listName;
-            return {};
-        }
-        if (pos == std::string::npos)
-            return result;
-        auto pos2 = str.find_first_of(Digits, pos);
-        if (pos2 == std::string::npos)
-            return result;
-        str = str.substr(pos2);
+struct Token {
+    std::string_view value;
+    int typeId;
+};
+struct TokenList {
+    std::string lineWithTildeEnd;
+    std::vector<Token> tokens;
+    int currentIndex = 0;
+    int size()     { return tokens.size(); }
+    Token& eat()   { return tokens[currentIndex++]; }
+    Token& peak()  { return tokens[currentIndex]; }
+    Token& operator[](int i) { return tokens[i]; }
+    bool empty() { return currentIndex >= tokens.size(); }
+    void eatAll(int typeId) {
+        while (!empty() && peak().typeId == typeId)
+            eat();
     }
+};
+struct TokenSchema {
+    int typeId;
+    std::string possibleChars;
+    bool isExactMatch = false;
+};
+TokenList tokenize(std::string_view line, const std::vector<TokenSchema> tokenTypes, bool saveRemainingAsOther=false, int otherTypeId=-1) {
+    TokenList result;
+
+    result.lineWithTildeEnd = std::string(line) + "~";
+    std::string_view str = result.lineWithTildeEnd;
+
+    std::vector<bool> isOpenTokenType(tokenTypes.size());
+    std::string allMatchingChars;
+    for (auto& tokenType : tokenTypes) {
+        allMatchingChars += tokenType.possibleChars;
+    }
+    std::sort(allMatchingChars.begin(), allMatchingChars.end());
+    allMatchingChars.erase(std::unique(allMatchingChars.begin(), allMatchingChars.end()), allMatchingChars.end());
+    while (true) {
+        int i = 0;
+        while (i < str.size() && allMatchingChars.find(std::tolower(str[i])) == std::string::npos)
+            i += 1;
+        if (saveRemainingAsOther && i > 0)
+            result.tokens.push_back(Token{ str.substr(0, i), otherTypeId });
+        str = str.substr(i);
+        if (str.empty())
+            break;
+        std::fill(isOpenTokenType.begin(), isOpenTokenType.end(), true);
+        int openTokenTypesCount = isOpenTokenType.size();
+        int n = 0;
+        int lastEliminatedTokenType = 0;
+        while (str.size() > n && openTokenTypesCount > 0) {
+            for (int i = 0; i < isOpenTokenType.size(); ++i) {
+                if (!isOpenTokenType[i])
+                    continue;
+                bool isEliminated = !tokenTypes[i].isExactMatch && tokenTypes[i].possibleChars.find(str[n]) == std::string::npos;
+                isEliminated |= tokenTypes[i].isExactMatch && (tokenTypes[i].possibleChars.size() <= n || tokenTypes[i].possibleChars[n] != std::tolower(str[n]));
+                if (isEliminated) {
+                    isOpenTokenType[i] = false;
+                    lastEliminatedTokenType = i;
+                    openTokenTypesCount -= 1;
+                }
+            }
+            n += 1;
+        }
+        result.tokens.push_back(Token{ str.substr(0, n - 1), tokenTypes[lastEliminatedTokenType].typeId });
+        str = str.substr(n - 1);
+    }
+    return result;
 }
 
 template<typename T> struct VectorView {

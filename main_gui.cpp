@@ -367,7 +367,7 @@ int main(int argc, char** argv) {
                     tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP");
                     if (input.showAdvancedSettings) {
                         if (config.weights.size() > 0) {
-                            tableInputEntry("calculate route time", "", [&]() {
+                            tableInputEntry("calculate route time", "Calculate time of full or partial route (even single connection).\n\nThe syntax is the same as in the output format, however the repeat node values in brackets and double-respawns will be ignored.\nThat is the program will forcefully take best repeat nodes for a given connection regardless of what you input", [&]() {
                                 ImGui::PushID("Calculate route button");
                                 if (ImGui::Button("Calculate time")) {
                                     std::string routeString = input.routeString;

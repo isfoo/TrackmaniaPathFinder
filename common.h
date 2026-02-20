@@ -331,89 +331,103 @@ std::string createSolutionString(const std::vector<int16_t>& solution, const Vec
     return solStr;
 }
 
-
-struct Token {
-    Token(int type, int value=0) : type(type), value(value) {}
-    int value;
-    int type;
-    enum Type { Number, RepeatNumber, Dash, Comma };
-};
-
-int readNumber(const std::string& str, int& i) {
-    int start = i;
-    while (std::isdigit(str[i])) {
-        i += 1;
-    }
-    int number = std::stoi(str.substr(start, i - start));
-    i -= 1;
-    return number;
-}
 std::pair<std::vector<int16_t>, double> createSolutionFromString(std::string solStr, const SolutionConfig& config) {
-    std::vector<Token> tokens;
+    std::vector<int16_t> solution;
     auto ErrorValue = std::pair<std::vector<int16_t>, double>{ {}, -1.0 };
 
-    try {
-        if (solStr.substr(0, 6) != "[Start")
+    enum { Start, Finish, Integer, Comma, Dash, Respawn, OpenParen, CloseParen };
+    auto tokens = tokenize(solStr, { 
+        {Start, "start", true}, {Finish, "finish", true}, {Integer, "0123456789"}, {Comma, ",", true},  {Dash, "-", true}, 
+        {Respawn, "r", true}, {OpenParen, "(", true}, {CloseParen, ")", true}
+    });
+
+    bool endedInComma = true;
+    while (true) {
+        if (tokens.empty())
             return ErrorValue;
-        if (solStr.substr(solStr.size() - 7) != "Finish]")
+        auto expectedNodeToken = tokens.eat();
+        int node = -1;
+        if (expectedNodeToken.typeId == Start) {
+            node = 0;
+        } else if (expectedNodeToken.typeId == Finish) {
+            node = config.weights.size() - 1;
+        } else if (expectedNodeToken.typeId == Integer) {
+            node = strToInt(expectedNodeToken.value);
+        } else {
             return ErrorValue;
-        solStr = solStr.substr(5);
-        solStr[0] = '0';
-
-        int i = 0;
-        while (i < solStr.size()) {
-            char c = solStr[i];
-            if (c == '-') {
-                tokens.emplace_back(Token::Dash);
-            } else if (c == ',') {
-                if (solStr[i + 1] == '(') {
-                    i += 2;
-                    while (true) {
-                        tokens.emplace_back(Token::RepeatNumber, readNumber(solStr, i));
-                        i += 1;
-                        if (solStr[i] == ')')
-                            break;
-                        i += 1;
-                    }
-                } else {
-                    tokens.emplace_back(Token::Comma);
-                }
-            } else if (c == 'R') {
-                i += 1;
-            } else if (c == 'F') {
-                tokens.emplace_back(Token::Number, config.weights.size() - 1);
-                break;
-            } else {
-                tokens.emplace_back(Token::Number, readNumber(solStr, i));
-            }
-            i += 1;
         }
-
-        std::vector<int16_t> solution;
-        i = 0;
-        while (i < tokens.size()) {
-            if (tokens[i].type == Token::Number) {
-                solution.push_back(tokens[i].value);
-            } else if (tokens[i].type == Token::Dash) {
-                i += 1;
-                while (solution.back() != tokens[i].value) {
-                    solution.push_back(solution.back() + 1);
-                }
-            }
-            i += 1;
-        }
-
-        int realCost = 0;
-        for (int i = 1; i < solution.size(); ++i) {
-            auto connectionCost = config.condWeights[solution[i]][solution[i - 1]][i > 1 ? solution[i - 2] : 0];
-            if (connectionCost >= config.ignoredValue)
+        if (node < 0 || node >= config.weights.size())
+            return ErrorValue;
+        if (endedInComma) {
+            solution.push_back(node);
+        } else {
+            if (solution.back() >= node)
                 return ErrorValue;
-            realCost += connectionCost;
+            while (solution.back() != node) {
+                solution.push_back(solution.back() + 1);
+            }
+        }
+        if (solution.back() == config.weights.size() - 1) {
+            if (!tokens.empty())
+                return ErrorValue;
+            break;
         }
 
-        solution.erase(solution.begin());
-        return { solution, realCost / 10.0 };
-    } catch (std::exception _) {
-        return ErrorValue;
+        if (tokens.empty())
+            break;
+        auto expectedCommaOrDash = tokens.eat();
+        if (expectedCommaOrDash.typeId == Dash) {
+            endedInComma = false;
+        } else if (expectedCommaOrDash.typeId == Comma) {
+            endedInComma = true;
+            if (tokens.empty())
+                return ErrorValue;
+            if (tokens.peak().typeId == Respawn) {
+                tokens.eat();
+                if (tokens.empty() || tokens.eat().typeId != Comma)
+                    return ErrorValue;
+            } else if (tokens.peak().typeId == OpenParen) {
+                tokens.eat();
+                while (true) {
+                    if (tokens.empty() || tokens.eat().typeId != Integer)
+                        return ErrorValue;
+                    if (tokens.empty())
+                        return ErrorValue;
+                    auto token = tokens.eat();
+                    if (token.typeId == CloseParen) {
+                        break;
+                    } else if (token.typeId != Comma) {
+                        return ErrorValue;
+                    }
+                }
+                if (tokens.empty() || tokens.eat().typeId != Comma)
+                    return ErrorValue;
+            }
+        } else {
+            return ErrorValue;
+        }
     }
+    int realCost = 0;
+    for (int i = 1; i < solution.size(); ++i) {
+        auto connectionCost = config.condWeights[solution[i]][solution[i - 1]][i > 1 ? solution[i - 2] : config.weights.size() - 1];
+        if (connectionCost >= config.ignoredValue)
+            return ErrorValue;
+        realCost += connectionCost;
+    }
+
+    solution.erase(solution.begin());
+    return { solution, realCost / 10.0 };
+}
+
+std::vector<int> parseIntList(std::string_view str, int allowedRangeMin, int allowedRangeMax, std::string listName, std::string& errorMsg) {
+    std::vector<int> result;
+    auto tokens = tokenize(str, { {0, "0123456789"} });
+    while (!tokens.empty()) {
+        result.push_back(strToInt(tokens.eat().value));
+        if (result.back() < allowedRangeMin || result.back() > allowedRangeMax) {
+            errorMsg = "Found value outside of allowed range [" + std::to_string(allowedRangeMin) + ", " + std::to_string(allowedRangeMax) + "] while parsing " + listName;
+            return {};
+        }
+    }
+    return result;
 }

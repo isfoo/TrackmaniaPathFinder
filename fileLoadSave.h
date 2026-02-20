@@ -9,44 +9,50 @@
 namespace fs = std::filesystem;
 
 std::vector<std::vector<ConditionalCost>> splitLineToConditionalCosts(std::string_view str, std::string& errorMsg) {
-    constexpr auto PossiblyFloatChars = "0123456789.";
     std::vector<std::vector<ConditionalCost>> result;
+    enum { Integer, Float, Comma, OpenBracket, CloseBracket, Other };
+    auto tokens = tokenize(str, { {Integer, "0123456789"}, {Float, "0123456789."}, {Comma, ",", true}, { OpenBracket, "(", true }, {CloseBracket, ")", true},}, true, Other);
 
     while (true) {
-        auto pos = str.find_first_of(PossiblyFloatChars);
-        if (pos == std::string::npos)
-            return result;
-        str = str.substr(pos);
+        while (!tokens.empty() && (tokens.peak().typeId == Comma || tokens.peak().typeId == Other))
+            tokens.eat();
+        if (tokens.empty())
+            break;
+        if (tokens.peak().typeId == OpenBracket || tokens.peak().typeId == CloseBracket) {
+            errorMsg = "Unexpected bracket at " + std::to_string(result.size() + 1) + " column ";
+            return {};
+        }
 
         std::vector<ConditionalCost> condCostList;
-        while (str.size() > 0 && (std::isdigit(uint8_t(str[0])) || str[0] == '.')) {
-            auto costEnd = str.find_first_not_of(PossiblyFloatChars);
-            auto cost = parseFloatAsInt(std::string(str.substr(0, costEnd)), 10);
-            if (!cost) {
-                errorMsg = "Failed to parse cost value at " + std::to_string(result.size() + 1) + " column ";
-                return {};
-            }
-            auto condCost = ConditionalCost(*cost);
-            str = str.substr(costEnd == std::string::npos ? str.size() : costEnd);
-            if (!str.empty() && str[0] == '(') {
-                size_t pos;
-                do {
-                    str = str.substr(1);
-                    pos = str.find_first_of(",)");
-                    if (pos == std::string::npos) {
-                        errorMsg = "Missing closing bracket at " + std::to_string(result.size() + 1) + " column ";
+        while (!tokens.empty() && (tokens.peak().typeId == Integer || tokens.peak().typeId == Float)) {
+            auto condCost = ConditionalCost(strToFloatAsInt(tokens.eat().value));
+            if (!tokens.empty() && tokens.peak().typeId == OpenBracket) {
+                tokens.eat();
+                while (true) {
+                    tokens.eatAll(Other);
+                    if (tokens.empty()) {
+                        errorMsg = "Unexpected end of line after opening bracket at " + std::to_string(result.size() + 1) + " column ";
                         return {};
                     }
-                    auto node = parseInt(std::string(str.substr(0, pos)));
-                    if (!node) {
-                        errorMsg = "Failed to parse CP number in bracket at " + std::to_string(result.size() + 1) + " column ";
+                    if (tokens.peak().typeId != Integer && tokens.peak().typeId != Float) {
+                        errorMsg = "Unexpected value instead of CP number inside opening bracket at " + std::to_string(result.size() + 1) + " column ";
                         return {};
                     }
-                    str = str.substr(pos);
-                    condCost.srcNode = *node;
+                    condCost.srcNode = strToInt(tokens.eat().value);
                     condCostList.push_back(condCost);
-                } while (str[0] != ')');
-                str = str.substr(1);
+                    if (tokens.empty()) {
+                        errorMsg = "Unexpected end of line after opening bracket at " + std::to_string(result.size() + 1) + " column ";
+                        return {};
+                    }
+                    tokens.eatAll(Other);
+                    auto token = tokens.eat();
+                    if (token.typeId == CloseBracket) {
+                        break;
+                    } else if (token.typeId != Comma) {
+                        errorMsg = "Expected comma ',' or closing bracket ')' at " + std::to_string(result.size() + 1) + " column ";
+                        return {};
+                    }
+                }
             } else {
                 condCostList.push_back(condCost);
             }
@@ -86,50 +92,34 @@ struct InputAlgorithmData {
     std::vector<std::vector<std::vector<bool>>> isVerifiedConnection;
 };
 
-template<typename Func> auto parseNext(Func func, const char* chars, std::string& str) -> std::optional<decltype(func(""))> {
-    auto start = str.find_first_of(chars);
-    if (start == std::string::npos)
-        return std::nullopt;
-    str = str.substr(start);
-
-    auto end = str.find_first_not_of(chars);
-    if (end == std::string::npos)
-        return std::nullopt;
-    auto result = func(str.substr(0, end).c_str());
-
-    str = str.substr(end);
-    return result;
-}
-std::optional<int> parseNextInt(std::string& str) {
-    return parseNext(std::atoi, "0123456789", str);
-}
-std::optional<double> parseNextDouble(std::string& str) {
-    return parseNext(std::atof, "-0123456789.", str);
-}
 bool loadVerifiedConnection(InputAlgorithmData& data, std::string line) {
     std::array<int, 3> nodes; // prev, src, dst
+    enum { AnyPrevNode, Float, Integer, Set };
+    auto tokens = tokenize(line, { {AnyPrevNode, "x", true}, {Float, "-0123456789."}, {Integer, "0123456789"}, {Set, "set", true}});
+    if (tokens.empty())
+        return false;
     int i = 0;
-    if (line[0] == 'X' || line[0] == 'x') {
+    if (tokens.peak().typeId == AnyPrevNode) {
         nodes[i++] = -1;
+        tokens.eat();
     }
     for (; i < nodes.size(); ++i) {
-        auto res = parseNextInt(line);
-        if (!res || *res < 0 || *res >= data.weights.size())
+        if (tokens.empty() || tokens.peak().typeId != Integer)
             return false;
-        nodes[i] = *res;
+        nodes[i] = strToInt(tokens.eat().value);
+        if (nodes[i] < 0 || nodes[i] >= data.weights.size())
+            return false;
     }
     bool isDelta = true;
-    if (auto pos = line.find("Set"); pos != std::string::npos) {
-        line = line.substr(pos + 3);
-        isDelta = false;
-    } else if (auto pos = line.find("set"); pos != std::string::npos) {
-        line = line.substr(pos + 3);
-        isDelta = false;
-    }
-    auto parsedTime = parseNextDouble(line);
-    if (!parsedTime)
+    if (tokens.empty())
         return false;
-    int time = std::round(*parsedTime * 10);
+    if (tokens.peak().typeId == Set) {
+        isDelta = false;
+        tokens.eat();
+    }
+    if (tokens.empty() || (tokens.peak().typeId != Integer && tokens.peak().typeId != Float))
+        return false;
+    int time = strToFloatAsInt(tokens[i].value);
 
     auto updateWeights = [&data, isDelta, time](int dst, int src, int prev) {
         int newTime = 0;
