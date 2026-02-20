@@ -333,6 +333,8 @@ TokenList tokenize(std::string_view line, const std::vector<TokenSchema> tokenTy
             n += 1;
         }
         result.tokens.push_back(Token{ str.substr(0, n - 1), tokenTypes[lastEliminatedTokenType].typeId });
+        if (n == 1)
+            n += 1;
         str = str.substr(n - 1);
     }
     return result;
