@@ -31,7 +31,7 @@ If you have any questions / feature requests the best way is to contact me throu
 
 ## Program screenshot
 
-![screenshot](https://github.com/isfoo/TrackmaniaPathFinder/assets/128239594/798a383f-077e-44cf-8c76-f9702734338d)
+<img width="1920" height="1007" alt="tmPathFinder_screenshot" src="https://github.com/user-attachments/assets/c0761de5-8182-4ee8-9e78-2e331d13747c" />
 
 ## Input spreadsheet
 
