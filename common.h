@@ -240,6 +240,8 @@ struct State {
     std::vector<FilterConnection> resultRequiredConnections;
     std::vector<FilterConnection> resultOptionalConnections;
 
+    int isDisabledStackCount = 0;
+
     State() {
         timer = Timer();
         timer.stop();

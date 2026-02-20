@@ -268,6 +268,15 @@ int main(int argc, char** argv) {
         ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, io.DisplaySize.y));
         ImGui::Begin("Window", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
+        auto BeginDisabled = [&state]() {
+            state.isDisabledStackCount += 1;
+            ImGui::BeginDisabled();
+        };
+        auto EndDisabled = [&state]() {
+            state.isDisabledStackCount -= 1;
+            ImGui::EndDisabled();
+        };
+
         if (ImGui::GetIO().KeyCtrl) {
             if (ImGui::GetIO().MouseWheel > 0) {
                 input.fontSize = std::clamp(input.fontSize + 1, MinFontSize, MaxFontSize);
@@ -277,12 +286,18 @@ int main(int argc, char** argv) {
             }
         }
 
-        auto tableInputEntry = [](const std::string& label, const std::string& helpText, std::function<void()> inputFunction) {
+        auto tableInputEntry = [&state, &BeginDisabled, &EndDisabled](const std::string& label, const std::string& helpText, std::function<void()> inputFunction) {
             ImGui::TableNextColumn();
             ImGui::Text("%s:", label.c_str());
             ImGui::SameLine();
-            if (!helpText.empty())
+            if (!helpText.empty()) {
+                int oldCount = state.isDisabledStackCount;
+                while (state.isDisabledStackCount > 0)
+                    EndDisabled();
                 HelpMarker(helpText.c_str());
+                while (state.isDisabledStackCount < oldCount)
+                    BeginDisabled();
+            }
             ImGui::TableNextColumn();
             ImGui::SetNextItemWidth(-1);
             inputFunction();
@@ -299,10 +314,10 @@ int main(int argc, char** argv) {
                 }
             });
         };
-        auto tableInputEntryIntDisabledIfNoPositionData = [&tableInputEntryInt, &input](const std::string& label, int& inputInt, int minValue, int maxValue, const std::string& helpText) {
-            if (input.positionReplayFilePath[0] == '\0') ImGui::BeginDisabled();
+        auto tableInputEntryIntDisabledIfNoPositionData = [&tableInputEntryInt, &input, &BeginDisabled, &EndDisabled](const std::string& label, int& inputInt, int minValue, int maxValue, const std::string& helpText) {
+            if (input.positionReplayFilePath[0] == '\0') BeginDisabled();
             tableInputEntryInt(label, inputInt, minValue, maxValue, helpText);
-            if (input.positionReplayFilePath[0] == '\0') ImGui::EndDisabled();
+            if (input.positionReplayFilePath[0] == '\0') EndDisabled();
         };
         auto tableInputEntryFile = [&tableInputEntry](const std::string& label, char(&inputText)[1024], const char* filter, const std::string& helpText) {
             tableInputEntry(label, helpText, [&]() {
@@ -354,20 +369,20 @@ int main(int argc, char** argv) {
                     ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 2);
                     ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
                     if (input.showAdvancedSettings) {
-                        tableInputEntryInt("max connection time", input.ignoredValue, 1, 100'000, "Connections with this or higher time\nwill not be considered in the solutions");
-                        tableInputEntryInt("max route time", input.limitValue, 1, 100'000, "");
+                        tableInputEntryInt("max connection time", input.ignoredValue, 1, 100'000, "Connections with this or higher time\nwill not be considered in the solutions.");
+                        tableInputEntryInt("max route time", input.limitValue, 1, 100'000, "Maximum time route can take to be considered as a valid solution.\n\nFor \"Heuristic\" algorithm this is irrelevant, but for \"Exact\" algorithm lowering this value might help the algorithm complete the search faster.");
                     }
-                    tableInputEntryInt("max nr of routes", input.maxSolutionCount, 1, 100'000, "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable");
+                    tableInputEntryInt("max nr of routes", input.maxSolutionCount, 1, 100'000, "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable.\n\nFor \"Heuristic\" algorithm this is irrelevant.");
                     if (input.showAdvancedSettings) {
-                        tableInputEntryInt("max search time", input.maxTime, 0, 100'000, "Max time in seconds you want to search for. 0 means infinity.\n\nIt's mostly useful for heuristic algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems, but if left at infinity for large problems it will likely never end.");
-                        tableInputEntryInt("max repeat CPs to add", input.maxRepeatNodesToAdd, 0, 100'000, "");
-                        tableInputEntryText("turned off repeat CPs", input.turnedOffRepeatNodes, "List of CP numbers you want to ban from repeating");
-                        tableInputEntryText("output data file", input.outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max number of routes\" found.\nIf left empty then no file is created.");
+                        tableInputEntryInt("max search time", input.maxTime, 0, 100'000, "Max time in seconds you want to search for. 0 means infinity.\n\nIt's mostly useful for \"Heuristic\" algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems, but if left at infinity for large problems it will likely never end.");
+                        tableInputEntryInt("max repeat CPs", input.maxRepeatNodesToAdd, 0, 100'000, "Max number of newly calculated/improved connections the program will try to create by going through other CPs on the way.\n\nTypically you should be able to leave it at an arbitrarily large value, however for \"Exact\" algorithm you might want to lower this to improve search times.");
+                        tableInputEntryText("turned off repeat CPs", input.turnedOffRepeatNodes, "List of CP numbers you want to ban from repeating.");
+                        tableInputEntryText("output data file", input.outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max nr of routes\" found.\nIf left empty then no file is created.");
                     }
-                    tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.\nThat is CPs for which you want to include connection\nwhere you standing respawn after taking this CP\nto go back to previous CP");
+                    tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.\nThat is CPs for which you want to include connection where you standing respawn after taking this CP to go back to previous CP.\n\nIt will only find connections where you take a single ring CP before respawning.\nIf optimal path requires taking 2+ ring CPs before respawning it won't be found.");
                     if (input.showAdvancedSettings) {
                         if (config.weights.size() > 0) {
-                            tableInputEntry("calculate route time", "Calculate time of full or partial route (even single connection).\n\nThe syntax is the same as in the output format, however the repeat node values in brackets and double-respawns will be ignored.\nThat is the program will forcefully take best repeat nodes for a given connection regardless of what you input", [&]() {
+                            tableInputEntry("calculate route time", "Calculate time of full or partial route (even a single connection).\n\nThe syntax is the same as in the output format, however the repeat node values in brackets and double-respawns will be ignored.\nThat is the program will forcefully take best repeat nodes for a given connection regardless of what you input.", [&]() {
                                 ImGui::PushID("Calculate route button");
                                 if (ImGui::Button("Calculate time")) {
                                     std::string routeString = input.routeString;
@@ -396,13 +411,13 @@ int main(int argc, char** argv) {
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
             
                     if (input.showAdvancedSettings) {
-                        tableInputEntryFile("CP positions file", input.positionReplayFilePath, "txt\0*.txt\0All\0*.*\0", "Optional for visualization only.\nFile containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.\n\nWhen provided it enables graph view to show 2D view of the route");
+                        tableInputEntryFile("CP positions file", input.positionReplayFilePath, "txt\0*.txt\0All\0*.*\0", "Optional for visualization only.\nFile containing positions of start, finish and all CPs created in \"CP positions creactor\" tab.\n\nWhen provided, it enables graph view to show 2D view of the route.");
                     }
-                    if (input.inputDataLink[0] != '\0') ImGui::BeginDisabled();
-                    tableInputEntryFile("input data file", input.inputDataFile, "All\0*.*\0CSV\0*.CSV\0", "Format is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.");
-                    if (input.inputDataLink[0] != '\0') ImGui::EndDisabled();
-                    if (input.inputDataFile[0] != '\0') ImGui::BeginDisabled();
-                    tableInputEntry("input data link", "Link to sheet in google spreadsheet that contains the input data starting at cell B2.\n\nThe data is only downloaded if the checkbox is set. Otherwise it uses the last downloaded version\n\nFor more information see github.com/isfoo/TrackmaniaPathFinder", [&]() {
+                    if (input.inputDataLink[0] != '\0') BeginDisabled();
+                    tableInputEntryFile("input data file", input.inputDataFile, "All\0*.*\0CSV\0*.CSV\0", "Can only be used if \"input data link\" is empty.\n\nFormat is full matrix of decimal values in CSV format\nusing any delimiter, e.g. comma, space, tab.\n\nFirst row are times to CP1.\nLast row are times to finish.\nFirst column are times from start.\nLast column are times from last CP.");
+                    if (input.inputDataLink[0] != '\0') EndDisabled();
+                    if (input.inputDataFile[0] != '\0') BeginDisabled();
+                    tableInputEntry("input data link", "Can only be used if \"input data file\" is empty.\n\nLink to sheet in google spreadsheet that contains the input data starting at cell B2.\n\nThe data is only downloaded if the checkbox is set. Otherwise it uses the last downloaded version of that sheet.\n\nFor more information see github.com/isfoo/TrackmaniaPathFinder", [&]() {
                         ImGui::Checkbox("download on next run", &input.downloadSpreadsheet);
                         ImGui::SameLine();
                         ImGui::SetNextItemWidth(-1);
@@ -410,7 +425,7 @@ int main(int argc, char** argv) {
                             input.downloadSpreadsheet = true;
                         }
                     });
-                    if (input.inputDataFile[0] != '\0') ImGui::EndDisabled();
+                    if (input.inputDataFile[0] != '\0') EndDisabled();
                     ImGui::EndTable();
                 }
                 if (input.showAdvancedSettings) {
@@ -422,14 +437,14 @@ int main(int argc, char** argv) {
                         ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
                         ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 2);
                         ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
-                        tableInputEntryInt("min connection time", input.connectionFinderSettings.minConnectionTime, 0, 100'000, "Connections with this or higher time\nwill be tried to be replaced with tested time");
-                        tableInputEntryInt("max connection time", input.connectionFinderSettings.maxConnectionTime, 0, 100'000, "Connections with this or lower time\nwill be tried to be replaced with tested time");
-                        tableInputEntryIntDisabledIfNoPositionData("min distance", input.connectionFinderSettings.minDistance, 0, 100'000, "Connections with this or higher distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
-                        tableInputEntryIntDisabledIfNoPositionData("max distance", input.connectionFinderSettings.maxDistance, 0, 100'000, "Connections with this or lower distance\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
-                        tableInputEntryIntDisabledIfNoPositionData("min height difference", input.connectionFinderSettings.minHeightDiff, -100'000, 100'000, "Connections with this or higher Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
-                        tableInputEntryIntDisabledIfNoPositionData("max height difference", input.connectionFinderSettings.maxHeightDiff, -100'000, 100'000, "Connections with this or lower Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time\n\nNOTE: Requires CP positions file");
-                        tableInputEntryInt("tested time", input.connectionFinderSettings.testedConnectionTime, 0, 100'000, "Time that will be inserted into tested connections");
-                        tableInputEntryText("source CPs", input.connectionFinderSettings.searchSourceNodes, "List of source CP numbers that should be considered while searching.\nIf empty - all CPs are considered");
+                        tableInputEntryInt("min connection time", input.connectionFinderSettings.minConnectionTime, 0, 100'000, "Connections with this or higher time\nwill be tried to be replaced with tested time.");
+                        tableInputEntryInt("max connection time", input.connectionFinderSettings.maxConnectionTime, 0, 100'000, "Connections with this or lower time\nwill be tried to be replaced with tested time.");
+                        tableInputEntryIntDisabledIfNoPositionData("min distance", input.connectionFinderSettings.minDistance, 0, 100'000, "Connections with this or higher distance\nwill be tried to be replaced with tested time.\n\nNOTE: Requires CP positions file.");
+                        tableInputEntryIntDisabledIfNoPositionData("max distance", input.connectionFinderSettings.maxDistance, 0, 100'000, "Connections with this or lower distance\nwill be tried to be replaced with tested time.\n\nNOTE: Requires CP positions file.");
+                        tableInputEntryIntDisabledIfNoPositionData("min height difference", input.connectionFinderSettings.minHeightDiff, -100'000, 100'000, "Connections with this or higher Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time.\n\nNOTE: Requires CP positions file.");
+                        tableInputEntryIntDisabledIfNoPositionData("max height difference", input.connectionFinderSettings.maxHeightDiff, -100'000, 100'000, "Connections with this or lower Height(To_CP) - Height(From_CP)\nwill be tried to be replaced with tested time.\n\nNOTE: Requires CP positions file.");
+                        tableInputEntryInt("tested time", input.connectionFinderSettings.testedConnectionTime, 0, 100'000, "Time that will be inserted into tested connections.");
+                        tableInputEntryText("source CPs", input.connectionFinderSettings.searchSourceNodes, "List of source CP numbers that will be considered while searching.\nIf empty - all source CPs are considered.");
 
                         ImGui::TableNextColumn();
                         ImGui::SetNextItemWidth(-1);
@@ -469,7 +484,7 @@ int main(int argc, char** argv) {
                 };
                 bool disableAlgorithmButtons = isRunning(state.algorithmRunTask);
                 if (disableAlgorithmButtons)
-                    ImGui::BeginDisabled();
+                    BeginDisabled();
                 if (ImGui::Button("Run exact algorithm")) {
                     startAlgorithm(Algorithm::Assignment);
                 }
@@ -480,7 +495,7 @@ int main(int argc, char** argv) {
                     }
                 }
                 if (disableAlgorithmButtons)
-                    ImGui::EndDisabled();
+                    EndDisabled();
                 if (isRunning(state.algorithmRunTask)) {
                     ImGui::SameLine();
                     if (ImGui::Button("Cancel")) {
@@ -522,10 +537,10 @@ int main(int argc, char** argv) {
                         if (c.status == FilterConnection::Optional) ImGui::PushStyleColor(ImGuiCol_Button, colOptional);
                        
                         if (c.status == FilterConnection::Required || c.status == FilterConnection::AutoBanned)
-                            ImGui::BeginDisabled();
+                            BeginDisabled();
                         bool buttonWasPressed = ImGui::Button((std::to_string(c.connection.second) + "->" + std::to_string(c.connection.first)).c_str(), buttonSize);
                         if (c.status == FilterConnection::Required || c.status == FilterConnection::AutoBanned)
-                            ImGui::EndDisabled();
+                            EndDisabled();
                         ImGui::PopStyleColor();
                         return buttonWasPressed;
                     };
@@ -761,7 +776,7 @@ int main(int argc, char** argv) {
                                 }
                                 variationButtonLabel += ")";
                                 if (!state.copiedBestSolutionsAfterAlgorithmDone || state.bestFoundSolutions[j].allVariations.size() == 1) {
-                                    ImGui::BeginDisabled();
+                                    BeginDisabled();
                                 }
                                 ImGui::SetNextItemWidth(-1);
                                 if (ImGui::Button(variationButtonLabel.c_str(), ImVec2(-1, 0))) {
@@ -770,7 +785,7 @@ int main(int argc, char** argv) {
                                     state.solutionToShowVariation = state.bestFoundSolutions[j];
                                 }
                                 if (!state.copiedBestSolutionsAfterAlgorithmDone || state.bestFoundSolutions[j].allVariations.size() == 1) {
-                                    ImGui::EndDisabled();
+                                    EndDisabled();
                                 }
                                 ImGui::PopID();
                             }
@@ -784,7 +799,7 @@ int main(int argc, char** argv) {
                             auto oldDisabledAlpha = ImGui::GetStyle().DisabledAlpha;
                             ImGui::GetStyle().DisabledAlpha = 1.f;
                             if (unverifiedConnectionsCount == 0)
-                                ImGui::BeginDisabled();
+                                BeginDisabled();
                             ImGui::SetNextItemWidth(-1);
 
                             ImVec4 Green = ImVec4(28.f/255, 148.f/255, 64.f/255, 1.f);
@@ -803,7 +818,7 @@ int main(int argc, char** argv) {
 
                             ImGui::PopStyleColor();
                             if (unverifiedConnectionsCount == 0)
-                                ImGui::EndDisabled();
+                                EndDisabled();
                             ImGui::GetStyle().DisabledAlpha = oldDisabledAlpha;
                             ImGui::PopID();
 
@@ -819,15 +834,15 @@ int main(int argc, char** argv) {
             } else {
                 state.isOnPathFinderTab = false;
             }
-            if (ImGui::BeginTabItem("CP positions creator (experimental)")) {
+            if (ImGui::BeginTabItem("CP positions creator")) {
                 static std::string cpPositionsErrorMsg;
 
                 if (ImGui::BeginTable("menuTableCp", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-                    tableInputEntryFile("Full Replay Gbx", input.positionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0", "Can be either Replay or Ghost file in Gbx format.\nIt's assumed that it is a full replay from start to finish");
-                    tableInputEntryText("CP order (optional)", input.cpOrder, "Comma separated full list of CP numbers in order they were driven.\nIt's useful if you have no replay at hand that drives all CPs in the correct order.");
-                    tableInputEntryText("output positions file", input.outputPositionsFile, "Text file that will contain positions of start, CPs and finish.\nThis is used for automatic generation of spreadsheet values and visualizations.");
+                    tableInputEntryFile("Full Replay Gbx", input.positionReplayFile, "Gbx\0*.Gbx\0All\0*.*\0", "Can be either Replay or Ghost file in Gbx format.\nIt's assumed that it is a full replay from start to finish.");
+                    tableInputEntryText("CP order (optional)", input.cpOrder, "Full list of CP numbers in order they were driven.\nIt's useful if you have no replay at hand that drives all CPs in the correct order.");
+                    tableInputEntryText("output positions file", input.outputPositionsFile, "Text file that will contain positions of start, CPs and finish.\nThis is used for visualization in \"Path Finder\" tab.");
                     ImGui::EndTable();
                 }
                 if (ImGui::Button("Create positions file")) {
@@ -922,7 +937,7 @@ int main(int argc, char** argv) {
 
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Replay visualizer (experimental)")) {
+            if (ImGui::BeginTabItem("Replay visualizer")) {
                 static std::string replayVisulizerErrorMsg;
                 if (ImGui::BeginTable("menuTableReplayVisualizer", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
