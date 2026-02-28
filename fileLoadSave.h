@@ -119,7 +119,7 @@ bool loadVerifiedConnection(InputAlgorithmData& data, std::string line) {
     }
     if (tokens.empty() || (tokens.peak().typeId != Integer && tokens.peak().typeId != Float))
         return false;
-    int time = strToFloatAsInt(tokens[i].value);
+    int time = strToFloatAsInt(tokens.eat().value);
 
     auto updateWeights = [&data, isDelta, time](int dst, int src, int prev) {
         int newTime = 0;
