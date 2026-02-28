@@ -1097,7 +1097,7 @@ int main(int argc, char** argv) {
                     ImGui::TableHeadersRow();
 
                     state.hoveredConnection = { 0,0 };
-                    for (int i = 1; i < N; ++i) {
+                    for (int i = 0; i < N; ++i) {
                         auto diffTime = config.condWeights[solution1[i]][i][revSolution1[i]] - config.condWeights[solution2[i]][i][revSolution2[i]];
                         if (solution1[i] != solution2[i] || diffTime != 0) {
                             ImGui::TableNextColumn();
@@ -1109,9 +1109,15 @@ int main(int argc, char** argv) {
                             }
                             ImGui::PopID();
                             ImGui::SameLine();
-                            ImGui::Text("[%d],%d,%d", revSolution1[i], i, solution1[i]);
+                            if (i == 0)
+                                ImGui::Text("[X],%d,%d", i, solution1[i]);
+                            else
+                                ImGui::Text("[%d],%d,%d", revSolution1[i], i, solution1[i]);
                             ImGui::TableNextColumn();
-                            ImGui::Text("[%d],%d,%d", revSolution2[i], i, solution2[i]);
+                            if (i == 0)
+                                ImGui::Text("[X],%d,%d", i, solution2[i]);
+                            else
+                                ImGui::Text("[%d],%d,%d", revSolution2[i], i, solution2[i]);
                             ImGui::TableNextColumn();
                             auto diffTimeLength = std::to_string(std::abs(diffTime)).size() + (std::abs(diffTime) < 10);
                             auto diffTimeTextWidth = diffTimeLength * ImGui::CalcTextSize("0").x + (diffTime < 0 ? ImGui::CalcTextSize("-.").x : ImGui::CalcTextSize(".").x);
