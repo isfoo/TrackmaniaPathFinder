@@ -235,7 +235,7 @@ void sortBestFoundSolutionsSolutions(State& state, const InputData& input) {
 
 int main(int argc, char** argv) {
     CoInitialize(NULL);
-    MyImGui::Init(u"Trackmania Path Finder");
+    MyImGui::Init(u"Trackmania Path Finder v7.0.2");
 
     constexpr int MinFontSize = 8;
     constexpr int MaxFontSize = 30;
