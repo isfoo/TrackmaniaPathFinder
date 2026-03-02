@@ -262,18 +262,41 @@ struct ConditionalCost {
     int cost;
     uint8_t srcNode;
 
-    ConditionalCost(int cost, uint8_t srcNode = std::numeric_limits<uint8_t>::max()) : cost(cost), srcNode(srcNode) {}
+    static constexpr auto IsRemainingClauseConstant = std::numeric_limits<uint8_t>::max();
+    static constexpr auto IsRespawnClauseConstant = std::numeric_limits<uint8_t>::max() - 1;
 
-    bool isRemainingClause() {
-        return srcNode == std::numeric_limits<uint8_t>::max();
-    }
+    ConditionalCost(int cost, uint8_t srcNode = IsRemainingClauseConstant) : cost(cost), srcNode(srcNode) {}
+
+    bool isRemainingClause() { return srcNode == IsRemainingClauseConstant; }
+    bool isRespawnClause()   { return srcNode == IsRespawnClauseConstant; }
 };
 
+template<typename T> struct ConditionalMatrix {
+    std::vector<std::vector<std::vector<T>>> data;
+
+    std::vector<std::vector<T>>& operator[](int i)             { return data[i]; }
+    const std::vector<std::vector<T>>& operator[](int i) const { return data[i]; }
+    T& withRespawn(int dst, int src)             { return data[dst][src].back(); }
+    const T& withRespawn(int dst, int src) const { return data[dst][src].back(); }
+};
+struct RepeatNodeMatrix {
+    Vector3d<FastSmallVector<uint8_t>> data;
+
+    RepeatNodeMatrix() {}
+    RepeatNodeMatrix(int nodeCount) : data(nodeCount + 1) {} // +1 for respawn
+    int sizeInlcudingRespawn() const      { return data.size(); }
+    auto operator[](int i)                { return data[i]; }
+    auto operator[](int i) const          { return data[i]; }
+    auto& withRespawn(int dst, int src)   { return data[dst][src].back(); }
+    auto& unconditional(int dst, int src) { return data[dst][src].back(); }
+    bool empty() const                    { return data.empty(); }
+    void clear()                          { data.clear(); }
+};
 
 struct SolutionConfig {
     std::vector<std::vector<int>> weights;
-    std::vector<std::vector<std::vector<int>>> condWeights;
-    std::vector<std::vector<std::vector<bool>>> isVerifiedConnection;
+    ConditionalMatrix<int> condWeights;
+    ConditionalMatrix<bool> isVerifiedConnection;
     int maxSolutionCount;
     int limit;
     int ignoredValue;
@@ -281,7 +304,7 @@ struct SolutionConfig {
     ThreadSafeVec<BestSolution> solutionsVec;
     std::vector<BestSolution> bestSolutions;
     std::string outputFileName;
-    Vector3d<FastSmallVector<uint8_t>> repeatNodeMatrix;
+    RepeatNodeMatrix repeatNodeMatrix;
     Vector3d<Bool> useRespawnMatrix;
     std::atomic<int64_t> partialSolutionCount;
     std::atomic<bool>& stopWorking;
@@ -303,9 +326,12 @@ struct SolutionConfig {
         partialSolutionCount = other.partialSolutionCount.load();
         addedConnection = other.addedConnection;
     }
+    int nodeCount() {
+        return weights.size();
+    }
 };
 
-std::string createSolutionString(const std::vector<int16_t>& solution, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
+std::string createSolutionString(const std::vector<int16_t>& solution, const RepeatNodeMatrix& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
     auto B = solution;
     B.insert(B.begin(), 0); // Explicit start node
     B.insert(B.begin(), int16_t(useRespawnMatrix.size() - 1)); // Added for convenience for useRespawnMatrix and repeatNodeMatrix

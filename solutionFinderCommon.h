@@ -28,10 +28,10 @@ constexpr NodeType NullNode = NodeType(-1);
 constexpr Edge NullEdge = { NullNode, NullNode };
 constexpr EdgeCostType Inf = 100'000'000;
 
-std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& solution, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix) {
+std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& solution, const RepeatNodeMatrix& repeatNodeMatrix) {
     auto B = solution;
     B.insert(B.begin(), 0);
-    B.insert(B.begin(), int16_t(repeatNodeMatrix.size() - 1));
+    B.insert(B.begin(), int16_t(repeatNodeMatrix.sizeInlcudingRespawn() - 2));
     std::vector<int16_t> solutionWithRepeats;
     for (int i = 2; i < B.size(); ++i) {
         if (!repeatNodeMatrix.empty() && !repeatNodeMatrix[B[i]][B[i - 1]][B[i - 2]].empty()) {
@@ -44,7 +44,7 @@ std::vector<int16_t> solutionWithExplicitRepeats(const std::vector<int16_t>& sol
     }
     return solutionWithRepeats;
 }
-std::vector<int16_t> solutionWithRepeatsAtEnd(const std::vector<int16_t>& solution, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix) {
+std::vector<int16_t> solutionWithRepeatsAtEnd(const std::vector<int16_t>& solution, const RepeatNodeMatrix& repeatNodeMatrix) {
     std::vector<int16_t> result;
     auto allCps = solutionWithExplicitRepeats(solution, repeatNodeMatrix);
     for (auto cp : allCps) {
@@ -69,7 +69,11 @@ std::vector<std::array<int16_t, 3>> solutionUnverifiedConnectionsList(const Solu
     B.insert(B.begin(), 0);
     B.insert(B.begin(), int16_t(config.weights.size() - 1));
     for (int i = 2; i < B.size(); ++i) {
-        if (!config.isVerifiedConnection[B[i]][B[i - 1]][B[i - 2]]) {
+        if (config.useRespawnMatrix[B[i]][B[i - 1]][B[i - 2]]) {
+            if (!config.isVerifiedConnection.withRespawn(B[i], B[i - 2])) {
+                result.push_back({ int16_t(config.weights.size()), B[i - 2], B[i] });
+            }
+        } else if (!config.isVerifiedConnection[B[i]][B[i - 1]][B[i - 2]]) {
             result.push_back({ B[i - 2], B[i - 1], B[i] });
         }
     }
@@ -91,7 +95,7 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, std::pair<std::vector<in
         return;
 
     auto solutionWithRepeats = solutionWithExplicitRepeats(solution.first, config.repeatNodeMatrix);
-    auto solutionConnections = solutionConnectionsSet(solutionWithRepeats, config.repeatNodeMatrix.size());
+    auto solutionConnections = solutionConnectionsSet(solutionWithRepeats, config.nodeCount());
     for (int i = 0; i < config.bestSolutions.size(); ++i) {
         if (config.bestSolutions[i].time == solution.second) {
             if (solutionConnections == config.bestSolutions[i].solutionConnections) {
@@ -182,14 +186,14 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<int
     return additionalPaths;
 }
 
-int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, Vector3d<FastSmallVector<uint8_t>>& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxEdgesToAdd) {
+int addRepeatNodeEdges(std::vector<std::vector<int>>& A, ConditionalMatrix<int>& B, RepeatNodeMatrix& repeatEdgeMatrix, const std::vector<RepeatEdgePath>& additionalPaths, int maxEdgesToAdd) {
     int addedEdgesCount = 0;
     for (int m = 0; m < additionalPaths.size() && addedEdgesCount < maxEdgesToAdd; ++m) {
         auto k = additionalPaths[m].k;
         auto j = additionalPaths[m].j;
         auto i = additionalPaths[m].i;
-        addedEdgesCount += repeatEdgeMatrix[k][i].back().empty();
-        for (int z = 0; z < B.size(); ++z) {
+        addedEdgesCount += repeatEdgeMatrix.unconditional(k, i).empty();
+        for (int z = 0; z < repeatEdgeMatrix.sizeInlcudingRespawn(); ++z) {
             auto newTime = B[k][j][i] + B[j][i][z];
             if (newTime < B[k][i][z]) {
                 auto combined = FastSmallVector<uint8_t>::Combine(repeatEdgeMatrix[j][i][z], j, repeatEdgeMatrix[k][j][i]);
@@ -206,8 +210,8 @@ int addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector
     return addedEdgesCount;
 }
 
-Vector3d<FastSmallVector<uint8_t>> addRepeatNodeEdges(std::vector<std::vector<int>>& A, std::vector<std::vector<std::vector<int>>>& B, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
-    auto repeatEdgeMatrix = Vector3d<FastSmallVector<uint8_t>>(int(B.size()));
+RepeatNodeMatrix addRepeatNodeEdges(std::vector<std::vector<int>>& A, ConditionalMatrix<int>& B, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
+    auto repeatEdgeMatrix = RepeatNodeMatrix(int(B.data.size()));
     if (maxEdgesToAdd <= 0)
         return repeatEdgeMatrix;
     for (int i = 0; i < 2; ++i) {
@@ -219,22 +223,22 @@ Vector3d<FastSmallVector<uint8_t>> addRepeatNodeEdges(std::vector<std::vector<in
 }
 void addRingCps(SolutionConfig& config, const std::vector<int>& ringCps) {
     for (auto ringCp : ringCps) {
-        if (ringCp >= config.condWeights.size())
+        if (ringCp >= config.nodeCount())
             continue;
-        for (int i = 0; i < config.condWeights.size(); ++i) {
+        for (int i = 0; i < config.nodeCount(); ++i) {
             if (std::find(ringCps.begin(), ringCps.end(), i) != ringCps.end())
                 continue;
-            for (int j = 0; j < config.condWeights.size(); ++j) {
+            for (int j = 0; j < config.nodeCount(); ++j) {
                 if (j == ringCp)
                     continue;
-                if (config.weights[ringCp][i] < config.ignoredValue && config.condWeights[j][i].back() < config.condWeights[j][ringCp][i]) {
+                if (config.weights[ringCp][i] < config.ignoredValue && config.condWeights.withRespawn(j, i) < config.condWeights[j][ringCp][i]) {
                     // faster to respawn from ringCp to i then go from i to j, then to directly go from ring to j
-                    config.condWeights[j][ringCp][i] = config.condWeights[j][i].back();
+                    config.condWeights[j][ringCp][i] = config.condWeights.withRespawn(j, i);
                     config.useRespawnMatrix[j][ringCp][i] = true;
                     if (!config.repeatNodeMatrix.empty()) {
-                        config.repeatNodeMatrix[j][ringCp][i] = config.repeatNodeMatrix[j][i].back();
+                        config.repeatNodeMatrix[j][ringCp][i] = config.repeatNodeMatrix.withRespawn(j, i);
                     }
-                    config.weights[j][ringCp] = std::min(config.weights[j][ringCp], config.condWeights[j][i].back());
+                    config.weights[j][ringCp] = std::min(config.weights[j][ringCp], config.condWeights.withRespawn(j, i));
                 }
             }
         }
@@ -247,12 +251,12 @@ std::vector<std::vector<int>> createAtspMatrixFromInput(const std::vector<std::v
     return copy;
 }
 
-bool isUsingExtendedMatrix(std::vector<std::vector<std::vector<int>>> B) {
+bool isUsingExtendedMatrix(ConditionalMatrix<int>& B) {
     bool useExtendedMatrix = false;
-    for (int i = 0; i < B.size(); ++i) {
-        for (int j = 0; j < B.size(); ++j) {
+    for (int i = 0; i < B.data.size(); ++i) {
+        for (int j = 0; j < B[i].size(); ++j) {
             auto val = B[i][j][0];
-            for (int k = 0; k < B.size(); ++k) {
+            for (int k = 0; k < B[i][j].size(); ++k) {
                 if (B[i][j][k] != val) {
                     return true;
                 }
@@ -303,7 +307,7 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
     config.weights = std::move(algorithmData.weights);
     config.condWeights = std::move(algorithmData.condWeights);
     config.isVerifiedConnection = std::move(algorithmData.isVerifiedConnection);
-    config.useRespawnMatrix = Vector3d<Bool>(int(config.condWeights.size()));
+    config.useRespawnMatrix = Vector3d<Bool>(int(config.nodeCount()));
 
     state.cpPositionsVis.clear();
     if (input.positionReplayFilePath[0] != '\0') {

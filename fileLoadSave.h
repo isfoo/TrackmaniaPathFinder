@@ -10,8 +10,8 @@ namespace fs = std::filesystem;
 
 std::vector<std::vector<ConditionalCost>> splitLineToConditionalCosts(std::string_view str, std::string& errorMsg) {
     std::vector<std::vector<ConditionalCost>> result;
-    enum { Integer, Float, Comma, OpenBracket, CloseBracket, Other };
-    auto tokens = tokenize(str, { {Integer, "0123456789"}, {Float, "0123456789."}, {Comma, ",", true}, { OpenBracket, "(", true }, {CloseBracket, ")", true},}, true, Other);
+    enum { Float, Integer, Respawn, Comma, OpenBracket, CloseBracket, Other };
+    auto tokens = tokenize(str, { {Float, "0123456789."}, {Integer, "0123456789"}, {Respawn, "r", true}, {Comma, ",", true}, { OpenBracket, "(", true }, {CloseBracket, ")", true},}, true, Other);
 
     while (true) {
         while (!tokens.empty() && (tokens.peak().typeId == Comma || tokens.peak().typeId == Other))
@@ -34,11 +34,16 @@ std::vector<std::vector<ConditionalCost>> splitLineToConditionalCosts(std::strin
                         errorMsg = "Unexpected end of line after opening bracket at " + std::to_string(result.size() + 1) + " column ";
                         return {};
                     }
-                    if (tokens.peak().typeId != Integer && tokens.peak().typeId != Float) {
+                    if (tokens.peak().typeId != Integer && tokens.peak().typeId != Respawn) {
                         errorMsg = "Unexpected value instead of CP number inside opening bracket at " + std::to_string(result.size() + 1) + " column ";
                         return {};
                     }
-                    condCost.srcNode = strToInt(tokens.eat().value);
+                    if (tokens.peak().typeId == Respawn) {
+                        tokens.eat();
+                        condCost.srcNode = ConditionalCost::IsRespawnClauseConstant;
+                    } else {
+                        condCost.srcNode = strToInt(tokens.eat().value);
+                    }
                     condCostList.push_back(condCost);
                     if (tokens.empty()) {
                         errorMsg = "Unexpected end of line after opening bracket at " + std::to_string(result.size() + 1) + " column ";
@@ -67,17 +72,20 @@ std::vector<std::vector<int>> splitLineToConditionalCostsMatrix(std::string_view
         return {};
     for (int i = 0; i < condCosts.size(); ++i) {
         for (int j = 0; j < condCosts[i].size(); ++j) {
-            if (!condCosts[i][j].isRemainingClause() && condCosts[i][j].srcNode >= condCosts.size()) {
+            if (!condCosts[i][j].isRemainingClause() && !condCosts[i][j].isRespawnClause() && condCosts[i][j].srcNode >= condCosts.size()) {
                 errorMsg = "Conditional cost CP number is too big at " + std::to_string(i + 1) + " column ";
                 return {};
             }
         }
     }
-    std::vector<std::vector<int>> costs(condCosts.size() + 1, std::vector<int>(condCosts.size() + 1, ignoredValue));
+    std::vector<std::vector<int>> costs(condCosts.size() + 1, std::vector<int>(condCosts.size() + 2, ignoredValue));
     for (int i = 0; i < condCosts.size(); ++i) {
+        costs[i].back() = std::numeric_limits<int>::max(); // mark respawn time as unassigned
         for (int j = int(condCosts[i].size() - 1); j >= 0; --j) {
             if (condCosts[i][j].isRemainingClause()) {
-                std::fill(costs[i].begin(), costs[i].end(), condCosts[i][j].cost);
+                std::fill(costs[i].begin(), costs[i].end() - 1, condCosts[i][j].cost);
+            } else if (condCosts[i][j].isRespawnClause()) {
+                costs[i].back() = condCosts[i][j].cost;
             } else {
                 costs[i][condCosts[i][j].srcNode] = condCosts[i][j].cost;
             }
@@ -88,19 +96,22 @@ std::vector<std::vector<int>> splitLineToConditionalCostsMatrix(std::string_view
 
 struct InputAlgorithmData {
     std::vector<std::vector<int>> weights;
-    std::vector<std::vector<std::vector<int>>> condWeights;
-    std::vector<std::vector<std::vector<bool>>> isVerifiedConnection;
+    ConditionalMatrix<int> condWeights;
+    ConditionalMatrix<bool> isVerifiedConnection;
 };
 
 bool loadVerifiedConnection(InputAlgorithmData& data, std::string line) {
     std::array<int, 3> nodes; // prev, src, dst
-    enum { AnyPrevNode, Float, Integer, Set };
-    auto tokens = tokenize(line, { {AnyPrevNode, "x", true}, {Float, "-0123456789."}, {Integer, "0123456789"}, {Set, "set", true}});
+    enum { AnyPrevNode, Respawn, Float, Integer, Set };
+    auto tokens = tokenize(line, { {AnyPrevNode, "x", true}, {Respawn, "r", true}, {Float, "-0123456789."}, {Integer, "0123456789"}, {Set, "set", true}});
     if (tokens.empty())
         return false;
     int i = 0;
     if (tokens.peak().typeId == AnyPrevNode) {
         nodes[i++] = -1;
+        tokens.eat();
+    } else if (tokens.peak().typeId == Respawn) {
+        nodes[i++] = data.condWeights[0][0].size() - 1;
         tokens.eat();
     }
     for (; i < nodes.size(); ++i) {
@@ -124,6 +135,10 @@ bool loadVerifiedConnection(InputAlgorithmData& data, std::string line) {
     auto updateWeights = [&data, isDelta, time](int dst, int src, int prev) {
         int newTime = 0;
         if (isDelta) {
+            if (prev == data.condWeights[dst][src].size() - 1 && data.condWeights[dst][src].back() == std::numeric_limits<int>::max()) {
+                // if it's respawn and it wasn't set yet we have to calculate it first before applying delta
+                data.condWeights[dst][src].back() = *std::max_element(data.condWeights[dst][src].begin(), data.condWeights[dst][src].end() - 1);
+            }
             newTime = data.condWeights[dst][src][prev] += time;
         } else {
             newTime = data.condWeights[dst][src][prev] = time;
@@ -150,7 +165,7 @@ InputAlgorithmData loadCsvData(const std::string& inputFileName, int ignoredValu
     }
     InputAlgorithmData data;
     data.weights.emplace_back(); // first row to be filled later
-    data.condWeights.emplace_back();
+    data.condWeights.data.emplace_back();
     std::string line;
     while (std::getline(inFile, line)) {
         auto firstNonSpacePos = line.find_first_not_of(' \t');
@@ -158,10 +173,10 @@ InputAlgorithmData loadCsvData(const std::string& inputFileName, int ignoredValu
             break;
         auto condCostMatrix = splitLineToConditionalCostsMatrix(line, ignoredValue, errorMsg);
         if (!errorMsg.empty()) {
-            errorMsg += std::to_string(data.condWeights.size()) + " row";
+            errorMsg += std::to_string(data.condWeights.data.size()) + " row";
             return {};
         }
-        data.condWeights.push_back(condCostMatrix);
+        data.condWeights.data.push_back(condCostMatrix);
         std::vector<int> minimums(condCostMatrix.size());
         for (int i = 0; i < condCostMatrix.size(); ++i) {
             minimums[i] = *std::min_element(condCostMatrix[i].begin(), condCostMatrix[i].end());
@@ -172,7 +187,7 @@ InputAlgorithmData loadCsvData(const std::string& inputFileName, int ignoredValu
         errorMsg = "Couldn't load data from file";
         return {};
     }
-    data.condWeights[0].resize(data.condWeights[1].size(), std::vector<int>(data.condWeights[1].size(), ignoredValue));
+    data.condWeights[0].resize(data.condWeights[1].size(), std::vector<int>(data.condWeights[1][0].size(), ignoredValue));
     data.weights[0].resize(data.weights[1].size(), ignoredValue);
     if (data.weights[0].size() != data.weights.size()) {
         errorMsg = "Found " + std::to_string(data.weights.size() - 1) + " rows but there are " + std::to_string(data.weights[0].size() - 1) + " columns in the first row";
@@ -185,10 +200,10 @@ InputAlgorithmData loadCsvData(const std::string& inputFileName, int ignoredValu
         }
     }
 
-    data.isVerifiedConnection.resize(data.condWeights.size(), std::vector<std::vector<bool>>(data.condWeights[0].size(), std::vector<bool>(data.condWeights[0][0].size(), false)));
+    data.isVerifiedConnection.data.resize(data.condWeights.data.size(), std::vector<std::vector<bool>>(data.condWeights[0].size(), std::vector<bool>(data.condWeights[0][0].size(), false)));
     int verifiedLineNr = 1;
     while (std::getline(inFile, line)) {
-        auto firstRealChar = line.find_first_of("#Xx-0123456789.");
+        auto firstRealChar = line.find_first_of("#XxRr-0123456789.");
         if (firstRealChar == std::string::npos || line[firstRealChar] == '#')
             continue;
         line = line.substr(firstRealChar);
@@ -198,22 +213,32 @@ InputAlgorithmData loadCsvData(const std::string& inputFileName, int ignoredValu
         }
         verifiedLineNr += 1;
     }
+
+    // if respawn time wasn't explicitly assigned, assign to it the highest time
+    for (int i = 0; i < data.condWeights.data.size(); ++i) {
+        for (int j = 0; j < data.condWeights[i].size(); ++j) {
+            if (data.condWeights[i][j].back() == std::numeric_limits<int>::max()) {
+                data.condWeights[i][j].back() = *std::max_element(data.condWeights[i][j].begin(), data.condWeights[i][j].end() - 1);
+            }
+        }
+    }
+
     return data;
 }
 
-void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t>& solution, int time, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
+void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t>& solution, int time, const RepeatNodeMatrix& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
     solutionsFile << std::fixed << std::setprecision(1);
     solutionsFile << std::setw(8) << time / 10.0 << " ";
     solutionsFile << createSolutionString(solution, repeatNodeMatrix, useRespawnMatrix) << '\n';
 }
-void writeSolutionToFile(const std::string& outputFileName, const std::vector<int16_t>& solution, int time, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
+void writeSolutionToFile(const std::string& outputFileName, const std::vector<int16_t>& solution, int time, const RepeatNodeMatrix& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
     if (outputFileName.empty())
         return;
     std::ofstream solutionsFile(outputFileName, std::ios::app);
     writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix, useRespawnMatrix);
 }
 
-void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<BestSolution>& solutionsView, const Vector3d<FastSmallVector<uint8_t>>& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
+void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<BestSolution>& solutionsView, const RepeatNodeMatrix& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
     if (outputFileName.empty())
         return;
     std::vector<BestSolution> sortedSolutions;

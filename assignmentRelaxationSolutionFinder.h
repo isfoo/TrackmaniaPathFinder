@@ -193,7 +193,7 @@ struct AssignmentSolution {
 
     // loose variables - normal assignment copy
     const std::vector<std::vector<EdgeCostType>>* costMatrix;
-    const std::vector<std::vector<std::vector<EdgeCostType>>>* costMatrixEx;
+    const ConditionalMatrix<EdgeCostType>* costMatrixEx;
     int problemSize = 0;
     EdgeCostType ignoredValue;
     EdgeCostType cost = 0;
@@ -345,7 +345,7 @@ struct AssignmentSolution {
     AssignmentSolution& operator=(const AssignmentSolution&) = delete;
 
     AssignmentSolution(ArrayOfPoolAllocators& allocators, const std::vector<std::vector<EdgeCostType>>* costMatrix, 
-        const std::vector<std::vector<std::vector<EdgeCostType>>>* costMatrixEx, EdgeCostType ignoredValue, bool useExtendedMatrix) :
+        const ConditionalMatrix<EdgeCostType>* costMatrixEx, EdgeCostType ignoredValue, bool useExtendedMatrix) :
         memoryPool(allocators), costMatrix(costMatrix), costMatrixEx(costMatrixEx), ignoredValue(ignoredValue), useExtendedMatrix(useExtendedMatrix)
     {
         problemSize = int(costMatrix->size());

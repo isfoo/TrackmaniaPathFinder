@@ -198,8 +198,8 @@ bool linKernighan(SolutionConfig& config, const std::vector<std::vector<NodeType
     }
     return false;
 }
-std::vector<NodeType> generateRandomSolution(int tryId, XorShift64& rng, EdgeCostType ignoredValue, const std::vector<std::vector<std::vector<int>>>& costEx) {
-    auto N = costEx.size();
+std::vector<NodeType> generateRandomSolution(int tryId, XorShift64& rng, EdgeCostType ignoredValue, const ConditionalMatrix<int>& costEx) {
+    auto N = costEx.data.size();
     std::vector<int> solutionVec(N);
     std::iota(solutionVec.begin(), solutionVec.end(), 0);
     if (tryId != 0) {

@@ -1111,11 +1111,15 @@ int main(int argc, char** argv) {
                             ImGui::SameLine();
                             if (i == 0)
                                 ImGui::Text("[X],%d,%d", i, solution1[i]);
+                            else if (config.useRespawnMatrix[solution1[i]][i][revSolution1[i]])
+                                ImGui::Text("[R],%d,%d", revSolution1[i], solution1[i]);
                             else
                                 ImGui::Text("[%d],%d,%d", revSolution1[i], i, solution1[i]);
                             ImGui::TableNextColumn();
                             if (i == 0)
                                 ImGui::Text("[X],%d,%d", i, solution2[i]);
+                            else if (config.useRespawnMatrix[solution2[i]][i][revSolution2[i]])
+                                ImGui::Text("[R],%d,%d", revSolution2[i], solution2[i]);
                             else
                                 ImGui::Text("[%d],%d,%d", revSolution2[i], i, solution2[i]);
                             ImGui::TableNextColumn();
@@ -1211,7 +1215,12 @@ int main(int argc, char** argv) {
             ImGui::Begin("Unverified connections", &state.isUnverifiedConnectionsWindowOpen, ImGuiWindowFlags_NoCollapse);
             std::string strUnverifiedConnectionsList = "";
             for (auto [a, b, c] : state.solutionToShowUnverifiedConnections.unverifiedConnections) {
-                std::string prevNode = a >= (config.weights.size() - 1) ? "X" : std::to_string(a);
+                std::string prevNode = std::to_string(a);
+                if (a == config.weights.size() - 1 || (a == config.weights.size() && b == 0)) {
+                    prevNode = "X";
+                } else if (a == config.weights.size()) {
+                    prevNode = "R";
+                }
                 strUnverifiedConnectionsList += prevNode + "\t" + std::to_string(b) + "\t" + std::to_string(c) + "\n";
             }
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(14.f / 255, 14.f / 255, 14.f / 255, 1));
