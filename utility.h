@@ -340,6 +340,28 @@ TokenList tokenize(std::string_view line, const std::vector<TokenSchema> tokenTy
     return result;
 }
 
+template<typename T> struct Array {
+    T* data;
+    Array() : data(nullptr) {}
+    Array(T* data) : data(data) {}
+    T& operator[](int i) { return data[i]; }
+};
+
+template<typename T> struct ArrayWithSize {
+    T* data;
+    int size_ = 0;
+    ArrayWithSize() {}
+    ArrayWithSize(T* data, int size=0) : data(data), size_(size) {}
+    void push_back(const T& val) { data[size_++] = val; }
+    void pop_back()              { size_ -= 1; }
+    void erase(int i)            { data[i] = data[--size_]; }
+    T& operator[](int i) { return data[i]; }
+    void clear()     { size_ = 0; }
+    int size() const { return size_; }
+    T* begin()       { return data; }
+    T* end()         { return data + size_; }
+};
+
 template<typename T> struct VectorView {
     T* data; int size;
     VectorView(T* data, int size) : data(data), size(size) {}
@@ -354,6 +376,7 @@ template<typename T> struct ConstVectorView {
 };
 template<typename T> struct VectorView2d {
     T* data; int size;
+    VectorView2d() {}
     VectorView2d(T* data, int size) : data(data), size(size) {}
     VectorView<T> operator[](int i) { return VectorView<T>(&data[i * size], size); }
 };
@@ -618,4 +641,36 @@ template<typename T, int Size=256> struct FixedStackVector {
     int size() { return size_; }
     T* begin() { return (T*)&data[0]; }
     T* end()   { return (T*)&data[sizeof(T) * size_]; }
+};
+
+template<typename T> struct PriorityQueue {
+    std::vector<T> heap;
+    bool(*comparator)(const T&, const T&);
+    std::mutex m;
+
+    PriorityQueue(bool(*comparator)(const T&, const T&)) : comparator(comparator) {}
+    void push(T&& value) {
+        std::scoped_lock l{ m };
+        heap.emplace_back(std::move(value));
+        std::push_heap(heap.begin(), heap.end(), comparator);
+    }
+    std::optional<T> pop() {
+        std::scoped_lock l{ m };
+        if (size() <= 0)
+            return std::nullopt;
+        std::pop_heap(heap.begin(), heap.end(), comparator);
+        auto value = std::move(heap.back());
+        heap.pop_back();
+        return value;
+    }
+    bool empty() {
+        return heap.empty();
+    }
+    int size() {
+        return int(heap.size());
+    }
+    template<typename Pred> void removeAll(Pred predicate) {
+        heap.erase(std::remove_if(heap.begin(), heap.end(), predicate), heap.end());
+        std::make_heap(heap.begin(), heap.end(), comparator);
+    }
 };
