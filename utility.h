@@ -395,23 +395,14 @@ template<typename T> struct Vector3d {
     void clear()       { data.clear(); size_ = 0; }
 };
 
-template<typename T> struct FastSmallVector {
-    constexpr static int MaxSize = 5;
+template<typename T, int MaxSize> struct FastSmallVector {
     std::array<T, MaxSize> data;
     int size_ = 0;
     FastSmallVector() {}
-    static std::optional<FastSmallVector> Combine(const FastSmallVector& a, const T& val, const FastSmallVector& b) {
-        if (a.size() + b.size() + 1 >= MaxSize)
-            return std::nullopt;
-        FastSmallVector result;
-        std::copy(&a.data[0], &a.data[a.size_], &result.data[0]);
-        result.data[a.size()] = val;
-        std::copy(&b.data[0], &b.data[b.size_], &result.data[a.size() + 1]);
-        result.size_ = a.size() + b.size() + 1;
-        return result;
-    }
     int size() const { return size_; }
     bool empty() const { return size() == 0; }
+    void push_back(T value) { data[size_++] = std::move(value); }
+    T& operator[](int i) { return data[i]; }
     const T& operator[](int i) const { return data[i]; }
 };
 

@@ -94,12 +94,6 @@ std::vector<std::vector<int>> splitLineToConditionalCostsMatrix(std::string_view
     return costs;
 }
 
-struct InputAlgorithmData {
-    std::vector<std::vector<int>> weights;
-    ConditionalMatrix<int> condWeights;
-    ConditionalMatrix<bool> isVerifiedConnection;
-};
-
 bool loadVerifiedConnection(InputAlgorithmData& data, std::string line) {
     std::array<int, 3> nodes; // prev, src, dst
     enum { AnyPrevNode, Respawn, Float, Integer, Set };
@@ -226,29 +220,18 @@ InputAlgorithmData loadCsvData(const std::string& inputFileName, int ignoredValu
     return data;
 }
 
-void writeSolutionToFile(std::ofstream& solutionsFile, const std::vector<int16_t>& solution, int time, const RepeatNodeMatrix& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
+void writeSolutionToFile(std::ofstream& solutionsFile, const std::string& solutionString, int time) {
     solutionsFile << std::fixed << std::setprecision(1);
     solutionsFile << std::setw(8) << time / 10.0 << " ";
-    solutionsFile << createSolutionString(solution, repeatNodeMatrix, useRespawnMatrix) << '\n';
-}
-void writeSolutionToFile(const std::string& outputFileName, const std::vector<int16_t>& solution, int time, const RepeatNodeMatrix& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
-    if (outputFileName.empty())
-        return;
-    std::ofstream solutionsFile(outputFileName, std::ios::app);
-    writeSolutionToFile(solutionsFile, solution, time, repeatNodeMatrix, useRespawnMatrix);
+    solutionsFile << solutionString << '\n';
 }
 
-void overwriteFileWithSortedSolutions(const std::string& outputFileName, int maxSolutionCount, const ThreadSafeVec<BestSolution>& solutionsView, const RepeatNodeMatrix& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
+void overwriteFileWithSortedSolutions(const std::string& outputFileName, const std::vector<std::pair<std::string, int>>& solutions) {
     if (outputFileName.empty())
         return;
-    std::vector<BestSolution> sortedSolutions;
-    for (int i = 0; i < solutionsView.size(); ++i) {
-        sortedSolutions.push_back(solutionsView[i]);
-    }
-    std::sort(sortedSolutions.begin(), sortedSolutions.end(), [](auto& a, auto& b) { return a.time < b.time; });
     std::ofstream solutionsFile(outputFileName, std::ios::trunc);
-    for (int i = 0; i < maxSolutionCount && i < sortedSolutions.size(); ++i) {
-        writeSolutionToFile(solutionsFile, sortedSolutions[i].solution, sortedSolutions[i].time, repeatNodeMatrix, useRespawnMatrix);
+    for (auto& [solution, time] : solutions) {
+        writeSolutionToFile(solutionsFile, solution, time);
     }
 }
 

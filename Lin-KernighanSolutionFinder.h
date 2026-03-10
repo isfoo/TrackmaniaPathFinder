@@ -1,5 +1,7 @@
 #pragma once
 #include "solutionFinderCommon.h"
+#include "utility.h"
+#include "common.h"
 
 bool doubleBridge(SolutionConfig& config, std::vector<NodeType>& solution, std::vector<NodeType>& revSolution, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions) {
     auto& cost = config.weights;

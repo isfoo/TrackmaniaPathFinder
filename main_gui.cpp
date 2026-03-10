@@ -7,9 +7,10 @@
 #include <iomanip>
 #include <filesystem>
 #include "gbxParser.h"
-#include "solutionFinderCommon.h"
 #include "assignmentRelaxationSolutionFinder.h"
+#include "arborescenceRelaxationSolutionFinder.h"
 #include "Lin-KernighanSolutionFinder.h"
+#include "solutionFinderCommon.h"
 #include "utility.h"
 #include "common.h"
 #include "fileLoadSave.h"
@@ -29,26 +30,16 @@ void HelpMarker(const char* desc) {
 constexpr float Pi = 3.14159265f;
 
 void drawSolutionGraph(
-    std::vector<int16_t> solution, std::vector<int16_t> compare, ImVec2 pos, ImVec2 size, 
+    std::vector<CompressedEdge> solution, std::vector<CompressedEdge> compare, ImVec2 pos, ImVec2 size,
     std::vector<float> x, std::vector<float> y, std::vector<float> textX, std::vector<float> textY,
     std::pair<NodeType, NodeType> hoveredConnection = { 0, 0 }
 ) {
-    int N = int(solution.size());
+    int N = int(solution.size() + 1);
     float minTextSize = 10.f;
     float maxTextSize = 20.f;
     auto minXY = std::min(size.x, size.y);
     float textSize = std::min(maxTextSize, std::max(minTextSize, 2.f * minXY / N));
     float r = (minXY / 2) - textSize * 2;
-
-    std::vector<int> indexes(N);
-    std::vector<int> revIndexes(N);
-    std::iota(indexes.begin(), indexes.end(), 0);
-    if (compare.size() == solution.size()) {
-        for (int i = 0; i < N; ++i)
-            indexes[i] = compare[i];
-    }
-    for (int i = 0; i < N; ++i)
-        revIndexes[indexes[i]] = i;
     
     auto& drawList = *ImGui::GetWindowDrawList();
     
@@ -71,12 +62,12 @@ void drawSolutionGraph(
         float r, g, b;
         float h = i * (1.0f / N);
         ImGui::ColorConvertHSVtoRGB(h, 1.f, 1.f, r, g, b);
-        bool isHoveredConnection = solution[i] == hoveredConnection.first && solution[i + 1] == hoveredConnection.second;
-        drawArrow(revIndexes[solution[i]], revIndexes[solution[i + 1]], ImColor(r, g, b), isHoveredConnection ? 3.0f : 1.0f);
+        bool isHoveredConnection = solution[i].src == hoveredConnection.first && solution[i].dst == hoveredConnection.second;
+        drawArrow(solution[i].src, solution[i].dst, ImColor(r, g, b), isHoveredConnection ? 3.0f : 1.0f);
     }
     if (textX.size() == N && textY.size() == N) {
         for (int i = 0; i < N; ++i) {
-            auto text = (i == 0) ? std::string("S") : (i == N - 1) ? std::string("F") : std::to_string(indexes[i]);
+            auto text = (i == 0) ? std::string("S") : (i == N - 1) ? std::string("F") : std::to_string(i);
             drawList.AddText(ImGui::GetDefaultFont(), textSize, ImVec2(textX[i], textY[i]), ImColor(255, 255, 255), text.c_str());
         }
     }
@@ -90,10 +81,8 @@ void drawPath(const std::vector<Position>& positions) {
         drawList.AddLine(ImVec2(positions[i].x, positions[i].z), ImVec2(positions[i + 1].x, positions[i + 1].z), ImColor(r, g, b), 1.0f);
     }
 }
-void drawSolutionGraph(std::vector<int16_t> solution, std::vector<int16_t> compare, ImVec2 pos, ImVec2 size, std::pair<NodeType, NodeType> hoveredConnection = { 0, 0 }) {
-    compare.insert(compare.begin(), 0);
-    solution.insert(solution.begin(), 0);
-    int N = int(solution.size());
+void drawSolutionGraph(const std::vector<CompressedEdge>& solution, const std::vector<CompressedEdge>& compare, ImVec2 pos, ImVec2 size, std::pair<NodeType, NodeType> hoveredConnection = { 0, 0 }) {
+    int N = int(solution.size() + 1);
     float minTextSize = 10.f;
     float maxTextSize = 20.f;
     auto minXY = std::min(size.x, size.y);
@@ -143,10 +132,8 @@ void scaleAndTranslatePositionsToFit(std::vector<Position>& positions, ImVec2 po
         position.z += pos.y + (size.y - maxY * scaleFactor) / 2.0f;
     }
 }
-void drawSolutionGraph(std::vector<Position> positions, std::vector<int16_t> solution, std::vector<int16_t> compare, ImVec2 pos, ImVec2 size, std::pair<NodeType, NodeType> hoveredConnection = { 0, 0 }) {
-    compare.insert(compare.begin(), 0);
-    solution.insert(solution.begin(), 0);
-    int N = int(solution.size());
+void drawSolutionGraph(std::vector<Position> positions, const std::vector<CompressedEdge>& solution, const std::vector<CompressedEdge>& compare, ImVec2 pos, ImVec2 size, std::pair<NodeType, NodeType> hoveredConnection = { 0, 0 }) {
+    int N = int(solution.size() + 1);
     float minTextSize = 10.f;
     float maxTextSize = 20.f;
     auto minXY = std::min(size.x, size.y);
@@ -229,13 +216,13 @@ void sortBestFoundSolutionsSolutions(State& state, const InputData& input) {
             return true;
         if (a.time > b.time)
             return false;
-        return a.solution < b.solution;
+        return a.solution() < b.solution();
     });
 }
 
 int main(int argc, char** argv) {
     CoInitialize(NULL);
-    MyImGui::Init(u"Trackmania Path Finder v7.1.0");
+    MyImGui::Init(u"Trackmania Path Finder v8.0.0");
 
     constexpr int MinFontSize = 8;
     constexpr int MaxFontSize = 30;
@@ -490,6 +477,10 @@ int main(int argc, char** argv) {
                 }
                 if (input.showAdvancedSettings) {
                     ImGui::SameLine();
+                    if (ImGui::Button("Run arborescence algorithm")) {
+                        startAlgorithm(Algorithm::Arborescence);
+                    }
+                    ImGui::SameLine();
                     if (ImGui::Button("Run heuristic algorithm")) {
                         startAlgorithm(Algorithm::LinKernighan);
                     }
@@ -655,7 +646,7 @@ int main(int argc, char** argv) {
                         ImGui::SameLine();
                         addNumberPadding(int(tryVal), 1000);
                         ImGui::Text("%d tries for %d-opt", tryVal, optVal);
-                    } else if (state.currentAlgorithm == Algorithm::Assignment) {
+                    } else if (state.currentAlgorithm == Algorithm::Assignment || state.currentAlgorithm == Algorithm::Arborescence) {
                         ImGui::Text("Partial routes processed: %d", config.partialSolutionCount.load());
                     } else {
                         ImGui::Text("");
@@ -685,7 +676,7 @@ int main(int argc, char** argv) {
                 auto maxSolutionTime = state.bestFoundSolutions.empty() ? 0 : std::max_element(state.bestFoundSolutions.begin(), state.bestFoundSolutions.begin() + bestSolutionCount, [](auto& a, auto& b) { return a.time < b.time; })->time;
                 auto textDigitWidth = ImGui::CalcTextSize("0").x;
 
-                auto updateSolutionId = [&](int& id, std::vector<int16_t>& solution) {
+                auto updateSolutionId = [&](int& id, BestSolution& solution) {
                     if (id < 0) {
                         solution.clear();
                         return;
@@ -695,7 +686,7 @@ int main(int argc, char** argv) {
                         return;
                     }
                     for (int i = id; i < bestSolutionCount; ++i) {
-                        if (state.bestFoundSolutions[i].solution == solution) {
+                        if (state.bestFoundSolutions[i] == solution) {
                             id = i;
                             return;
                         }
@@ -723,7 +714,7 @@ int main(int argc, char** argv) {
                     clipper.Begin(bestSolutionCount);
                     while (clipper.Step()) {
                         for (int j = clipper.DisplayStart; j < clipper.DisplayEnd; ++j) {
-                            auto& B_ = state.bestFoundSolutions[j].solution;
+                            auto& B_ = state.bestFoundSolutions[j];
                             auto time = state.bestFoundSolutions[j].time;
                             auto solStr = state.bestFoundSolutions[j].solutionString;
                     
@@ -756,7 +747,7 @@ int main(int argc, char** argv) {
                                 ImGui::SetNextWindowSize(ImVec2(350, 375));
                                 ImGui::BeginTooltip();
                                 auto pos = ImGui::GetWindowPos();
-                                drawSolutionGraph(B_, state.solutionToCompareToInGraphWindow, pos, ImVec2(350, 350));
+                                drawSolutionGraph(B_.compressedSolution(), state.solutionToCompareToInGraphWindow.compressedSolution(), pos, ImVec2(350, 350));
                                 auto& drawList = *ImGui::GetWindowDrawList();
                                 std::string text = (state.solutionToCompareToInGraphWindow == B_) ? "Right-click to disable compare" : "Right-click to compare against";
                                 drawList.AddText(ImGui::GetDefaultFont(), 20, ImVec2(pos.x + 10, pos.y + 350), ImColor(255, 255, 255), text.c_str());
@@ -770,12 +761,12 @@ int main(int argc, char** argv) {
                                 ImGui::PushID((std::to_string(j) + "_variations_button").c_str());
                                 std::string variationButtonLabel = "Var(";
                                 if (state.copiedBestSolutionsAfterAlgorithmDone) {
-                                    variationButtonLabel += std::to_string(state.bestFoundSolutions[j].allVariations.size());
+                                    variationButtonLabel += std::to_string(state.bestFoundSolutions[j].variations.size());
                                 } else {
                                     variationButtonLabel += "???";
                                 }
                                 variationButtonLabel += ")";
-                                if (!state.copiedBestSolutionsAfterAlgorithmDone || state.bestFoundSolutions[j].allVariations.size() == 1) {
+                                if (!state.copiedBestSolutionsAfterAlgorithmDone || state.bestFoundSolutions[j].variations.size() == 1) {
                                     BeginDisabled();
                                 }
                                 ImGui::SetNextItemWidth(-1);
@@ -784,7 +775,7 @@ int main(int argc, char** argv) {
                                     state.solutionToShowVariationId = j;
                                     state.solutionToShowVariation = state.bestFoundSolutions[j];
                                 }
-                                if (!state.copiedBestSolutionsAfterAlgorithmDone || state.bestFoundSolutions[j].allVariations.size() == 1) {
+                                if (!state.copiedBestSolutionsAfterAlgorithmDone || state.bestFoundSolutions[j].variations.size() == 1) {
                                     EndDisabled();
                                 }
                                 ImGui::PopID();
@@ -926,13 +917,13 @@ int main(int argc, char** argv) {
 
                 if (!state.calculatedCpPositions.empty()) {
                     auto path = state.calculatedCpOrder;
-                    path.erase(path.begin());
-                    std::vector<int16_t> path16Bit;
-                    for (auto& node : path)
-                        path16Bit.push_back(node);
+                    std::vector<CompressedEdge> edges;
+                    for (int i = 1; i < path.size(); ++i) {
+                        edges.push_back({ 0, NodeType(path[i - 1]), NodeType(path[i]) });
+                    }
                     auto pos = ImGui::GetCursorPos();
                     auto size = ImVec2(ImGui::GetWindowSize().x - pos.x, ImGui::GetWindowSize().y - pos.y);
-                    drawSolutionGraph(state.calculatedCpPositions, path16Bit, {}, pos, size);
+                    drawSolutionGraph(state.calculatedCpPositions, edges, {}, pos, size);
                 }
 
                 ImGui::EndTabItem();
@@ -1057,34 +1048,23 @@ int main(int argc, char** argv) {
                 auto graphSize = size;
                 graphSize.x -= tableWidth;
                 if (!state.cpPositionsVis.empty() && state.realCpPositionView) {
-                    drawSolutionGraph(state.cpPositionsVis, state.solutionToShowInGraphWindow, {}, pos, graphSize, state.hoveredConnection);
+                    drawSolutionGraph(state.cpPositionsVis, state.solutionToShowInGraphWindow.compressedSolution(), {}, pos, graphSize, state.hoveredConnection);
                 } else {
-                    drawSolutionGraph(state.solutionToShowInGraphWindow, state.solutionToCompareToInGraphWindow, pos, graphSize, state.hoveredConnection);
+                    drawSolutionGraph(state.solutionToShowInGraphWindow.compressedSolution(), state.solutionToCompareToInGraphWindow.compressedSolution(), pos, graphSize, state.hoveredConnection);
                 }
             }
-
 
             auto tablePosX = size.x - tableWidth - 2.0f;
             auto graphMenuTableSizeY = 5 * (2.0f + ImGui::GetTextLineHeight());
             auto diffTableSizeY = size.y - input.fontSize * 1.5f - graphMenuTableSizeY;
             if (state.solutionToShowId != -1 && state.solutionToCompareId != -1) {
-                auto N = state.solutionToShowInGraphWindow.size();
-                std::vector<int16_t> solution1(N);
-                std::vector<int16_t> solution2(N);
-                solution1[0] = state.solutionToShowInGraphWindow[0];
-                solution2[0] = state.solutionToCompareToInGraphWindow[0];
-                for (int i = 1; i < N; ++i) {
-                    solution1[state.solutionToShowInGraphWindow[i - 1]] = state.solutionToShowInGraphWindow[i];
-                    solution2[state.solutionToCompareToInGraphWindow[i - 1]] = state.solutionToCompareToInGraphWindow[i];
-                }
-                std::vector<int16_t> revSolution1(N + 1);
-                std::vector<int16_t> revSolution2(N + 1);
-                for (int i = 0; i < N; ++i) {
-                    revSolution1[solution1[i]] = i;
-                    revSolution2[solution2[i]] = i;
-                }
-                revSolution1[0] = int16_t(N);
-                revSolution2[0] = int16_t(N);
+                auto N = state.solutionToShowInGraphWindow.solution().size();
+                auto s1 = state.solutionToShowInGraphWindow.solution();
+                auto s2 = state.solutionToCompareToInGraphWindow.solution();
+
+                auto dstComparator = [](auto& a, auto& b) { return a.dst < b.dst; };
+                std::sort(s1.begin(), s1.end(), dstComparator);
+                std::sort(s2.begin(), s2.end(), dstComparator);
 
                 ImGui::SetCursorPos(ImVec2(tablePosX, input.fontSize * 1.5f));
                 if (ImGui::BeginTable("diffTable", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(tableWidth, diffTableSizeY))) {
@@ -1098,30 +1078,30 @@ int main(int argc, char** argv) {
 
                     state.hoveredConnection = { 0,0 };
                     for (int i = 0; i < N; ++i) {
-                        auto diffTime = config.condWeights[solution1[i]][i][revSolution1[i]] - config.condWeights[solution2[i]][i][revSolution2[i]];
-                        if (solution1[i] != solution2[i] || diffTime != 0) {
+                        auto diffTime = config.condWeights[s1[i].dst][s1[i].src][s1[i].prev] - config.condWeights[s2[i].dst][s2[i].src][s2[i].prev];
+                        if (s1[i].dst != s2[i].dst || diffTime != 0) {
                             ImGui::TableNextColumn();
                             bool isSelected = false;
                             ImGui::PushID((std::to_string(i) + "_diffTable").c_str());
                             ImGui::Selectable("##", isSelected, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, ImGui::GetTextLineHeight()));
                             if (ImGui::IsItemHovered()) {
-                                state.hoveredConnection = { NodeType(i), NodeType(solution1[i]) };
+                                state.hoveredConnection = { NodeType(s1[i].src), NodeType(s1[i].dst) };
                             }
                             ImGui::PopID();
                             ImGui::SameLine();
-                            if (i == 0)
-                                ImGui::Text("[X],%d,%d", i, solution1[i]);
-                            else if (config.useRespawnMatrix[solution1[i]][i][revSolution1[i]])
-                                ImGui::Text("[R],%d,%d", revSolution1[i], solution1[i]);
+                            if (isRespawn(config, s1[i]))
+                                ImGui::Text("[R],%d,%d", s1[i].src, s1[i].dst);
+                            else if (s1[i].src == 0)
+                                ImGui::Text("[X],%d,%d", s1[i].src, s1[i].dst);
                             else
-                                ImGui::Text("[%d],%d,%d", revSolution1[i], i, solution1[i]);
+                                ImGui::Text("[%d],%d,%d", s1[i].prev, s1[i].src, s1[i].dst);
                             ImGui::TableNextColumn();
-                            if (i == 0)
-                                ImGui::Text("[X],%d,%d", i, solution2[i]);
-                            else if (config.useRespawnMatrix[solution2[i]][i][revSolution2[i]])
-                                ImGui::Text("[R],%d,%d", revSolution2[i], solution2[i]);
+                            if (isRespawn(config, s2[i]))
+                                ImGui::Text("[R],%d,%d", s2[i].src, s2[i].dst);
+                            else if (s2[i].src == 0)
+                                ImGui::Text("[X],%d,%d", s2[i].src, s2[i].dst);
                             else
-                                ImGui::Text("[%d],%d,%d", revSolution2[i], i, solution2[i]);
+                                ImGui::Text("[%d],%d,%d", s2[i].prev, s2[i].src, s2[i].dst);
                             ImGui::TableNextColumn();
                             auto diffTimeLength = std::to_string(std::abs(diffTime)).size() + (std::abs(diffTime) < 10);
                             auto diffTimeTextWidth = diffTimeLength * ImGui::CalcTextSize("0").x + (diffTime < 0 ? ImGui::CalcTextSize("-.").x : ImGui::CalcTextSize(".").x);
@@ -1192,15 +1172,14 @@ int main(int argc, char** argv) {
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(-1);
                 ImGui::Text("solution ID = %d", state.solutionToShowVariationId);
-                ImGui::TableNextColumn();
-                ImGui::SetNextItemWidth(-1);
-                ImGui::Checkbox("include repeat node variations", &state.showRepeatNodeVariations);
                 ImGui::EndTable();
             }
 
-            auto& variations = state.showRepeatNodeVariations ? state.solutionToShowVariation.allVariations : state.solutionToShowVariation.variations;
+            // TODO: change to other switch
+            //auto& variations = state.showRepeatNodeVariations ? state.solutionToShowVariation.allVariations : state.solutionToShowVariation.variations;
+            auto& variations = state.solutionToShowVariation.variations;
             for (int i = 0; i < variations.size(); ++i) {
-                auto solStr = createSolutionString(variations[i], config.repeatNodeMatrix, config.useRespawnMatrix);
+                auto solStr = createSolutionString(config, variations[i].solution);
                 ImGui::SetNextItemWidth(-1);
                 ImGui::InputText(("##variation" + std::to_string(i)).c_str(), solStr.data(), solStr.size(), ImGuiInputTextFlags_ReadOnly);
             }

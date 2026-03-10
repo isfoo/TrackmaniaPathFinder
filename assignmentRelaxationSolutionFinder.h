@@ -13,6 +13,7 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
     Array<EdgeCostType> outReductions;
     ArrayWithSize<NodeType> unassignedDstNodes;
     Array<bool> unassignedDstNodesSet;
+    ArrayWithSize<PartialRoute> partialRoutes;
 
     static int InitializedSectionSize(int problemSize, bool useExtendedMatrix) {
         int size = 0;
@@ -20,6 +21,7 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
         size += (problemSize + 1) * sizeof(EdgeCostType); // outReductions
         size += (problemSize + 1) * sizeof(NodeType); // unassignedDstNodes
         size += (problemSize + 1) * sizeof(bool); // unassignedDstNodesSet
+        size += (problemSize + 1) * sizeof(PartialRoute); // partialRoutes
         return size;
     }
     static int SpecialInitializedDataSize(int problemSize, int strideSize) {
@@ -34,15 +36,18 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
         outReductions = other.outReductions;
         unassignedDstNodes = other.unassignedDstNodes;
         unassignedDstNodesSet = other.unassignedDstNodesSet;
+        partialRoutes = other.partialRoutes;
     }
     void assignMemory() {
         Super::assignMemory(inReductions);
         Super::assignMemory(outReductions);
         Super::assignMemory(unassignedDstNodes);
         Super::assignMemory(unassignedDstNodesSet);
+        Super::assignMemory(partialRoutes);
     }
     void copyInitializedDataSection(const AssignmentSolution& other) {
         unassignedDstNodes.size_ = other.unassignedDstNodes.size();
+        partialRoutes.size_ = other.partialRoutes.size();
     }
 
     AssignmentSolution(AssignmentSolution&& other) : Super(std::forward<Super>(other)) { Super::moveInit(std::forward<Super>(other)); }
@@ -52,9 +57,8 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
     }
     AssignmentSolution& operator=(const AssignmentSolution&) = delete;
 
-    AssignmentSolution(ArrayOfPoolAllocators& allocators, const std::vector<std::vector<EdgeCostType>>* costMatrix, 
-        const ConditionalMatrix<EdgeCostType>* costMatrixEx, EdgeCostType ignoredValue, bool useExtendedMatrix) :
-        Super(allocators, costMatrix, costMatrixEx, ignoredValue, useExtendedMatrix)
+    AssignmentSolution(ArrayOfPoolAllocators& allocators, SolutionConfig& config) :
+        Super(allocators, &config.weights, &config.condWeights, config.ignoredValue, config.useExtendedMatrix)
     {
         Super::init();
         std::fill(inReductions.data, inReductions.data + problemSize + 1, 0);
@@ -62,6 +66,7 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
         std::fill(unassignedDstNodesSet.data, unassignedDstNodesSet.data + problemSize + 1, true);
         std::iota(unassignedDstNodes.data, unassignedDstNodes.data + problemSize, 0);
         unassignedDstNodes.size_ = problemSize;
+        partialRoutes.size_ = 0;
 
         lockSingleEdges(Out, adjList, 0, size() - 2);
         lockSingleEdges(In, revAdjList, 1, size() - 1);
@@ -94,6 +99,44 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
 
     int valueAt(NodeType i, NodeType j) {
         return (*costMatrix)[j][i] - outReductions[i] - inReductions[j] + (useExtendedMatrix ? costIncreases[j * size() + i] : 0);
+    }
+
+    bool shouldLockOutEdges() const {
+        return true;
+    }
+    bool customCanRemoveLastOutEdge(Edge edge) {
+        return false;
+    }
+    bool customLockOutEdge(Edge edge) {
+        PartialRoute newPartialRoute = PartialRoute(edge.first, edge.second, 1);
+        bool connectedRoute = false;
+        int i = 0;
+        for (; i < partialRoutes.size(); ++i) {
+            if (partialRoutes[i].end == newPartialRoute.start) {
+                partialRoutes[i].end = newPartialRoute.end;
+                partialRoutes[i].size += newPartialRoute.size;
+                newPartialRoute = partialRoutes[i];
+                connectedRoute = true;
+                break;
+            }
+        }
+        if (!connectedRoute) {
+            partialRoutes.push_back(newPartialRoute);
+            i = partialRoutes.size() - 1;
+        }
+        for (int j = 0; j < partialRoutes.size(); ++j) {
+            if (partialRoutes[j].start == newPartialRoute.end) {
+                partialRoutes[j].start = newPartialRoute.start;
+                partialRoutes[j].size += newPartialRoute.size;
+                newPartialRoute = partialRoutes[j];
+                partialRoutes.erase(i);
+                break;
+            }
+        }
+        if (!isComplete() && !removeOutEdgeIfExists({ newPartialRoute.end, newPartialRoute.start })) {
+            return false;
+        }
+        return true;
     }
 
     bool isComplete() {

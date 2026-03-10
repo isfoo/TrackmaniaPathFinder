@@ -7,8 +7,6 @@
 
 namespace fs = std::filesystem;
 
-enum class Algorithm { None, Assignment, LinKernighan };
-
 struct ConnectionFinderSettings {
     int testedConnectionTime = 0;
     int minConnectionTime = 600;
@@ -168,96 +166,6 @@ struct InputData {
     }
 };
 
-struct BestSolution {
-    BestSolution() : solutionConnections(0) {}
-    BestSolution(const std::vector<int16_t>& solution, const std::vector<int16_t>& sortedSolution, const std::vector<int16_t>& solutionWithRepeats, const FastSet2d& solutionConnections, const std::vector<std::array<int16_t, 3>>& unverifiedConnections, const std::string& solutionString, Edge addedConnection, int time) :
-        solution(sortedSolution), solutionConnections(solutionConnections), unverifiedConnections(unverifiedConnections), solutionString(solutionString), addedConnection(addedConnection), time(time)
-    {
-        allVariations.push_back(solution);
-        variations.push_back(sortedSolution);
-        variationsWithRepeats.push_back(solutionWithRepeats);
-    }
-    std::vector<int16_t> solution;
-    std::vector<std::vector<int16_t>> allVariations;
-    std::vector<std::vector<int16_t>> variations;
-    std::vector<std::vector<int16_t>> variationsWithRepeats;
-    std::vector<std::array<int16_t, 3>> unverifiedConnections;
-    std::string solutionString;
-    FastSet2d solutionConnections;
-    Edge addedConnection;
-    int time;
-};
-
-struct FilterConnection {
-    enum Status {
-        Required, Banned, Optional, AutoBanned
-    };
-    FilterConnection() {}
-    FilterConnection(std::pair<int, int> connection, Status status) : connection(connection), status(status) {}
-
-    std::pair<int, int> connection;
-    Status status;
-};
-
-struct State {
-    fs::path workingDir;
-
-    std::string errorMsg;
-    std::vector<BestSolution> bestFoundSolutions;
-
-    std::future<void> algorithmRunTask;
-    std::atomic<bool> taskWasCanceled = false;
-
-    std::vector<int> calculatedCpOrder;
-    double outputRouteCalcTime = 0;
-
-    Timer timer;
-
-    std::vector<Position> calculatedCpPositions;
-    std::vector<Position> pathToVisualize;
-
-    Algorithm currentAlgorithm = Algorithm::None;
-    bool endedWithTimeout = false;
-    std::thread timerThread;
-
-    bool isGraphWindowOpen = false;
-    std::vector<int16_t> solutionToShowInGraphWindow;
-    std::vector<int16_t> solutionToCompareToInGraphWindow;
-    int solutionToShowId = -1;
-    int solutionToCompareId = -1;
-    std::vector<Position> cpPositionsVis;
-    bool realCpPositionView = false;
-
-    bool isVariationsWindowOpen = false;
-    BestSolution solutionToShowVariation;
-    int solutionToShowVariationId = -1;
-    bool showRepeatNodeVariations = true;
-
-    bool isUnverifiedConnectionsWindowOpen = false;
-    BestSolution solutionToShowUnverifiedConnections;
-    int solutionToShowUnverifiedConnectionsId = -1;
-
-    std::pair<NodeType, NodeType> hoveredConnection = { 0, 0 };
-
-    bool isOnPathFinderTab = true;
-
-    bool copiedBestSolutionsAfterAlgorithmDone = false;
-
-    std::vector<Edge> connectionsToTest;
-
-    std::vector<FilterConnection> resultRequiredConnections;
-    std::vector<FilterConnection> resultOptionalConnections;
-
-    bool createdDistanceMatrix = false;
-
-    int isDisabledStackCount = 0;
-
-    State() {
-        timer = Timer();
-        timer.stop();
-    }
-};
-
 struct ConditionalCost {
     int cost;
     uint8_t srcNode;
@@ -271,6 +179,15 @@ struct ConditionalCost {
     bool isRespawnClause()   { return srcNode == IsRespawnClauseConstant; }
 };
 
+enum Direction { Out, In };
+constexpr NodeType NullNode = NodeType(-1);
+constexpr Edge NullEdge = { NullNode, NullNode };
+constexpr EdgeCostType Inf = 100'000'000;
+
+enum class Algorithm { None, Assignment, Arborescence, LinKernighan };
+
+using RepeatNodesVector = FastSmallVector<NodeType, 5>;
+
 template<typename T> struct ConditionalMatrix {
     std::vector<std::vector<std::vector<T>>> data;
 
@@ -279,8 +196,26 @@ template<typename T> struct ConditionalMatrix {
     T& withRespawn(int dst, int src)             { return data[dst][src].back(); }
     const T& withRespawn(int dst, int src) const { return data[dst][src].back(); }
 };
+
+struct InputAlgorithmData {
+    std::vector<std::vector<int>> weights;
+    ConditionalMatrix<int> condWeights;
+    ConditionalMatrix<bool> isVerifiedConnection;
+};
+
 struct RepeatNodeMatrix {
-    Vector3d<FastSmallVector<uint8_t>> data;
+    Vector3d<RepeatNodesVector> data;
+
+    static std::optional<RepeatNodesVector> Combine(const RepeatNodesVector& a, NodeType val, const RepeatNodesVector& b) {
+        if (a.size() + b.size() + 1 >= 5)
+            return std::nullopt;
+        RepeatNodesVector result;
+        std::copy(&a.data[0], &a.data[a.size_], &result.data[0]);
+        result.data[a.size()] = val;
+        std::copy(&b.data[0], &b.data[b.size_], &result.data[a.size() + 1]);
+        result.size_ = a.size() + b.size() + 1;
+        return result;
+    }
 
     RepeatNodeMatrix() {}
     RepeatNodeMatrix(int nodeCount) : data(nodeCount + 1) {} // +1 for respawn
@@ -292,6 +227,97 @@ struct RepeatNodeMatrix {
     bool empty() const                    { return data.empty(); }
     void clear()                          { data.clear(); }
 };
+
+enum CompressedEdgeType {
+    NonRepeat             = 0b00000000,
+    Repeat                = 0b00000001,
+    NonSequenceDependent  = 0b00000010,
+    SequenceDependentIsh  = 0b00000100,
+    SequenceDependent     = 0b00001000,
+    SequenceDependentMask = NonSequenceDependent | SequenceDependentIsh | SequenceDependent,
+    NonSorted             = 0b00000000,
+    Sorted                = 0b00010000,
+};
+#pragma pack(push, 1)
+struct CompressedEdge {
+    NodeType prev;
+    NodeType src;
+    NodeType dst;
+};
+#pragma pack(pop)
+
+bool operator==(const std::vector<CompressedEdge>& a, const std::vector<CompressedEdge>& b) {
+    if (a.size() != b.size())
+        return false;
+    return std::memcmp(a.data(), b.data(), a.size() * sizeof(a[0])) == 0;
+}
+
+struct SolutionEdge {
+    NodeType prev;
+    NodeType src;
+    NodeType dst;
+    RepeatNodesVector repeatNodesBeforeEdge;
+};
+
+struct SolutionVariation {
+    std::vector<SolutionEdge> solution;
+    std::vector<CompressedEdge> compressedSolution;
+};
+
+bool operator<(const std::vector<SolutionEdge>& a, const std::vector<SolutionEdge>& b) {
+    if (a.size() != b.size())
+        return a.size() < b.size();
+    for (int i = 0; i < a.size(); ++i) {
+        if (a[i].dst != b[i].dst) {
+            return a[i].dst < b[i].dst;
+        }
+    }
+    return false;
+}
+
+struct BestSolution {
+    BestSolution() : solutionConnections(0) {}
+    BestSolution(const SolutionVariation& solution, const SolutionVariation& sortedSolution, const std::vector<CompressedEdge>& compressedVariation, const FastSet2d& solutionConnections, const std::vector<std::array<int16_t, 3>>& unverifiedConnections, const std::string& solutionString, Edge addedConnection, int time) :
+        compressedVariation(compressedVariation), solutionConnections(solutionConnections), unverifiedConnections(unverifiedConnections), solutionString(solutionString), addedConnection(addedConnection), time(time)
+    {
+        if (!sortedSolution.solution.empty()) {
+            variations.push_back(sortedSolution);
+        }
+        variations.push_back(solution);
+    }
+    const std::vector<SolutionEdge>& solution() const {
+        if (empty())
+            return {};
+        return variations[0].solution;
+    }
+    const std::vector<CompressedEdge>& compressedSolution() const {
+        if (empty())
+            return {};
+        return variations[0].compressedSolution;
+    }
+    void clear() {
+        compressedVariation.clear();
+        variations.clear();
+        unverifiedConnections.clear();
+        solutionString.clear();
+    }
+    bool empty() const {
+        return variations.empty();
+    }
+    std::vector<CompressedEdge> compressedVariation;
+    std::vector<SolutionVariation> variations;
+    std::vector<std::array<int16_t, 3>> unverifiedConnections;
+    std::string solutionString;
+    FastSet2d solutionConnections;
+    Edge addedConnection;
+    int time;
+};
+bool operator==(const BestSolution& a, const BestSolution& b) {
+    return !a.empty() && !b.empty() && a.variations[0].compressedSolution == b.variations[0].compressedSolution;
+}
+bool operator!=(const BestSolution& a, const BestSolution& b) {
+    return !(a == b);
+}
 
 struct SolutionConfig {
     std::vector<std::vector<int>> weights;
@@ -306,6 +332,7 @@ struct SolutionConfig {
     std::string outputFileName;
     RepeatNodeMatrix repeatNodeMatrix;
     Vector3d<Bool> useRespawnMatrix;
+    std::vector<int> ringCps;
     std::atomic<int64_t> partialSolutionCount;
     std::atomic<bool>& stopWorking;
     Edge addedConnection;
@@ -324,137 +351,22 @@ struct SolutionConfig {
         repeatNodeMatrix = other.repeatNodeMatrix;
         useRespawnMatrix = other.useRespawnMatrix;
         partialSolutionCount = other.partialSolutionCount.load();
+        ringCps = other.ringCps;
         addedConnection = other.addedConnection;
     }
-    int nodeCount() {
+    int nodeCount() const {
         return weights.size();
     }
 };
 
-std::string createSolutionString(const std::vector<int16_t>& solution, const RepeatNodeMatrix& repeatNodeMatrix, const Vector3d<Bool>& useRespawnMatrix) {
-    auto B = solution;
-    B.insert(B.begin(), 0); // Explicit start node
-    B.insert(B.begin(), int16_t(useRespawnMatrix.size() - 1)); // Added for convenience for useRespawnMatrix and repeatNodeMatrix
-
-    std::string solStr = "[";
-    solStr += "Start";
-    for (int i = 2; i < B.size(); ++i) {
-        if (useRespawnMatrix[B[i]][B[i - 1]][B[i - 2]]) {
-            solStr += ",R";
-        }
-        if (!repeatNodeMatrix.empty() && !repeatNodeMatrix[B[i]][B[i - 1]][B[i - 2]].empty()) {
-            auto& repeatNodes = repeatNodeMatrix[B[i]][B[i - 1]][B[i - 2]];
-            solStr += ",(";
-            solStr += std::to_string(repeatNodes[0]);
-            for (int i = 1; i < repeatNodes.size(); ++i) {
-                solStr += "," + std::to_string(repeatNodes[i]);
-            }
-            solStr += "),";
-        } else if (B[i] == B[i - 1] + 1 && !useRespawnMatrix[B[i]][B[i - 1]][B[i - 2]]) {
-            solStr += '-';
-            i += 1;
-            while (i < B.size() && B[i] == B[i - 1] + 1 && !useRespawnMatrix[B[i]][B[i - 1]][B[i - 2]]) {
-                i += 1;
-            }
-            i -= 1;
-        } else {
-            solStr += ',';
-        }
-        if (i == B.size() - 1)
-            solStr += "Finish";
-        else
-            solStr += std::to_string(B[i]);
-    }
-    solStr += "]";
-    return solStr;
+NodeType getRespawnPrev(const SolutionConfig& config) {
+    return config.nodeCount();
 }
-
-std::pair<std::vector<int16_t>, double> createSolutionFromString(std::string solStr, const SolutionConfig& config) {
-    std::vector<int16_t> solution;
-    auto ErrorValue = std::pair<std::vector<int16_t>, double>{ {}, -1.0 };
-
-    enum { Start, Finish, Integer, Comma, Dash, Respawn, OpenParen, CloseParen };
-    auto tokens = tokenize(solStr, { 
-        {Start, "start", true}, {Finish, "finish", true}, {Integer, "0123456789"}, {Comma, ",", true},  {Dash, "-", true}, 
-        {Respawn, "r", true}, {OpenParen, "(", true}, {CloseParen, ")", true}
-    });
-
-    bool endedInComma = true;
-    while (true) {
-        if (tokens.empty())
-            return ErrorValue;
-        auto expectedNodeToken = tokens.eat();
-        int node = -1;
-        if (expectedNodeToken.typeId == Start) {
-            node = 0;
-        } else if (expectedNodeToken.typeId == Finish) {
-            node = config.weights.size() - 1;
-        } else if (expectedNodeToken.typeId == Integer) {
-            node = strToInt(expectedNodeToken.value);
-        } else {
-            return ErrorValue;
-        }
-        if (node < 0 || node >= config.weights.size())
-            return ErrorValue;
-        if (endedInComma) {
-            solution.push_back(node);
-        } else {
-            if (solution.back() >= node)
-                return ErrorValue;
-            while (solution.back() != node) {
-                solution.push_back(solution.back() + 1);
-            }
-        }
-        if (solution.back() == config.weights.size() - 1) {
-            if (!tokens.empty())
-                return ErrorValue;
-            break;
-        }
-
-        if (tokens.empty())
-            break;
-        auto expectedCommaOrDash = tokens.eat();
-        if (expectedCommaOrDash.typeId == Dash) {
-            endedInComma = false;
-        } else if (expectedCommaOrDash.typeId == Comma) {
-            endedInComma = true;
-            if (tokens.empty())
-                return ErrorValue;
-            if (tokens.peak().typeId == Respawn) {
-                tokens.eat();
-                if (tokens.empty() || tokens.eat().typeId != Comma)
-                    return ErrorValue;
-            } else if (tokens.peak().typeId == OpenParen) {
-                tokens.eat();
-                while (true) {
-                    if (tokens.empty() || tokens.eat().typeId != Integer)
-                        return ErrorValue;
-                    if (tokens.empty())
-                        return ErrorValue;
-                    auto token = tokens.eat();
-                    if (token.typeId == CloseParen) {
-                        break;
-                    } else if (token.typeId != Comma) {
-                        return ErrorValue;
-                    }
-                }
-                if (tokens.empty() || tokens.eat().typeId != Comma)
-                    return ErrorValue;
-            }
-        } else {
-            return ErrorValue;
-        }
-    }
-    int realCost = 0;
-    for (int i = 1; i < solution.size(); ++i) {
-        auto connectionCost = config.condWeights[solution[i]][solution[i - 1]][i > 1 ? solution[i - 2] : config.weights.size() - 1];
-        if (connectionCost >= config.ignoredValue)
-            return ErrorValue;
-        realCost += connectionCost;
-    }
-
-    solution.erase(solution.begin());
-    return { solution, realCost / 10.0 };
+NodeType getUnconditionalPrev(const SolutionConfig& config) {
+    return config.nodeCount() - 1;
+}
+bool isRespawn(const SolutionConfig& config, const SolutionEdge& edge) {
+    return edge.prev == getRespawnPrev(config);
 }
 
 std::vector<int> parseIntList(std::string_view str, int allowedRangeMin, int allowedRangeMax, std::string listName, std::string& errorMsg) {

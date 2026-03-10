@@ -185,14 +185,11 @@ template<typename SolutionType> struct BranchAndBoundSolution {
     EdgeCostType ignoredValue;
     EdgeCostType cost = 0;
     bool useExtendedMatrix;
-    int queueId;
 
     // initialized data (do full copy)
     Array<NodeType> solution;
     Array<NodeType> revSolution;
-    Array<NodeType> lockedOutEdges;
     Array<NodeType> lockedInEdges;
-    ArrayWithSize<PartialRoute> partialRoutes;
     Array<uint16_t> costIncreases;
 
     // special initialized data (do full copy, but the size is not constant)
@@ -207,9 +204,7 @@ template<typename SolutionType> struct BranchAndBoundSolution {
         int size = 0;
         size += (problemSize + 1) * sizeof(NodeType); // solution
         size += (problemSize + 1) * sizeof(NodeType); // revSolution
-        size += (problemSize + 1) * sizeof(NodeType); // lockedOutEdges
         size += (problemSize + 1) * sizeof(NodeType); // lockedInEdges
-        size += (problemSize + 1) * sizeof(PartialRoute); // partialRoutes
         if (useExtendedMatrix) {
             size += problemSize * problemSize * sizeof(uint16_t); // costIncreases
         }
@@ -241,15 +236,12 @@ template<typename SolutionType> struct BranchAndBoundSolution {
         ignoredValue = other.ignoredValue;
         useExtendedMatrix = other.useExtendedMatrix;
         cost = other.cost;
-        queueId = other.queueId;
         derived().assignLooseVariables(asDerived(other));
     }
     void assignNonLooseVariables(const Self& other) {
         solution = other.solution;
         revSolution = other.revSolution;
-        lockedOutEdges = other.lockedOutEdges;
         lockedInEdges = other.lockedInEdges;
-        partialRoutes = other.partialRoutes;
         costIncreases = other.costIncreases;
         adjList = other.adjList;
         revAdjList = other.revAdjList;
@@ -261,9 +253,7 @@ template<typename SolutionType> struct BranchAndBoundSolution {
     void assignMemory(int adjListStride, int revAdjListStride) {
         assignMemory(solution);
         assignMemory(revSolution);
-        assignMemory(lockedOutEdges);
         assignMemory(lockedInEdges);
-        assignMemory(partialRoutes);
         if (useExtendedMatrix) {
             costIncreases.data = memoryPool.assignNextMemory<uint16_t>(problemSize * problemSize);
         }
@@ -273,7 +263,6 @@ template<typename SolutionType> struct BranchAndBoundSolution {
     }
     void copyInitializedDataSection(const Self& other) {
         std::memcpy(memoryPool.memory, other.memoryPool.memory, InitializedSectionSize(other.problemSize, other.useExtendedMatrix));
-        partialRoutes.size_ = other.partialRoutes.size();
         derived().copyInitializedDataSection(asDerived(other));
     }
     static void CopyAdjList(AdjList& dst, const AdjList& src) {
@@ -311,14 +300,12 @@ template<typename SolutionType> struct BranchAndBoundSolution {
         memoryPool.allocate(RequiredAllocationSize(problemSize, useExtendedMatrix));
         assignMemory(problemSize + 1, problemSize + 1);
 
-        std::fill(solution.data, solution.data + problemSize + 1, -1);
-        std::fill(revSolution.data, revSolution.data + problemSize + 1, -1);
-        std::fill(lockedOutEdges.data, lockedOutEdges.data + problemSize + 1, -1);
-        std::fill(lockedInEdges.data, lockedInEdges.data + problemSize + 1, -1);
+        std::fill(solution.data, solution.data + problemSize + 1, NullNode);
+        std::fill(revSolution.data, revSolution.data + problemSize + 1, NullNode);
+        std::fill(lockedInEdges.data, lockedInEdges.data + problemSize + 1, NullNode);
         if (useExtendedMatrix) {
             std::fill(costIncreases.data, costIncreases.data + problemSize * problemSize, 0);
         }
-        partialRoutes.size_ = 0;
 
         adjList.init(*costMatrix, ignoredValue);
         revAdjList.init(*costMatrix, ignoredValue, true);
@@ -337,10 +324,24 @@ template<typename SolutionType> struct BranchAndBoundSolution {
         return derived().isComplete();
     }
 
+    bool removeAllOtherEdges(Direction d, AdjList& adj, Edge edge) {
+        for (int i = 0; i < adj[edge.first].size(); ++i) {
+            if (adj[edge.first][i] == edge.second) {
+                std::swap(adj[edge.first][0], adj[edge.first][i]);
+            }
+        }
+        while (adj[edge.first].size() > 1) {
+            if (!removeEdge(d, { edge.first, adj[edge.first][1] })) {
+                return false;
+            }
+        }
+        return true;
+    };
+
     bool lockOutEdge(Edge edge) {
         /*
             Locking edge A -> B means:
-            - removing all other output edges (A -> X, where X != B)
+            - removing all other output edges (A -> X, where X != B) [Unless it's Ring-CP compliant solution]
             - removing all other input edges (X -> B, where X != A)
             - checking if this edge connects to some previous locked chain of connections
               and if so extending that connection. Say the final connection is from node C to node D
@@ -350,59 +351,20 @@ template<typename SolutionType> struct BranchAndBoundSolution {
             means removing edge such that some node has only 1 IN or OUT node so it's locked and while locking that edge
             we might remove edge such that some node has only 1 IN or OUT node...
         */
-        if (lockedOutEdges[edge.first] == edge.second && lockedInEdges[edge.second] == edge.first)
+        if (lockedInEdges[edge.second] == edge.first)
             return true; // edge is either already locked or is the process of getting locked
-        if (lockedOutEdges[edge.first] != NullNode || lockedInEdges[edge.second] != NullNode)
-            return false; // different edge with the same OUT or IN node is already locked or in the process of getting locked
-        lockedOutEdges[edge.first] = edge.second;
+        if (lockedInEdges[edge.second] != NullNode)
+            return false; // different edge with the same IN node is already locked or in the process of getting locked
         lockedInEdges[edge.second] = edge.first;
-
-        auto removeAllOtherEdges = [this](Direction d, AdjList& adj, Edge edge) -> bool {
-            for (int i = 0; i < adj[edge.first].size(); ++i) {
-                if (adj[edge.first][i] == edge.second) {
-                    std::swap(adj[edge.first][0], adj[edge.first][i]);
-                }
-            }
-            while (adj[edge.first].size() > 1) {
-                if (!removeEdge(d, { edge.first, adj[edge.first][1] })) {
-                    return false;
-                }
-            }
-            return true;
-        };
-        if (!removeAllOtherEdges(Out, adjList, edge))
-            return false;
+        
+        if (derived().shouldLockOutEdges()) {
+            if (!removeAllOtherEdges(Out, adjList, edge))
+                return false;
+        }
         if (!removeAllOtherEdges(In, revAdjList, { edge.second, edge.first }))
             return false;
-
-        PartialRoute newPartialRoute = PartialRoute(edge.first, edge.second, 1);
-        bool connectedRoute = false;
-        int i = 0;
-        for (; i < partialRoutes.size(); ++i) {
-            if (partialRoutes[i].end == newPartialRoute.start) {
-                partialRoutes[i].end = newPartialRoute.end;
-                partialRoutes[i].size += newPartialRoute.size;
-                newPartialRoute = partialRoutes[i];
-                connectedRoute = true;
-                break;
-            }
-        }
-        if (!connectedRoute) {
-            partialRoutes.push_back(newPartialRoute);
-            i = partialRoutes.size() - 1;
-        }
-        for (int j = 0; j < partialRoutes.size(); ++j) {
-            if (partialRoutes[j].start == newPartialRoute.end) {
-                partialRoutes[j].start = newPartialRoute.start;
-                partialRoutes[j].size += newPartialRoute.size;
-                newPartialRoute = partialRoutes[j];
-                partialRoutes.erase(i);
-                break;
-            }
-        }
-        if (!isComplete() && !removeOutEdgeIfExists({ newPartialRoute.end, newPartialRoute.start })) {
+        if (!derived().customLockOutEdge(edge))
             return false;
-        }
 
         if (useExtendedMatrix) {
             for (int m = 0; m < adjList[edge.second].size(); ++m) {
@@ -419,9 +381,11 @@ template<typename SolutionType> struct BranchAndBoundSolution {
     }
     bool removeOutEdge(Edge edge) {
         derived().addUnassignedDstNode(edge.second);
-
-        if (adjList[edge.first].size() <= 1)
-            return false;
+        if (adjList[edge.first].size() <= 1) {
+            if (adjList[edge.first].size() <= 0 || !derived().customCanRemoveLastOutEdge(edge)) {
+                return false;
+            }
+        }
         if (revAdjList[edge.second].size() <= 1)
             return false;
 
@@ -440,7 +404,7 @@ template<typename SolutionType> struct BranchAndBoundSolution {
         auto outEdgeToLock = eraseEdge(adjList, edge);
         auto inEdgeToLock = eraseEdge(revAdjList, { edge.second, edge.first });
 
-        if (outEdgeToLock != NullEdge && !lockEdge(Out, outEdgeToLock))
+        if (derived().shouldLockOutEdges() && outEdgeToLock != NullEdge && !lockEdge(Out, outEdgeToLock))
             return false;
         if (inEdgeToLock != NullEdge && !lockEdge(In, inEdgeToLock))
             return false;
@@ -551,13 +515,16 @@ template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig&
         SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 8), config.useExtendedMatrix),
         SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 16), config.useExtendedMatrix),
     });
-    SolutionType initialSolution(freeLists, &config.weights, &config.condWeights, config.ignoredValue, config.useExtendedMatrix);
+    SolutionType initialSolution(freeLists, config);
     initialSolution.shrinkToFit();
 
     // no more than 2 GB of data in queue
     const int MaxQueueSize = 2'000'000'000 / initialSolution.minimumAllocationSize();
+#ifdef DEBUG
+    const int ThreadCount = 1;
+#else
     const int ThreadCount = (std::thread::hardware_concurrency() > 0) ? std::thread::hardware_concurrency() : 1;
-
+#endif
     PriorityQueue<SolutionType> assignmentQueue([](auto& a, auto& b) { return a.getCost() > b.getCost(); });
 
     if (config.weights.size() >= 30 || (config.useExtendedMatrix && config.weights.size() >= 15))
