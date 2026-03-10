@@ -463,15 +463,12 @@ template<typename SolutionType> struct BranchAndBoundSolution {
     int valueAt(NodeType i, NodeType j) {
         return derived().valueAt(i, j);
     }
-    int valueAtWithoutReductions(NodeType i, NodeType j) {
-        return derived().valueAtWithoutReductions(i, j);
-    }
     int operator()(NodeType i, NodeType j) {
         return valueAt(i, j);
     }
 };
 
-template<typename SolutionType> void findSolutions(SolutionConfig& config, SolutionType& branchAndBoundSolution, PriorityQueue<SolutionType>& assignmentQueue, std::mutex& solutionMutex, int maxQueueSize) {
+template<typename SolutionType> void findSolutions(SolutionConfig& config, SolutionType& branchAndBoundSolution, PriorityMultiQueue<SolutionType>& assignmentQueue, std::mutex& solutionMutex, int maxQueueSize) {
     config.partialSolutionCount += 1;
     if (config.stopWorking)
         return;
@@ -493,7 +490,7 @@ template<typename SolutionType> void findSolutions(SolutionConfig& config, Solut
             return;
 
         auto assignmentSolutionCopy = branchAndBoundSolution;
-        if (assignmentQueue.size() >= maxQueueSize) {
+        if (assignmentQueue.isAlmostFull()) {
             if (branchAndBoundSolution.lockEdge(Out, pivotEdge))
                 findSolutions(config, branchAndBoundSolution, assignmentQueue, solutionMutex, maxQueueSize);
             if (assignmentSolutionCopy.removeEdge(Out, pivotEdge))
@@ -525,13 +522,10 @@ template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig&
 #else
     const int ThreadCount = (std::thread::hardware_concurrency() > 0) ? std::thread::hardware_concurrency() : 1;
 #endif
-    PriorityQueue<SolutionType> assignmentQueue([](auto& a, auto& b) { return a.getCost() > b.getCost(); });
-
-    if (config.weights.size() >= 30 || (config.useExtendedMatrix && config.weights.size() >= 15))
-        assignmentQueue.heap.reserve(MaxQueueSize); // reserve only if not trivial problem
+    const int QueueCount = ThreadCount * 2;
+    PriorityMultiQueue<SolutionType> assignmentQueue(QueueCount, MaxQueueSize / QueueCount, [](auto& a, auto& b) { return a.getCost() > b.getCost(); });
 
     assignmentQueue.push(std::move(initialSolution));
-    std::atomic<int> lastCleanupCount = 0;
     ThreadPool threadPool(ThreadCount);
     std::mutex waitMutex;
     std::mutex solutionMutex;
@@ -540,7 +534,7 @@ template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig&
         threadIsWaiting[i] = false;
     }
     for (int i = 0; i < ThreadCount; ++i) {
-        threadPool.addTask([&config, &assignmentQueue, &threadIsWaiting, &waitMutex, &solutionMutex, &lastCleanupCount, ThreadCount, MaxQueueSize](int id) {
+        threadPool.addTask([&config, &assignmentQueue, &threadIsWaiting, &waitMutex, &solutionMutex, ThreadCount, MaxQueueSize](int id) {
             while (true) {
                 while (assignmentQueue.empty()) {
                     // I'm sure there is more elegant way to do this. Basically I want all worker threads to wait
@@ -565,16 +559,6 @@ template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig&
                 auto assignmentSolution = assignmentQueue.pop();
                 if (!assignmentSolution)
                     continue;
-
-                {
-                    // Could be the case that old possible solutions can be discarded early, because they
-                    // cost more than updated max solution time limit. This will free up some space for queue.
-                    std::scoped_lock l{ assignmentQueue.m };
-                    if (config.partialSolutionCount > lastCleanupCount + MaxQueueSize) {
-                        lastCleanupCount.store(int(config.partialSolutionCount));
-                        assignmentQueue.removeAll([&config](auto& a) { return a.getCost() > config.limit; });
-                    }
-                }
 
                 findSolutions(config, *assignmentSolution, assignmentQueue, solutionMutex, MaxQueueSize);
             }

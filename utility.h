@@ -634,34 +634,135 @@ template<typename T, int Size=256> struct FixedStackVector {
     T* end()   { return (T*)&data[sizeof(T) * size_]; }
 };
 
-template<typename T> struct PriorityQueue {
-    std::vector<T> heap;
-    bool(*comparator)(const T&, const T&);
-    std::mutex m;
+template<typename T> struct PriorityMultiQueue {
+    struct PriorityQueue {
+        T* heap;
+        int size = 0;
+        int capacity;
+        int smallestCost = std::numeric_limits<int>::max();
+        std::mutex mutex;
+        bool(*comparator)(const T&, const T&);
 
-    PriorityQueue(bool(*comparator)(const T&, const T&)) : comparator(comparator) {}
+        PriorityQueue(int capacity, bool(*comparator)(const T&, const T&)) : capacity(capacity), comparator(comparator) {
+            heap = (T*)malloc(capacity * sizeof(T));
+        }
+        PriorityQueue(const PriorityQueue&) = delete;
+        PriorityQueue(PriorityQueue&&) = delete;
+        PriorityQueue& operator=(const PriorityQueue&) = delete;
+        PriorityQueue& operator=(PriorityQueue&&) = delete;
+        ~PriorityQueue() {
+            for (int i = 0; i < size; ++i) {
+                heap[i].~T();
+            }
+            free(heap);
+        }
+        bool tryLockForPush() {
+            if (size >= capacity)
+                return false;
+            if (!mutex.try_lock())
+                return false;
+            if (size >= capacity) {
+                mutex.unlock();
+                return false;
+            }
+            return true;
+        }
+        void pushWhenLockedAndUnlock(T&& value) {
+            new (&heap[size++]) T(std::move(value));
+            std::push_heap(heap, heap + size, comparator);
+            smallestCost = heap[0].getCost();
+            mutex.unlock();
+        }
+        bool tryLockForPop() {
+            if (size <= 0)
+                return false;
+            if (!mutex.try_lock())
+                return false;
+            if (size <= 0) {
+                mutex.unlock();
+                return false;
+            }
+            return true;
+        }
+        T popWhenLockedAndUnlock() {
+            std::pop_heap(heap, heap + size, comparator);
+            auto value = std::move(heap[--size]);
+            if (size <= 0) {
+                smallestCost = std::numeric_limits<int>::max();
+            } else {
+                smallestCost = heap[0].getCost();
+            }
+            mutex.unlock();
+            return value;
+        }
+        int peakMinCost() {
+            return smallestCost;
+        }
+    };
+
+    PriorityQueue* queues;
+    int queueCount;
+    std::atomic<int> elementCount;
+    int maxCapacity;
+    int queuePopCheckCount;
+    static thread_local inline XorShift64 rng = XorShift64();
+
+    PriorityMultiQueue(int queueCount, int queueCapacity, bool(*comparator)(const T&, const T&)) : queueCount(queueCount) {
+        maxCapacity = queueCapacity * queueCount;
+        queuePopCheckCount = queueCount / 8;
+        queues = (PriorityQueue*)malloc(queueCount * sizeof(PriorityQueue));
+        for (int i = 0; i < queueCount; ++i) {
+            new (&queues[i]) PriorityQueue(queueCapacity, comparator);
+        }
+    }
+    PriorityMultiQueue(const PriorityMultiQueue&) = delete;
+    PriorityMultiQueue(PriorityMultiQueue&&) = delete;
+    PriorityMultiQueue& operator=(const PriorityMultiQueue&) = delete;
+    PriorityMultiQueue& operator=(PriorityMultiQueue&&) = delete;
+    ~PriorityMultiQueue() {
+        for (int i = 0; i < queueCount; ++i) {
+            queues[i].~PriorityQueue();
+        }
+        free(queues);
+    }
+    int randomQueueId() {
+        return rng() % queueCount;
+    }
     void push(T&& value) {
-        std::scoped_lock l{ m };
-        heap.emplace_back(std::move(value));
-        std::push_heap(heap.begin(), heap.end(), comparator);
+        while (true) {
+            int id = randomQueueId();
+            if (queues[id].tryLockForPush()) {
+                queues[id].pushWhenLockedAndUnlock(std::move(value));
+                ++elementCount;
+                return;
+            }
+        }
     }
     std::optional<T> pop() {
-        std::scoped_lock l{ m };
-        if (size() <= 0)
-            return std::nullopt;
-        std::pop_heap(heap.begin(), heap.end(), comparator);
-        auto value = std::move(heap.back());
-        heap.pop_back();
-        return value;
+        while (true) {
+            if (empty())
+                return std::nullopt;
+            int chosenId = randomQueueId();
+            if (elementCount >= queueCount * 10) {
+                int minCost = std::numeric_limits<int>::max();
+                for (int i = 0; i < queuePopCheckCount; ++i) {
+                    auto id = randomQueueId();
+                    if (minCost >= queues[id].peakMinCost()) {
+                        minCost = queues[id].peakMinCost();
+                        chosenId = id;
+                    }
+                }
+            }
+            if (queues[chosenId].tryLockForPop()) {
+                --elementCount;
+                return queues[chosenId].popWhenLockedAndUnlock();
+            }
+        }
+    }
+    bool isAlmostFull() {
+        return elementCount > maxCapacity - queueCount * 10;
     }
     bool empty() {
-        return heap.empty();
-    }
-    int size() {
-        return int(heap.size());
-    }
-    template<typename Pred> void removeAll(Pred predicate) {
-        heap.erase(std::remove_if(heap.begin(), heap.end(), predicate), heap.end());
-        std::make_heap(heap.begin(), heap.end(), comparator);
+        return elementCount.load() == 0;
     }
 };
