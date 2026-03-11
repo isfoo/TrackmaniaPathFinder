@@ -243,7 +243,7 @@ Note that even the 100+ CP Lars spreadsheets are easily processed using exact al
 
 ## Implementation details
 
-The problem solved by this program can be most accurately described as finding the top N lowest weight hamiltonian paths in directed graph with sequence dependent weights. Since problem of finding minimum weight hamiltonian path is a relaxed version of traveling salesman problem, generally in literature the algorithms are made and decsribed for the latter. Thus the algorithms used are made for finding top N solutions to SDATSP (Sequence Dependent Asymmetric Traveling Salesman Problem).
+The problem solved by this program can be most accurately described as finding the top N lowest weight hamiltonian paths in directed graph with sequence dependent weights. Since problem of finding minimum weight hamiltonian path is very similar to traveling salesman problem, generally in literature the algorithms are made and decsribed for the latter. Thus the algorithms used are made for finding top N solutions to SDATSP (Sequence Dependent Asymmetric Traveling Salesman Problem).
 
 Although You will find online some efficient programs that solve TSP there are a couple of problems: 
 1. It's hard to find a program that is fast and easy to use - most good solvers are using command line interface or are just an API in some programming language.
