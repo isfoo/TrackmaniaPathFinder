@@ -468,40 +468,64 @@ template<typename SolutionType> struct BranchAndBoundSolution {
     }
 };
 
-template<typename SolutionType> void findSolutions(SolutionConfig& config, SolutionType& branchAndBoundSolution, PriorityMultiQueue<SolutionType>& assignmentQueue, std::mutex& solutionMutex, int maxQueueSize) {
-    config.partialSolutionCount += 1;
-    if (config.stopWorking)
-        return;
+template<typename SolutionType> void findSolutions(SolutionConfig& config, SolutionType& branchAndBoundSolution, PriorityMultiQueue<SolutionType>& assignmentQueue, std::mutex& solutionMutex, PreallocatedVector<std::pair<SolutionType, Edge>>& backlog) {
+    bool updatedSolution = false;
+    do {
+        if (!updatedSolution && !backlog.empty()) {
+            while (true) {
+                if (config.stopWorking || backlog.empty())
+                    return;
+                branchAndBoundSolution = std::move(backlog.back().first);
+                auto pivotEdge = backlog.back().second;
+                backlog.pop_back();
+                if (branchAndBoundSolution.getCost() > config.limit)
+                    continue;
+                if (branchAndBoundSolution.removeEdge(Out, pivotEdge))
+                    break;
+            }
+        }
+        updatedSolution = false;
 
-    if (branchAndBoundSolution.getCost() > config.limit)
-        return;
-
-    if (!branchAndBoundSolution.solveRelaxationAndCheckIfStillViable(config))
-        return;
-
-    if (branchAndBoundSolution.getCost() > config.limit)
-        return;
-
-    if (branchAndBoundSolution.isComplete()) {
-        branchAndBoundSolution.saveSolution(config, solutionMutex);
-    } else {
-        auto pivotEdge = branchAndBoundSolution.findPivotEdge();
-        if (pivotEdge == NullEdge)
+        config.partialSolutionCount += 1;
+        if (config.stopWorking)
             return;
 
+        if (branchAndBoundSolution.getCost() > config.limit)
+            continue;
+
+        if (!branchAndBoundSolution.solveRelaxationAndCheckIfStillViable(config))
+            continue;
+
+        if (branchAndBoundSolution.getCost() > config.limit)
+            continue;
+
+        if (branchAndBoundSolution.isComplete()) {
+            branchAndBoundSolution.saveSolution(config, solutionMutex);
+            continue;
+        }
+        if (config.stopWorking)
+            return;
+
+        auto pivotEdge = branchAndBoundSolution.findPivotEdge();
+        if (pivotEdge == NullEdge)
+            continue;
+
+        if (config.stopWorking)
+            return;
         auto assignmentSolutionCopy = branchAndBoundSolution;
         if (assignmentQueue.isAlmostFull()) {
             if (branchAndBoundSolution.lockEdge(Out, pivotEdge))
-                findSolutions(config, branchAndBoundSolution, assignmentQueue, solutionMutex, maxQueueSize);
-            if (assignmentSolutionCopy.removeEdge(Out, pivotEdge))
-                findSolutions(config, assignmentSolutionCopy, assignmentQueue, solutionMutex, maxQueueSize);
+                updatedSolution = true;
+            backlog.emplace_back({ std::move(assignmentSolutionCopy), pivotEdge });
         } else {
             if (branchAndBoundSolution.lockEdge(Out, pivotEdge))
                 assignmentQueue.push(std::move(branchAndBoundSolution));
+            if (config.stopWorking)
+                return;
             if (assignmentSolutionCopy.removeEdge(Out, pivotEdge))
                 assignmentQueue.push(std::move(assignmentSolutionCopy));
         }
-    }
+    } while (updatedSolution || !backlog.empty());
 }
 
 template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig& config) {
@@ -534,8 +558,11 @@ template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig&
         threadIsWaiting[i] = false;
     }
     for (int i = 0; i < ThreadCount; ++i) {
-        threadPool.addTask([&config, &assignmentQueue, &threadIsWaiting, &waitMutex, &solutionMutex, ThreadCount, MaxQueueSize](int id) {
+        threadPool.addTask([&config, &assignmentQueue, &threadIsWaiting, &waitMutex, &solutionMutex, ThreadCount](int id) {
+            PreallocatedVector<std::pair<SolutionType, Edge>> backlog(config.nodeCount() * config.nodeCount());
             while (true) {
+                if (config.stopWorking)
+                    return;
                 while (assignmentQueue.empty()) {
                     // I'm sure there is more elegant way to do this. Basically I want all worker threads to wait
                     // until all work is finished and until that happens periodically check queue for new tasks possibly
@@ -560,7 +587,7 @@ template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig&
                 if (!assignmentSolution)
                     continue;
 
-                findSolutions(config, *assignmentSolution, assignmentQueue, solutionMutex, MaxQueueSize);
+                findSolutions(config, *assignmentSolution, assignmentQueue, solutionMutex, backlog);
             }
         });
     }

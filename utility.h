@@ -634,60 +634,77 @@ template<typename T, int Size=256> struct FixedStackVector {
     T* end()   { return (T*)&data[sizeof(T) * size_]; }
 };
 
+template<typename T> class PreallocatedVector {
+    T* data;
+    int size_ = 0;
+    int capacity_;
+public:
+    PreallocatedVector(int capacity) : capacity_(capacity) {
+        data = (T*)malloc(capacity_ * sizeof(T));
+    }
+    PreallocatedVector(const PreallocatedVector&) = delete;
+    PreallocatedVector(PreallocatedVector&&) = delete;
+    PreallocatedVector& operator=(const PreallocatedVector&) = delete;
+    PreallocatedVector& operator=(PreallocatedVector&&) = delete;
+    ~PreallocatedVector() {
+        for (int i = 0; i < size_; ++i) {
+            data[i].~T();
+        }
+        free(data);
+    }
+    void emplace_back(T&& value)     { new (&data[size_++]) T(std::move(value)); }
+
+    T& back() { return data[size_ - 1]; }
+    void pop_back() { data[--size_].~T(); }
+    const T& operator[](int i) const { return data[i]; }
+    int size()     { return size_; }
+    bool empty()   { return size() == 0; }
+    int capacity() { return capacity_; }
+    T* begin()     { return data; }
+    T* end()       { return data + size_; }
+};
+
 template<typename T> struct PriorityMultiQueue {
     struct PriorityQueue {
-        T* heap;
-        int size = 0;
-        int capacity;
+        PreallocatedVector<T> heap;
         int smallestCost = std::numeric_limits<int>::max();
         std::mutex mutex;
         bool(*comparator)(const T&, const T&);
 
-        PriorityQueue(int capacity, bool(*comparator)(const T&, const T&)) : capacity(capacity), comparator(comparator) {
-            heap = (T*)malloc(capacity * sizeof(T));
-        }
-        PriorityQueue(const PriorityQueue&) = delete;
-        PriorityQueue(PriorityQueue&&) = delete;
-        PriorityQueue& operator=(const PriorityQueue&) = delete;
-        PriorityQueue& operator=(PriorityQueue&&) = delete;
-        ~PriorityQueue() {
-            for (int i = 0; i < size; ++i) {
-                heap[i].~T();
-            }
-            free(heap);
-        }
+        PriorityQueue(int capacity, bool(*comparator)(const T&, const T&)) : heap(capacity), comparator(comparator) {}
         bool tryLockForPush() {
-            if (size >= capacity)
+            if (heap.size() >= heap.capacity())
                 return false;
             if (!mutex.try_lock())
                 return false;
-            if (size >= capacity) {
+            if (heap.size() >= heap.capacity()) {
                 mutex.unlock();
                 return false;
             }
             return true;
         }
         void pushWhenLockedAndUnlock(T&& value) {
-            new (&heap[size++]) T(std::move(value));
-            std::push_heap(heap, heap + size, comparator);
+            heap.emplace_back(std::move(value));
+            std::push_heap(heap.begin(), heap.end(), comparator);
             smallestCost = heap[0].getCost();
             mutex.unlock();
         }
         bool tryLockForPop() {
-            if (size <= 0)
+            if (heap.size() <= 0)
                 return false;
             if (!mutex.try_lock())
                 return false;
-            if (size <= 0) {
+            if (heap.size() <= 0) {
                 mutex.unlock();
                 return false;
             }
             return true;
         }
         T popWhenLockedAndUnlock() {
-            std::pop_heap(heap, heap + size, comparator);
-            auto value = std::move(heap[--size]);
-            if (size <= 0) {
+            std::pop_heap(heap.begin(), heap.end(), comparator);
+            auto value = std::move(heap.back());
+            heap.pop_back();
+            if (heap.size() <= 0) {
                 smallestCost = std::numeric_limits<int>::max();
             } else {
                 smallestCost = heap[0].getCost();
