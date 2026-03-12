@@ -33,7 +33,7 @@ std::vector<SolutionEdge> createSolution(const SolutionConfig& config, const std
         if (!config.repeatNodeMatrix.empty())
             solutionEdge.repeatNodesBeforeEdge = config.repeatNodeMatrix[edges[i].dst][edges[i].src][prev];
         result.push_back(solutionEdge);
-        prev = edges[i].src;
+        prev = solutionEdge.src;
     }
     return result;
 }
