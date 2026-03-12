@@ -146,6 +146,34 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
                     return false;
             }
         }
+        auto rootOfSubtree = edge.first;
+        while (node(rootOfSubtree).parent != NullNode) {
+            rootOfSubtree = node(rootOfSubtree).parent;
+            if (rootOfSubtree == edge.first)
+                return false;
+        }
+        if (rootOfSubtree == 0)
+            return true;
+        FastSmallVector<NodeType, 256> nodesToProcess;
+        FastSmallVector<NodeType, 256> srcToRemove;
+        nodesToProcess.push_back(edge.second);
+        while (!nodesToProcess.empty()) {
+            auto n = nodesToProcess.pop_back();
+            srcToRemove.push_back(n);
+            if (node(n).firstChild == NullNode)
+                continue;
+            auto firstChild = node(n).firstChild;
+            auto child = firstChild;
+            do {
+                nodesToProcess.push_back(child);
+                child = node(child).nextSibling;
+            } while (child != firstChild);
+        }
+        for (int i = 0; i < srcToRemove.size(); ++i) {
+            if (!removeOutEdgeIfExists({ srcToRemove[i], rootOfSubtree})) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -164,7 +192,7 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
     
     Edge findPivotEdge() {
         auto& edges = minArboSolutionEdges;
-        std::sort(edges.begin(), edges.end(), [&](MinSpanningArborescence::MinEdge a, MinSpanningArborescence::MinEdge b) {
+        auto pivot = *std::min_element(edges.begin(), edges.end(), [&](MinSpanningArborescence::MinEdge a, MinSpanningArborescence::MinEdge b) {
             auto aIsLocked = lockedInEdges[a.dst] == a.src;
             auto bIsLocked = lockedInEdges[b.dst] == b.src;
             if (aIsLocked == bIsLocked) {
@@ -173,9 +201,9 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
                 return aIsLocked < bIsLocked;
             }
         });
-        if (lockedInEdges[edges[0].dst] == edges[0].src)
+        if (lockedInEdges[pivot.dst] == pivot.src)
             return NullEdge; // Should never happen
-        return { edges[0].src, edges[0].dst };
+        return { pivot.src, pivot.dst };
     }
 
     void calculateSolutionAndRevSolution() {

@@ -35,8 +35,6 @@ struct DisjointSetUnion {
 };
 
 struct MinSpanningArborescence {
-    static constexpr int Inf = 1e9;
-
     #pragma pack(push, 1)
     struct MinEdge {
         NodeType src;
@@ -168,11 +166,11 @@ struct MinSpanningArborescence {
             lastProcessedId[node] = i;
 
             const auto [minWeight, minEdge] = getMinInEdge(node);
-            if (minWeight == Inf)
-                return Inf;
             addedEdges.push_back(minEdge);
             forest[i] = i;
             result += minWeight;
+            if (result >= Inf)
+                return result;
             updateInEdgeWeights(node, minWeight);
 
             if (weaklyConnectedComponents.joinAndReturnRoot(minEdge.src, minEdge.dst) != -1)
@@ -216,7 +214,9 @@ template<typename T> int minArborescence(BranchAndBoundSolution<T>& branchAndBou
     auto cost = alg.calculate();
     if (outSolutionEdges) {
         outSolutionEdges->clear();
-        alg.getResultEdges(*outSolutionEdges);
+        if (cost < Inf) {
+            alg.getResultEdges(*outSolutionEdges);
+        }
     }
     return cost;
 }

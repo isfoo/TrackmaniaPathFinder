@@ -402,6 +402,7 @@ template<typename T, int MaxSize> struct FastSmallVector {
     int size() const { return size_; }
     bool empty() const { return size() == 0; }
     void push_back(T value) { data[size_++] = std::move(value); }
+    T pop_back() { return data[--size_]; }
     T& operator[](int i) { return data[i]; }
     const T& operator[](int i) const { return data[i]; }
 };
