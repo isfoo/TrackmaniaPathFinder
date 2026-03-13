@@ -289,7 +289,7 @@ std::pair<std::string, std::string> getSpreadsheetIdAndGidFromLink(const std::st
 bool downloadGoogleSpreadsheet(const std::string& spreadsheetId, const std::string& gid, const std::string& outputFilePath) {
     httplib::Client cli("https://docs.google.com");
     cli.set_follow_location(true);
-    if (auto res = cli.Get("/spreadsheets/d/" + spreadsheetId + "/export?gid=" + gid + "&format=csv&range=B2:ZZ300")) {
+    if (auto res = cli.Get("/spreadsheets/d/" + spreadsheetId + "/export?gid=" + gid + "&format=csv&range=B2:ZZ1000")) {
         if (res->status == httplib::OK_200) {
             std::ofstream outFile(outputFilePath);
             outFile << res->body;
