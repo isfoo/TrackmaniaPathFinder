@@ -220,7 +220,7 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
         shrinkToFit();
         cost = minArborescence(*this, false, &minArboSolutionEdges);
 
-        if (cost > config.limit)
+        if (cost > config.limit())
             return false;
 
         calculateSolutionAndRevSolution();
@@ -228,7 +228,7 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
         return true;
     }
 
-    void saveSolution(SolutionConfig& config, std::mutex& solutionMutex) {
+    void saveSolution(SolutionConfig& config) {
         std::vector<std::vector<CompressedEdge>> allSolutions(1);
         NodeType cur = 0;
         while (cur != size() - 1) {
@@ -269,7 +269,7 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
             cur = mainPathNext;
         }
         for (auto& solution : allSolutions) {
-            ::saveSolution(config, solution, solutionMutex);
+            ::saveSolution(config, solution);
         }
     }
 };

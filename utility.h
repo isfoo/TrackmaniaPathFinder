@@ -630,9 +630,12 @@ template<typename T, int Size=256> struct FixedStackVector {
     alignas(T) char data[sizeof(T) * Size];
     int size_ = 0;
     template<typename... Args> void emplace_back(Args&&... args) { new (&data[sizeof(T) * size_++]) T(std::forward<Args>(args)...); }
-    int size() { return size_; }
-    T* begin() { return (T*)&data[0]; }
-    T* end()   { return (T*)&data[sizeof(T) * size_]; }
+    void pop_back()       { size_ -= 1; }
+    int size() const      { return size_; }
+    T* begin()            { return (T*)&data[0]; }
+    T* end()              { return (T*)&data[sizeof(T) * size_]; }
+    T& operator[] (int i) { return *(T*)&data[sizeof(T) * i]; }
+    T& back()             { return (*this)[size() - 1]; }
 };
 
 template<typename T> class PreallocatedVector {
@@ -653,7 +656,7 @@ public:
         }
         free(data);
     }
-    void emplace_back(T&& value)     { new (&data[size_++]) T(std::move(value)); }
+    T& emplace_back(T&& value) { new (&data[size_]) T(std::move(value)); return data[size_++]; }
 
     T& back() { return data[size_ - 1]; }
     void pop_back() { data[--size_].~T(); }

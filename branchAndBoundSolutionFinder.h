@@ -468,7 +468,7 @@ template<typename SolutionType> struct BranchAndBoundSolution {
     }
 };
 
-template<typename SolutionType> void findSolutions(SolutionConfig& config, SolutionType& branchAndBoundSolution, PriorityMultiQueue<SolutionType>& assignmentQueue, std::mutex& solutionMutex, PreallocatedVector<std::pair<SolutionType, Edge>>& backlog) {
+template<typename SolutionType> void findSolutions(SolutionConfig& config, SolutionType& branchAndBoundSolution, PriorityMultiQueue<SolutionType>& assignmentQueue, PreallocatedVector<std::pair<SolutionType, Edge>>& backlog) {
     bool updatedSolution = false;
     do {
         if (!updatedSolution && !backlog.empty()) {
@@ -478,7 +478,7 @@ template<typename SolutionType> void findSolutions(SolutionConfig& config, Solut
                 branchAndBoundSolution = std::move(backlog.back().first);
                 auto pivotEdge = backlog.back().second;
                 backlog.pop_back();
-                if (branchAndBoundSolution.getCost() > config.limit)
+                if (branchAndBoundSolution.getCost() > config.limit())
                     continue;
                 if (branchAndBoundSolution.removeEdge(Out, pivotEdge))
                     break;
@@ -486,21 +486,21 @@ template<typename SolutionType> void findSolutions(SolutionConfig& config, Solut
         }
         updatedSolution = false;
 
-        config.partialSolutionCount += 1;
+        config.lazyIncrementPartialSolutionCount();
         if (config.stopWorking)
             return;
 
-        if (branchAndBoundSolution.getCost() > config.limit)
+        if (branchAndBoundSolution.getCost() > config.limit())
             continue;
 
         if (!branchAndBoundSolution.solveRelaxationAndCheckIfStillViable(config))
             continue;
 
-        if (branchAndBoundSolution.getCost() > config.limit)
+        if (branchAndBoundSolution.getCost() > config.limit())
             continue;
 
         if (branchAndBoundSolution.isComplete()) {
-            branchAndBoundSolution.saveSolution(config, solutionMutex);
+            branchAndBoundSolution.saveSolution(config);
             continue;
         }
         if (config.stopWorking)
@@ -528,19 +528,9 @@ template<typename SolutionType> void findSolutions(SolutionConfig& config, Solut
     } while (updatedSolution || !backlog.empty());
 }
 
-template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig& config) {
-    ArrayOfPoolAllocators freeLists(1024, { 
-        SolutionType::RequiredAllocationSize(int(config.weights.size()), config.useExtendedMatrix),
-        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 2), config.useExtendedMatrix),
-        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 4), config.useExtendedMatrix),
-        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 8), config.useExtendedMatrix),
-        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 16), config.useExtendedMatrix),
-    });
-    SolutionType initialSolution(freeLists, config);
-    initialSolution.shrinkToFit();
-
+template<typename BacklogType, typename SolutionType, typename FunctionType> void findSolutionsBfs(SolutionConfig& config, SolutionType& initialSolution, int queueElementSize, FunctionType function) {
     // no more than 2 GB of data in queue
-    const int MaxQueueSize = 2'000'000'000 / initialSolution.minimumAllocationSize();
+    const int MaxQueueSize = 2'000'000'000 / queueElementSize;
 #ifdef DEBUG
     const int ThreadCount = 1;
 #else
@@ -552,17 +542,16 @@ template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig&
     assignmentQueue.push(std::move(initialSolution));
     ThreadPool threadPool(ThreadCount);
     std::mutex waitMutex;
-    std::mutex solutionMutex;
     std::atomic<bool>* threadIsWaiting = new std::atomic<bool>[ThreadCount];
     for (int i = 0; i < ThreadCount; ++i) {
         threadIsWaiting[i] = false;
     }
     for (int i = 0; i < ThreadCount; ++i) {
-        threadPool.addTask([&config, &assignmentQueue, &threadIsWaiting, &waitMutex, &solutionMutex, ThreadCount](int id) {
-            PreallocatedVector<std::pair<SolutionType, Edge>> backlog(config.nodeCount() * config.nodeCount());
+        threadPool.addTask([&config, &function, &assignmentQueue, &threadIsWaiting, &waitMutex, ThreadCount](int id) {
+            PreallocatedVector<BacklogType> backlog(config.nodeCount() * config.nodeCount());
             while (true) {
                 if (config.stopWorking)
-                    return;
+                    break;
                 while (assignmentQueue.empty()) {
                     // I'm sure there is more elegant way to do this. Basically I want all worker threads to wait
                     // until all work is finished and until that happens periodically check queue for new tasks possibly
@@ -576,10 +565,10 @@ template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig&
                                 stillWorking = true;
                         }
                         if (!stillWorking)
-                            return;
+                            goto End;
                     }
                     if (config.stopWorking)
-                        return;
+                        goto End;
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
                 threadIsWaiting[id] = false;
@@ -587,10 +576,25 @@ template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig&
                 if (!assignmentSolution)
                     continue;
 
-                findSolutions(config, *assignmentSolution, assignmentQueue, solutionMutex, backlog);
+                function(config, *assignmentSolution, assignmentQueue, backlog);
             }
+        End:
+            config.flushPartialSolutionCount();
         });
     }
     threadPool.wait();
     delete[] threadIsWaiting;
+}
+
+template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig& config) {
+    ArrayOfPoolAllocators freeLists(1024, { 
+        SolutionType::RequiredAllocationSize(int(config.weights.size()), config.useExtendedMatrix),
+        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 2), config.useExtendedMatrix),
+        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 4), config.useExtendedMatrix),
+        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 8), config.useExtendedMatrix),
+        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 16), config.useExtendedMatrix),
+    });
+    SolutionType initialSolution(freeLists, config);
+    initialSolution.shrinkToFit();
+    findSolutionsBfs<std::pair<SolutionType, Edge>>(config, initialSolution, initialSolution.minimumAllocationSize(), findSolutions<SolutionType>);
 }

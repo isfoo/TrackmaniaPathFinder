@@ -3,9 +3,11 @@
 #include <string>
 #include <cstdint>
 #include <filesystem>
+#include <boost/int128.hpp>
 #include "utility.h"
 
 namespace fs = std::filesystem;
+using int128_t = boost::int128::int128_t;
 
 struct ConnectionFinderSettings {
     int testedConnectionTime = 0;
@@ -184,7 +186,7 @@ constexpr NodeType NullNode = NodeType(-1);
 constexpr Edge NullEdge = { NullNode, NullNode };
 constexpr EdgeCostType Inf = 100'000'000;
 
-enum class Algorithm { None, Assignment, Arborescence, LinKernighan };
+enum class Algorithm { None, Assignment, Arborescence, BruteForce, LinKernighan };
 
 using RepeatNodesVector = FastSmallVector<NodeType, 5>;
 
@@ -241,6 +243,10 @@ enum CompressedEdgeType {
 #pragma pack(push, 1)
 struct CompressedEdge {
     NodeType prev;
+    NodeType src;
+    NodeType dst;
+};
+struct CompressedEdgeNoPrev {
     NodeType src;
     NodeType dst;
 };
@@ -324,7 +330,7 @@ struct SolutionConfig {
     ConditionalMatrix<int> condWeights;
     ConditionalMatrix<bool> isVerifiedConnection;
     int maxSolutionCount;
-    int limit;
+    std::atomic<int>* limit_;
     int ignoredValue;
     bool useExtendedMatrix;
     ThreadSafeVec<BestSolution> solutionsVec;
@@ -333,9 +339,14 @@ struct SolutionConfig {
     RepeatNodeMatrix repeatNodeMatrix;
     Vector3d<Bool> useRespawnMatrix;
     std::vector<int> ringCps;
-    std::atomic<int64_t> partialSolutionCount;
+    std::atomic<int128_t> partialSolutionCount;
     std::atomic<bool>& stopWorking;
     Edge addedConnection;
+
+    std::mutex solutionUpdateMutex;
+    std::mutex partialSolutionCountMutex;
+
+    static thread_local inline int LocalPartialSolutionCount = 0;
 
     SolutionConfig(std::atomic<bool>& stopWorking) : stopWorking(stopWorking) {}
     SolutionConfig(const SolutionConfig& other) : stopWorking(other.stopWorking) {
@@ -343,7 +354,7 @@ struct SolutionConfig {
         condWeights = other.condWeights;
         isVerifiedConnection = other.isVerifiedConnection;
         maxSolutionCount = other.maxSolutionCount;
-        limit = other.limit;
+        limit_ = other.limit_;
         ignoredValue = other.ignoredValue;
         useExtendedMatrix = other.useExtendedMatrix;
         bestSolutions = other.bestSolutions;
@@ -356,6 +367,31 @@ struct SolutionConfig {
     }
     int nodeCount() const {
         return weights.size();
+    }
+    void updateLimit(int newValue) {
+        limit_->store(newValue);
+    }
+    int limit() const {
+        return limit_->load();
+    }
+
+    std::string partialSolutionCountString() {
+        return boost::int128::to_string(partialSolutionCount.load());
+    }
+    void flushPartialSolutionCount() {
+        std::scoped_lock l{ partialSolutionCountMutex };
+        partialSolutionCount.store(partialSolutionCount.load() + LocalPartialSolutionCount);
+        LocalPartialSolutionCount = 0;
+    }
+    void incrementPartialSolutionCount() {
+        LocalPartialSolutionCount += 1;
+        flushPartialSolutionCount();
+    }
+    void lazyIncrementPartialSolutionCount(int countBeforeFlush = 13) {
+        LocalPartialSolutionCount += 1;
+        if (LocalPartialSolutionCount == countBeforeFlush) {
+            flushPartialSolutionCount();
+        }
     }
 };
 

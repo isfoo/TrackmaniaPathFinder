@@ -234,7 +234,6 @@ void findSolutionsLinKernighan(SolutionConfig& config) {
 
     const int ThreadCount = (std::thread::hardware_concurrency() > 0) ? std::thread::hardware_concurrency() : 1;
     ThreadPool threadPool(ThreadCount);
-    std::mutex solutionMutex;
 
     for (int maxSequenceLength = 4; maxSequenceLength < N; maxSequenceLength += 2) {
         if (config.stopWorking)
@@ -248,7 +247,7 @@ void findSolutionsLinKernighan(SolutionConfig& config) {
         XorShift64 rng;
         FastThreadSafeishHashSet<std::vector<NodeType>> processedSolutions(24);
 
-        config.partialSolutionCount = ((uint64_t(maxSequenceLength) + 1) << 32);
+        config.partialSolutionCount.store(int128_t(maxSequenceLength + 1, 0));
         const int TryCount = isFastRun ? 5 : 1000;
         for (int tryId = 0; tryId < TryCount; ++tryId) {
             auto solution = generateRandomSolution(tryId, rng, config.ignoredValue, costEx);
@@ -259,19 +258,19 @@ void findSolutionsLinKernighan(SolutionConfig& config) {
             if (processedSolutions.find(solution))
                 continue;
             processedSolutions.insert(solution);
-            saveSolution(config, solution, solutionMutex);
+            saveSolution(config, solution);
 
-            threadPool.addTask([&config, &adjList, &processedSolutions, &maxSearchWidths, &solutionMutex, solution, revSolution](int) mutable {
+            threadPool.addTask([&config, &adjList, &processedSolutions, &maxSearchWidths, solution, revSolution](int) mutable {
                 while (true) {
                     while (linKernighan(config, adjList, solution, revSolution, maxSearchWidths, processedSolutions))
-                        saveSolution(config, solution, solutionMutex);
+                        saveSolution(config, solution);
                     if (config.stopWorking)
                         return;
                     if (!doubleBridge(config, solution, revSolution, processedSolutions))
                         break;
-                    saveSolution(config, solution, solutionMutex);
+                    saveSolution(config, solution);
                 }
-                config.partialSolutionCount += 1;
+                config.incrementPartialSolutionCount();
             });
         }
         threadPool.wait();

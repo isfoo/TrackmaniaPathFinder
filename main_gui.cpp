@@ -9,6 +9,7 @@
 #include "gbxParser.h"
 #include "assignmentRelaxationSolutionFinder.h"
 #include "arborescenceRelaxationSolutionFinder.h"
+#include "bruteForceSolutionFinder.h"
 #include "Lin-KernighanSolutionFinder.h"
 #include "solutionFinderCommon.h"
 #include "utility.h"
@@ -239,7 +240,9 @@ int main(int argc, char** argv) {
     input.loadFromFile((state.workingDir / "inputData.txt").string());
 
     std::atomic<bool> stopWorkingForConfig;
+    std::atomic<int> limitForConfig;
     SolutionConfig config(stopWorkingForConfig);
+    config.limit_ = &limitForConfig;
     config.maxSolutionCount = input.maxSolutionCount;
     config.partialSolutionCount = 0;
     config.stopWorking = false;
@@ -481,6 +484,10 @@ int main(int argc, char** argv) {
                         startAlgorithm(Algorithm::Arborescence);
                     }
                     ImGui::SameLine();
+                    if (ImGui::Button("Run brute-force algorithm")) {
+                        startAlgorithm(Algorithm::BruteForce);
+                    }
+                    ImGui::SameLine();
                     if (ImGui::Button("Run heuristic algorithm")) {
                         startAlgorithm(Algorithm::LinKernighan);
                     }
@@ -637,17 +644,17 @@ int main(int argc, char** argv) {
 
                     ImGui::TableNextColumn();
                     if (input.isConnectionSearchAlgorithm) {
-                        ImGui::Text("Checked %d / %d connections", config.partialSolutionCount.load(), state.connectionsToTest.size());
+                        ImGui::Text("Checked %s / %d connections", config.partialSolutionCountString().c_str(), state.connectionsToTest.size());
                     } else if (state.currentAlgorithm == Algorithm::LinKernighan) {
                         auto n = config.partialSolutionCount.load();
-                        auto optVal = n >> 32;
-                        auto tryVal = n & 0xffffffff;
+                        auto optVal = n.high;
+                        auto tryVal = n.low;
                         ImGui::Text("Completed "); 
                         ImGui::SameLine();
                         addNumberPadding(int(tryVal), 1000);
                         ImGui::Text("%d tries for %d-opt", tryVal, optVal);
-                    } else if (state.currentAlgorithm == Algorithm::Assignment || state.currentAlgorithm == Algorithm::Arborescence) {
-                        ImGui::Text("Partial routes processed: %d", config.partialSolutionCount.load());
+                    } else if (state.currentAlgorithm == Algorithm::Assignment || state.currentAlgorithm == Algorithm::Arborescence || state.currentAlgorithm == Algorithm::BruteForce) {
+                        ImGui::Text("Partial routes processed: %s", config.partialSolutionCountString().c_str());
                     } else {
                         ImGui::Text("");
                     }

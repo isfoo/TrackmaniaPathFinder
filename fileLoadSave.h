@@ -94,7 +94,7 @@ std::vector<std::vector<int>> splitLineToConditionalCostsMatrix(std::string_view
     return costs;
 }
 
-bool loadVerifiedConnection(InputAlgorithmData& data, std::string line) {
+bool loadVerifiedConnectionUpdateCondWeights(InputAlgorithmData& data, std::string line) {
     std::array<int, 3> nodes; // prev, src, dst
     enum { AnyPrevNode, Respawn, Float, Integer, Set };
     auto tokens = tokenize(line, { {AnyPrevNode, "x", true}, {Respawn, "r", true}, {Float, "-0123456789."}, {Integer, "0123456789"}, {Set, "set", true}});
@@ -137,7 +137,6 @@ bool loadVerifiedConnection(InputAlgorithmData& data, std::string line) {
         } else {
             newTime = data.condWeights[dst][src][prev] = time;
         }
-        data.weights[dst][src] = std::min(data.weights[dst][src], newTime);
         data.isVerifiedConnection[dst][src][prev] = true;
     };
     if (nodes[0] == -1) {
@@ -201,11 +200,16 @@ InputAlgorithmData loadCsvData(const std::string& inputFileName, int ignoredValu
         if (firstRealChar == std::string::npos || line[firstRealChar] == '#')
             continue;
         line = line.substr(firstRealChar);
-        if (!loadVerifiedConnection(data, line)) {
+        if (!loadVerifiedConnectionUpdateCondWeights(data, line)) {
             errorMsg = "Failed to parse line " + std::to_string(verifiedLineNr) + " in verified connections list";
             return {};
         }
         verifiedLineNr += 1;
+    }
+    for (int dst = 0; dst < data.condWeights.data.size(); ++dst) {
+        for (int src = 0; src < data.condWeights[dst].size(); ++src) {
+            data.weights[dst][src] = *std::min_element(data.condWeights[dst][src].begin(), data.condWeights[dst][src].end());
+        }
     }
 
     // if respawn time wasn't explicitly assigned, assign to it the highest time

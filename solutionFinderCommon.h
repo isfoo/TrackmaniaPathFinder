@@ -194,7 +194,7 @@ void insertSortedByTimeAndConnectionOrder(std::vector<BestSolution>& vec, const 
 void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::vector<CompressedEdge>& edges) {
     auto solution = createSolution(config, edges);
     auto time = calculateSolutionTime(config, solution);
-    if (time > config.limit || (config.bestSolutions.size() >= config.maxSolutionCount && time >= config.limit))
+    if (time > config.limit() || (config.bestSolutions.size() >= config.maxSolutionCount && time >= config.limit()))
         return;
 
     auto edgeTypeStrictVariation = CompressedEdgeType(NonRepeat | SequenceDependent | Sorted);
@@ -229,21 +229,21 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::vector<Compre
     config.solutionsVec.push_back_not_thread_safe(newSolution);
     insertSortedByTimeAndConnectionOrder(config.bestSolutions, newSolution);
     if (config.bestSolutions.size() > config.maxSolutionCount) {
-        config.limit = config.bestSolutions.back().time;
+        config.updateLimit(config.bestSolutions.back().time);
         config.bestSolutions.pop_back();
     }
 }
 
-void saveSolution(SolutionConfig& config, const std::vector<CompressedEdge>& edges, std::mutex& solutionMutex) {
-    std::scoped_lock l{ solutionMutex };
+void saveSolution(SolutionConfig& config, const std::vector<CompressedEdge>& edges) {
+    std::scoped_lock l{ config.solutionUpdateMutex };
     saveSolutionAndUpdateLimit(config, edges);
 }
-void saveSolution(SolutionConfig& config, const std::vector<NodeType>& solution, std::mutex& solutionMutex) {
+void saveSolution(SolutionConfig& config, const std::vector<NodeType>& solution) {
     std::vector<CompressedEdge> edges = { {0, 0, solution[0]} };
     for (int i = 1; i < solution.size() - 1; ++i) {
         edges.push_back({ 0, edges.back().dst, solution[edges.back().dst]});
     }
-    saveSolution(config, edges, solutionMutex);
+    saveSolution(config, edges);
 }
 
 struct RepeatEdgePath {
@@ -508,7 +508,6 @@ struct State {
     bool isVariationsWindowOpen = false;
     BestSolution solutionToShowVariation;
     int solutionToShowVariationId = -1;
-    //bool showRepeatNodeVariations = true;
 
     bool isUnverifiedConnectionsWindowOpen = false;
     BestSolution solutionToShowUnverifiedConnections;
@@ -538,6 +537,7 @@ struct State {
 void findSolutionsAssignment(SolutionConfig& config);
 void findSolutionsArborescence(SolutionConfig& config);
 void findSolutionsLinKernighan(SolutionConfig& config);
+void findSolutionsBruteForce(SolutionConfig& config);
 
 void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input, State& state) {
     state.taskWasCanceled = false;
@@ -564,7 +564,7 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
         inputDataFile = dataFilePath.string();
     }
 
-    config.limit = input.limitValue * 10;
+    config.updateLimit(input.limitValue * 10);
     config.ignoredValue = input.ignoredValue * 10;
     config.maxSolutionCount = input.maxSolutionCount;
     config.outputFileName = input.outputDataFile;
@@ -652,7 +652,8 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
                 privateConfig.weights[dst][src] = connectionFinderSettings.testedConnectionTime;
                 privateConfig.bestSolutions.clear();
                 privateConfig.solutionsVec.clear();
-                privateConfig.limit = config.limit;
+                std::atomic<int> limit = config.limit();
+                privateConfig.limit_ = &limit;
                 std::fill(privateConfig.condWeights[dst][src].begin(), privateConfig.condWeights[dst][src].end(), privateConfig.weights[dst][src]);
                 privateConfig.repeatNodeMatrix = addRepeatNodeEdges(privateConfig.weights, privateConfig.condWeights, privateConfig.ignoredValue, input.maxRepeatNodesToAdd, repeatNodesTurnedOff);
                 addRingCps(config, ringCps);
@@ -669,14 +670,14 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
                     config.solutionsVec.push_back_not_thread_safe(newSolution);
                     insertSortedByTimeAndConnectionOrder(config.bestSolutions, newSolution);
                     if (config.bestSolutions.size() >= config.maxSolutionCount) {
-                        config.limit = config.bestSolutions.back().time;
+                        config.updateLimit(config.bestSolutions.back().time);
                         config.bestSolutions.pop_back();
                     }
                 }
 
                 privateConfig.weights = config.weights;
                 privateConfig.condWeights = config.condWeights;
-                config.partialSolutionCount += 1;
+                config.incrementPartialSolutionCount();
             }
             config.stopWorking = true;
             state.timerThread.join();
@@ -685,7 +686,7 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
     } else {
         config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, input.maxRepeatNodesToAdd, repeatNodesTurnedOff);
         config.ringCps = ringCps;
-        if (algorithm != Algorithm::Arborescence) {
+        if (algorithm != Algorithm::Arborescence && algorithm != Algorithm::BruteForce) {
             addRingCps(config, ringCps);
         }
         clearFile(config.outputFileName);
@@ -698,6 +699,8 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
                 findSolutionsAssignment(config);
             } else if (algorithm == Algorithm::Arborescence) {
                 findSolutionsArborescence(config);
+            } else if (algorithm == Algorithm::BruteForce) {
+                findSolutionsBruteForce(config);
             } else {
                 findSolutionsLinKernighan(config);
             }

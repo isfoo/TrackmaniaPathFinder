@@ -262,11 +262,11 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
     }
 
     bool solveRelaxationAndCheckIfStillViable(SolutionConfig& config) {
-        removeTooExpensiveEdges(config.limit);
+        removeTooExpensiveEdges(config.limit());
         shrinkToFit();
         hungarianMethod();
 
-        if (cost > config.limit)
+        if (cost > config.limit())
             return false;
 
         arboCost = minArborescence(*this);
@@ -274,8 +274,8 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
         return true;
     }
 
-    void saveSolution(SolutionConfig& config, std::mutex& solutionMutex) {
-        ::saveSolution(config, std::vector<NodeType>(solution.data, solution.data + size()), solutionMutex);
+    void saveSolution(SolutionConfig& config) {
+        ::saveSolution(config, std::vector<NodeType>(solution.data, solution.data + size()));
     }
 };
 
