@@ -159,6 +159,7 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
             would at a first glance lead to the biggest increase in cost.
             We do this by summing 2nd lowest element in row and column of each edge
         */
+        thread_local XorShift64 rng;
         auto findMin = [this](AdjList& adj, NodeType i, NodeType ignoreNode, bool rev) -> EdgeCostType {
             EdgeCostType min = Inf;
             for (int k = 0; k < adj[i].size(); ++k) {
@@ -170,12 +171,13 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
             return min;
         };
         Edge pivot = NullEdge;
-        EdgeCostType bestIncrease = -1;
+        double bestIncrease = -1;
         for (int i = 0; i < problemSize - 1; ++i) {
             auto j = solution[i];
             if (adjList[i].size() <= 1 || revAdjList[j].size() <= 1)
                 continue;
-            auto increase = findMin(adjList, i, j, false) + findMin(revAdjList, j, i, true);
+            double increase = findMin(adjList, i, j, false) + findMin(revAdjList, j, i, true);
+            increase *= 0.5 + (rng() % 100) / 100.0;
             if (increase > bestIncrease) {
                 bestIncrease = increase;
                 pivot = { i, j };

@@ -208,9 +208,10 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
     }
     
     Edge findPivotEdge() {
+        thread_local XorShift64 rng;
         auto& edges = minArboSolutionEdges;
         Edge pivot = NullEdge;
-        EdgeCostType biggestIncrease = -1;
+        double biggestIncrease = -1;
         for (int dst = 0; dst < revAdjList.size(); ++dst) {
             if (lockedInEdges[dst] != NullNode)
                 continue;
@@ -230,7 +231,8 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
                     min2 = cost;
                 }
             }
-            auto increase = min2 - min;
+            auto increase = double(min2 - min) / min;
+            increase *= 0.5 + (rng() % 100) / 100.0;
             if (increase > biggestIncrease) {
                 biggestIncrease = increase;
                 pivot = { minSrc, dst };
