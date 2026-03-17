@@ -108,10 +108,14 @@ struct AssignmentSolution : BranchAndBoundSolution<AssignmentSolution> {
         return false;
     }
     void edgeCostIncreasedCallback(Edge edge) {
-        addUnassignedDstNode(edge.second);
+        if (solution[edge.first] == edge.second) {
+            addUnassignedDstNode(edge.second);
+        }
     }
     void customRemoveOutEdge(Edge edge) {
-        addUnassignedDstNode(edge.second);
+        if (solution[edge.first] == edge.second) {
+            addUnassignedDstNode(edge.second);
+        }
     }
     bool customLockOutEdge(Edge edge) {
         PartialRoute newPartialRoute = PartialRoute(edge.first, edge.second, 1);
