@@ -15,14 +15,15 @@ template<int Size> struct alignas(64) BruteForceSolutionData {
     int lastNonRingNode;
     int cost;
     int minInSum;
-    FastStackBitset visited;
-    FastStackBitset srcNotToConsider;
-    FastStackBitset prevNotToConsider;
-    FastStackBitset isRingCp;
+    std::bitset<Size> visited;
+    std::bitset<Size> srcNotToConsider;
+    std::bitset<Size> prevNotToConsider;
+    std::bitset<Size> isRingCp;
     FixedStackVector<MinInNode, Size> minInNodes;
     FixedStackVector<CompressedEdgeNoPrev, Size> edges;
     FixedStackVector<NodeType, Size> prevToConsider;
     FixedStackVector<NodeType, Size> notVisitedNodes;
+    std::array<std::bitset<Size>, Size> possibleInNodes;
 
     int getCost() const {
         return cost + minInSum;
@@ -54,7 +55,7 @@ template<int Size> void findSolutionsBruteForceLoop(SolutionConfig& config, RawB
             return;
 
         auto& [adjListPtr, revAdjListPtr, curNode, previousLastNonRingNode, lastNonRingNode, cost, minInSum, 
-            visited, srcNotToConsider, prevNotToConsider, isRingCp, minInNodes, edges, prevToConsider, notVisitedNodes] = solutionData;
+            visited, srcNotToConsider, prevNotToConsider, isRingCp, minInNodes, edges, prevToConsider, notVisitedNodes, possibleInNodes] = solutionData;
         auto& adjList = *adjListPtr;
         auto& revAdjList = *revAdjListPtr;
 
@@ -80,19 +81,30 @@ template<int Size> void findSolutionsBruteForceLoop(SolutionConfig& config, RawB
                 vec.pop_back();
             }
         };
+        auto addSrcNotToConsider = [&](NodeType src) -> bool {
+            srcNotToConsider.set(src);
+            for (auto dst : notVisitedNodes) {
+                possibleInNodes[dst].reset(src);
+                if (!possibleInNodes[dst].any())
+                    return false;
+            }
+            return true;
+        };
 
         visited.set(curNode);
         removeNodeIfPossible(notVisitedNodes, curNode);
 
         if (previousLastNonRingNode != lastNonRingNode) {
-            srcNotToConsider.set(previousLastNonRingNode);
+            if (!addSrcNotToConsider(previousLastNonRingNode))
+                continue;
         }
         if (edges.size() > 0 && isRingCp.test(edges.back().src)) {
-            srcNotToConsider.set(edges.back().src);
+            if (!addSrcNotToConsider(edges.back().src))
+                continue;
         } else if (edges.size() >= 2 && edges.back().src != edges[edges.size() - 2].dst) {
-            srcNotToConsider.set(edges[edges.size() - 2].dst);
+            if (!addSrcNotToConsider(edges[edges.size() - 2].dst))
+                continue;
         }
-
         
         if (previousLastNonRingNode != lastNonRingNode) {
             if (edges.size() <= 0 || edges.back().src != previousLastNonRingNode) {
@@ -140,16 +152,18 @@ template<int Size> void findSolutionsBruteForceLoop(SolutionConfig& config, RawB
             continue;
 
         FixedStackVector<std::pair<NodeType, bool>, 256> nextNodes;
-        for (int i = 0; i < adjList[curNode].size(); ++i) {
-            int nextNode = adjList[curNode][i];
+        for (auto nextNode : adjList[curNode]) {
             if (visited.test(nextNode) || config.condWeights[nextNode][curNode][edges.size() >= 1 ? edges[edges.size() - 1].src : 0] >= config.ignoredValue)
+                continue;
+            if (nextNode == adjList.size() - 1 && edges.size() != config.weights.size() - 2)
                 continue;
             nextNodes.emplace_back(std::pair{ nextNode, false });
         }
         if (curNode != lastNonRingNode) {
-            for (int i = 0; i < adjList[lastNonRingNode].size(); ++i) {
-                int nextNode = adjList[lastNonRingNode][i];
+            for (auto nextNode : adjList[lastNonRingNode]) {
                 if (visited.test(nextNode) || config.condWeights.withRespawn(nextNode, lastNonRingNode) >= config.ignoredValue)
+                    continue;
+                if (nextNode == adjList.size() - 1 && edges.size() != config.weights.size() - 2)
                     continue;
                 nextNodes.emplace_back(std::pair{ nextNode, true });
             }
@@ -190,14 +204,15 @@ template<int Size> void findSolutionsBruteForce(SolutionConfig& config) {
     solutionData.lastNonRingNode = 0;
     solutionData.cost = 0;
     solutionData.minInSum = 0;
-    solutionData.visited = FastStackBitset();
-    solutionData.srcNotToConsider = FastStackBitset();
-    solutionData.prevNotToConsider = FastStackBitset();
-    solutionData.isRingCp = FastStackBitset();
+    solutionData.visited = std::bitset<Size>();
+    solutionData.srcNotToConsider = std::bitset<Size>();
+    solutionData.prevNotToConsider = std::bitset<Size>();
+    solutionData.isRingCp = std::bitset<Size>();
     solutionData.minInNodes = FixedStackVector<MinInNode, Size>();
     solutionData.edges = FixedStackVector<CompressedEdgeNoPrev, Size>();
     solutionData.prevToConsider = FixedStackVector<NodeType, Size>();
     solutionData.notVisitedNodes = FixedStackVector<NodeType, Size>();
+    solutionData.possibleInNodes = std::array<std::bitset<Size>, Size>();
     auto& edges = solutionData.edges;
     auto& visited = solutionData.visited;
 
@@ -218,6 +233,12 @@ template<int Size> void findSolutionsBruteForce(SolutionConfig& config) {
     }
     solutionData.adjList = &adjList;
     solutionData.revAdjList = &revAdjList;
+
+    for (int dst = 0; dst < revAdjList.size(); ++dst) {
+        for (int src : revAdjList[dst]) {
+            solutionData.possibleInNodes[dst].set(src);
+        }
+    }
 
     auto& minInNodes = solutionData.minInNodes;
     minInNodes.size_ = config.weights.size();
@@ -255,8 +276,10 @@ template<int Size> void findSolutionsBruteForce(SolutionConfig& config) {
 }
 
 void findSolutionsBruteForce(SolutionConfig& config) {
-    if (config.nodeCount() <= 38) {
-        findSolutionsBruteForce<40>(config);
+    if (config.nodeCount() <= 24) {
+        findSolutionsBruteForce<26>(config);
+    } else if (config.nodeCount() <= 40) {
+        findSolutionsBruteForce<42>(config);
     } else if (config.nodeCount() <= 102) {
         findSolutionsBruteForce<104>(config);
     } else {

@@ -15,6 +15,7 @@
 #include <queue>
 #include <charconv>
 #include <condition_variable>
+#include <bitset>
 
 using Bool = int8_t;
 using EdgeCostType = int32_t;
@@ -443,19 +444,7 @@ private:
     result_type state;
 };
 
-struct FastStackBitset {
-    using IntType = uint64_t;
-    static constexpr int IntTypeBitSize = sizeof(IntType) * 8;
-    std::array<IntType, 4> bits;
-
-    FastStackBitset() { std::fill(bits.begin(), bits.end(), 0); }
-    bool test(int i) const { return bits[i / IntTypeBitSize] & singleBit(i); }
-    void set(int i)        { bits[i / IntTypeBitSize] |= singleBit(i); }
-    void reset(int i)      { bits[i / IntTypeBitSize] &= ~singleBit(i); }
-
-private:
-    IntType singleBit(int i) const { return (1ull << (i % IntTypeBitSize)); }
-};
+using FastStackBitset = std::bitset<256>;// FastStackBitsetT<256>;
 
 struct DynamicBitset {
     using IntType = uint64_t;
