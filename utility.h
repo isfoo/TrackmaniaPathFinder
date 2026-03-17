@@ -146,13 +146,14 @@ public:
 struct PoolAllocator {
     std::vector<void*> freeList;
     std::vector<char*> allocatedBlocks;
-    std::mutex m;
+    std::mutex mutex;
     int elementSize;
     int elementCount;
     int indexInCurrentBlock;
+    int maxBlockCount;
 
-    PoolAllocator(int elementSize, int elementCount) : 
-        elementSize(elementSize), elementCount(elementCount), indexInCurrentBlock(elementCount)
+    PoolAllocator(int elementSize, int elementCount, int maxBlockCount=std::numeric_limits<int>::max()) : 
+        elementSize(elementSize), elementCount(elementCount), indexInCurrentBlock(elementCount), maxBlockCount(maxBlockCount)
     {};
     PoolAllocator(PoolAllocator&& other) {
         freeList.swap(other.freeList);
@@ -160,6 +161,7 @@ struct PoolAllocator {
         elementSize = other.elementSize;
         elementCount = other.elementCount;
         indexInCurrentBlock = other.indexInCurrentBlock;
+        maxBlockCount = other.maxBlockCount;
     }
     PoolAllocator(const PoolAllocator&) = delete;
     PoolAllocator operator=(const PoolAllocator&) = delete;
@@ -170,24 +172,36 @@ struct PoolAllocator {
         }
     }
 
-    void* allocate() {
-        std::scoped_lock l{ m };
+    void* allocateWithoutLock() {
         if (!freeList.empty()) {
             auto ptr = freeList.back();
             freeList.pop_back();
             return ptr;
         }
         if (indexInCurrentBlock >= elementCount) {
+            if (allocatedBlocks.size() >= maxBlockCount)
+                return nullptr;
             allocatedBlocks.push_back((char*)malloc(elementSize * elementCount));
             indexInCurrentBlock = 0;
         }
         return allocatedBlocks.back() + ((indexInCurrentBlock++) * elementSize);
     }
+    void* allocate() {
+        std::scoped_lock l{ mutex };
+        return allocateWithoutLock();
+    }
 
-    void deallocate(void* ptr) {
-        std::scoped_lock l{ m };
+    void deallocateWithoutLock(void* ptr) {
         if (ptr)
             freeList.push_back(ptr);
+    }
+    void deallocate(void* ptr) {
+        std::scoped_lock l{ mutex };
+        deallocateWithoutLock(ptr);
+    }
+
+    bool canAllocate() {
+        return !freeList.empty() || allocatedBlocks.size() < maxBlockCount;
     }
 };
 
@@ -759,10 +773,10 @@ template<typename T> struct PriorityMultiQueue {
             }
         }
     }
-    std::optional<T> pop() {
+    bool pop(T& outValue) {
         while (true) {
             if (empty())
-                return std::nullopt;
+                return false;
             int chosenId = randomQueueId();
             if (elementCount >= queueCount * 10) {
                 int minCost = std::numeric_limits<int>::max();
@@ -776,7 +790,8 @@ template<typename T> struct PriorityMultiQueue {
             }
             if (queues[chosenId].tryLockForPop()) {
                 --elementCount;
-                return queues[chosenId].popWhenLockedAndUnlock();
+                outValue = queues[chosenId].popWhenLockedAndUnlock();
+                return true;
             }
         }
     }

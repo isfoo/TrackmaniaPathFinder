@@ -14,6 +14,7 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
 
     // loose variables - normal assignment copy
     FastStackBitset isRingCp;
+    bool needToRecalculate;
 
     // initialized data (do full copy)
     ArrayWithSize<MinSpanningArborescence::MinEdge> minArboSolutionEdges;
@@ -31,6 +32,7 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
     
     void assignLooseVariables(const ArborescenceSolution& other) {
         isRingCp = other.isRingCp;
+        needToRecalculate = other.needToRecalculate;
     }
     void assignNonLooseVariables(const ArborescenceSolution& other) {
         minArboSolutionEdges = other.minArboSolutionEdges;
@@ -59,6 +61,7 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
         for (auto ringCp : config.ringCps) {
             isRingCp.set(ringCp);
         }
+        needToRecalculate = true;
 
         for (int i = 0; i < size(); ++i) {
             treeNodes[i].parent = NullNode;
@@ -122,7 +125,21 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
         return removeAllOtherMainPathDstEdges(parent);
     }
 
+    void edgeCostIncreasedCallback(Edge edge) {
+        if (revSolution[edge.second] == edge.first) {
+            needToRecalculate = true;
+        }
+    }
+    void customRemoveOutEdge(Edge edge) {
+        if (revSolution[edge.second] == edge.first) {
+            needToRecalculate = true;
+        }
+    }
     bool customLockOutEdge(Edge edge) {
+        if (revSolution[edge.second] != edge.first) {
+            needToRecalculate = true;
+        }
+
         node(edge.second).parent = edge.first;
         if (node(edge.first).firstChild == NullNode) {
             node(edge.first).firstChild = edge.second;
@@ -192,18 +209,34 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
     
     Edge findPivotEdge() {
         auto& edges = minArboSolutionEdges;
-        auto pivot = *std::min_element(edges.begin(), edges.end(), [&](MinSpanningArborescence::MinEdge a, MinSpanningArborescence::MinEdge b) {
-            auto aIsLocked = lockedInEdges[a.dst] == a.src;
-            auto bIsLocked = lockedInEdges[b.dst] == b.src;
-            if (aIsLocked == bIsLocked) {
-                return valueAt(a.src, a.dst) < valueAt(b.src, b.dst);
-            } else {
-                return aIsLocked < bIsLocked;
+        Edge pivot = NullEdge;
+        EdgeCostType biggestIncrease = -1;
+        for (int dst = 0; dst < revAdjList.size(); ++dst) {
+            if (lockedInEdges[dst] != NullNode)
+                continue;
+            if (revAdjList[dst].size() <= 1)
+                continue;
+            NodeType minSrc = NullNode;
+            EdgeCostType min = Inf;
+            EdgeCostType min2 = Inf;
+            for (int i = 0; i < revAdjList[dst].size(); ++i) {
+                int src = revAdjList[dst][i];
+                auto cost = valueAt(src, dst);
+                if (cost < min) {
+                    minSrc = src;
+                    min2 = min;
+                    min = cost;
+                } else if (cost < min2) {
+                    min2 = cost;
+                }
             }
-        });
-        if (lockedInEdges[pivot.dst] == pivot.src)
-            return NullEdge; // Should never happen
-        return { pivot.src, pivot.dst };
+            auto increase = min2 - min;
+            if (increase > biggestIncrease) {
+                biggestIncrease = increase;
+                pivot = { minSrc, dst };
+            }
+        }
+        return pivot;
     }
 
     void calculateSolutionAndRevSolution() {
@@ -218,7 +251,10 @@ struct ArborescenceSolution : BranchAndBoundSolution<ArborescenceSolution> {
 
     bool solveRelaxationAndCheckIfStillViable(SolutionConfig& config) {
         shrinkToFit();
-        cost = minArborescence(*this, false, &minArboSolutionEdges);
+        if (needToRecalculate) {
+            cost = minArborescence(*this, false, &minArboSolutionEdges);
+        }
+        needToRecalculate = false;
 
         if (cost > config.limit())
             return false;

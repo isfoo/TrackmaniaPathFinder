@@ -82,34 +82,52 @@ struct AdjList {
     }
 };
 
-
 struct ArrayOfPoolAllocators {
-    struct AllocatorWithSize {
-        PoolAllocator allocator;
-        int size;
-        AllocatorWithSize(int elementSize, int elementCount) : allocator(elementSize, elementCount), size(elementSize) {}
-    };
-    std::vector<AllocatorWithSize> allocators;
+    std::vector<PoolAllocator> allocators;
+    static thread_local inline XorShift64 rng = XorShift64();
 
     ArrayOfPoolAllocators() {}
-    ArrayOfPoolAllocators(int elementsPerAllocation, std::vector<int> sizes) {
-        std::sort(sizes.begin(), sizes.end());
-        for (auto size : sizes) {
-            allocators.emplace_back(size, elementsPerAllocation);
+    ArrayOfPoolAllocators(int elementsPerAllocation, int allocatorCount, int64_t maxTotalCapacity, int size) {
+        int maxBlockCount = maxTotalCapacity / allocatorCount / elementsPerAllocation;
+        for (int i = 0; i < allocatorCount; ++i) {
+            allocators.emplace_back(size, elementsPerAllocation, maxBlockCount);
         }
     }
+    
+    int randomAllocatorId() {
+        return rng() % allocators.size();
+    }
+    bool tryLockForAllocate(int id) {
+        if (!allocators[id].canAllocate())
+            return false;
+        if (!allocators[id].mutex.try_lock())
+            return false;
+        if (!allocators[id].canAllocate()) {
+            allocators[id].mutex.unlock();
+            return false;
+        }
+        return true;
+    }
+    
     void* allocate(int size) {
-        return getAllocator(size).allocate();
+        while (true) {
+            int id = randomAllocatorId();
+            if (tryLockForAllocate(id)) {
+                auto ptr = allocators[id].allocateWithoutLock();
+                allocators[id].mutex.unlock();
+                return ptr;
+            }
+        }
     }
     void deallocate(void* ptr, int size) {
-        getAllocator(size).deallocate(ptr);
-    }
-private:
-    PoolAllocator& getAllocator(int size) {
-        int i = 0;
-        while (allocators[i].size < size)
-            i += 1;
-        return allocators[i].allocator;
+        while (true) {
+            int id = randomAllocatorId();
+            if (allocators[id].mutex.try_lock()) {
+                allocators[id].deallocateWithoutLock(ptr);
+                allocators[id].mutex.unlock();
+                return;
+            }
+        }
     }
 };
 
@@ -372,7 +390,7 @@ template<typename SolutionType> struct BranchAndBoundSolution {
                 auto newCostIncrease = (*costMatrixEx)[i][edge.second][edge.first] - (*costMatrix)[i][edge.second];
                 if (newCostIncrease > costIncreases[i * size() + edge.second]) {
                     costIncreases[i * size() + edge.second] = newCostIncrease;
-                    derived().addUnassignedDstNode(i);
+                    derived().edgeCostIncreasedCallback(Edge{ edge.second, i });
                 }
             }
         }
@@ -380,7 +398,7 @@ template<typename SolutionType> struct BranchAndBoundSolution {
         return true;
     }
     bool removeOutEdge(Edge edge) {
-        derived().addUnassignedDstNode(edge.second);
+        derived().customRemoveOutEdge(edge);
         if (adjList[edge.first].size() <= 1) {
             if (adjList[edge.first].size() <= 0 || !derived().customCanRemoveLastOutEdge(edge)) {
                 return false;
@@ -421,7 +439,7 @@ template<typename SolutionType> struct BranchAndBoundSolution {
                 auto newCostIncrease = minRemainingValue - (*costMatrix)[i][edge.second];
                 if (newCostIncrease > costIncreases[i * size() + edge.second]) {
                     costIncreases[i * size() + edge.second] = newCostIncrease;
-                    derived().addUnassignedDstNode(i);
+                    derived().edgeCostIncreasedCallback(Edge{ edge.second, i });
                 }
             }
         }
@@ -529,7 +547,6 @@ template<typename SolutionType> void findSolutions(SolutionConfig& config, Solut
 }
 
 template<typename BacklogType, typename SolutionType, typename FunctionType> void findSolutionsBfs(SolutionConfig& config, SolutionType& initialSolution, int queueElementSize, FunctionType function) {
-    // no more than 2 GB of data in queue
     const int MaxQueueSize = 2'000'000'000 / queueElementSize;
 #ifdef DEBUG
     const int ThreadCount = 1;
@@ -539,6 +556,7 @@ template<typename BacklogType, typename SolutionType, typename FunctionType> voi
     const int QueueCount = ThreadCount * 2;
     PriorityMultiQueue<SolutionType> assignmentQueue(QueueCount, MaxQueueSize / QueueCount, [](auto& a, auto& b) { return a.getCost() > b.getCost(); });
 
+    auto dummySolution = initialSolution;
     assignmentQueue.push(std::move(initialSolution));
     ThreadPool threadPool(ThreadCount);
     std::mutex waitMutex;
@@ -547,8 +565,9 @@ template<typename BacklogType, typename SolutionType, typename FunctionType> voi
         threadIsWaiting[i] = false;
     }
     for (int i = 0; i < ThreadCount; ++i) {
-        threadPool.addTask([&config, &function, &assignmentQueue, &threadIsWaiting, &waitMutex, ThreadCount](int id) {
+        threadPool.addTask([&config, &function, &assignmentQueue, &threadIsWaiting, &waitMutex, &dummySolution, ThreadCount](int id) {
             PreallocatedVector<BacklogType> backlog(config.nodeCount() * config.nodeCount());
+            SolutionType solution = dummySolution;
             while (true) {
                 if (config.stopWorking)
                     break;
@@ -572,11 +591,11 @@ template<typename BacklogType, typename SolutionType, typename FunctionType> voi
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
                 threadIsWaiting[id] = false;
-                auto assignmentSolution = assignmentQueue.pop();
-                if (!assignmentSolution)
+
+                if (!assignmentQueue.pop(solution))
                     continue;
 
-                function(config, *assignmentSolution, assignmentQueue, backlog);
+                function(config, solution, assignmentQueue, backlog);
             }
         End:
             config.flushPartialSolutionCount();
@@ -587,13 +606,7 @@ template<typename BacklogType, typename SolutionType, typename FunctionType> voi
 }
 
 template<typename SolutionType> void findSolutionsBranchAndBound(SolutionConfig& config) {
-    ArrayOfPoolAllocators freeLists(1024, { 
-        SolutionType::RequiredAllocationSize(int(config.weights.size()), config.useExtendedMatrix),
-        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 2), config.useExtendedMatrix),
-        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 4), config.useExtendedMatrix),
-        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 8), config.useExtendedMatrix),
-        SolutionType::RequiredAllocationSize(int(config.weights.size()), int(config.weights.size() / 16), config.useExtendedMatrix),
-    });
+    ArrayOfPoolAllocators freeLists(1024, 16, 3'000'000'000, SolutionType::RequiredAllocationSize(int(config.weights.size()), config.useExtendedMatrix));
     SolutionType initialSolution(freeLists, config);
     initialSolution.shrinkToFit();
     findSolutionsBfs<std::pair<SolutionType, Edge>>(config, initialSolution, initialSolution.minimumAllocationSize(), findSolutions<SolutionType>);
