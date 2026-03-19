@@ -17,7 +17,9 @@
 #include "fileLoadSave.h"
 #include "imgui_directX11.h"
 
-void HelpMarker(const char* desc) {
+void HelpMarker(const State& state, const char* desc) {
+    for (int i = 0; i < state.isDisabledStackCount; ++i)
+        ImGui::EndDisabled();
     ImGui::TextDisabled("(?)");
     if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
@@ -26,6 +28,8 @@ void HelpMarker(const char* desc) {
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
+    for (int i = 0; i < state.isDisabledStackCount; ++i)
+        ImGui::BeginDisabled();
 }
 
 constexpr float Pi = 3.14159265f;
@@ -223,7 +227,7 @@ void sortBestFoundSolutionsSolutions(State& state, const InputData& input) {
 
 int main(int argc, char** argv) {
     CoInitialize(NULL);
-    MyImGui::Init(u"Trackmania Path Finder v8.0.0");
+    MyImGui::Init(u"Trackmania Path Finder v7.1.0");
 
     constexpr int MinFontSize = 8;
     constexpr int MaxFontSize = 30;
@@ -281,12 +285,7 @@ int main(int argc, char** argv) {
             ImGui::Text("%s:", label.c_str());
             ImGui::SameLine();
             if (!helpText.empty()) {
-                int oldCount = state.isDisabledStackCount;
-                while (state.isDisabledStackCount > 0)
-                    EndDisabled();
-                HelpMarker(helpText.c_str());
-                while (state.isDisabledStackCount < oldCount)
-                    BeginDisabled();
+                HelpMarker(state, helpText.c_str());
             }
             ImGui::TableNextColumn();
             ImGui::SetNextItemWidth(-1);
@@ -322,12 +321,7 @@ int main(int argc, char** argv) {
             });
         };
 
-        if (ImGui::BeginTable("menuTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
-            ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-            ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 2);
-            ImGui::TableNextColumn();
-            ImGui::SetNextItemWidth(-1);
-            ImGui::PushID("Reset button");
+        auto pushRedButtonStyle = []() {
             auto [r, g, b] = std::tuple{ 147.f / 255, 36.f / 255, 25.f / 255 };
             auto RedButton = ImVec4(r, g, b, 1.00f);
             auto RedButtonHovered = ImVec4(r * 1.25f, g * 1.25f, b * 1.25f, 1.00f);
@@ -335,12 +329,24 @@ int main(int argc, char** argv) {
             ImGui::PushStyleColor(ImGuiCol_Button, RedButton);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, RedButtonHovered);
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, RedButtonClicked);
+        };
+        auto popRedButtonStyle = []() {
+            ImGui::PopStyleColor();
+            ImGui::PopStyleColor();
+            ImGui::PopStyleColor();
+        };
+
+        if (ImGui::BeginTable("menuTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
+            ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
+            ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 2);
+            ImGui::TableNextColumn();
+            ImGui::SetNextItemWidth(-1);
+            ImGui::PushID("Reset button");
+            pushRedButtonStyle();
             if (ImGui::Button("Reset all to default values", {-1, 0})) {
                 input = InputData();
             }
-            ImGui::PopStyleColor();
-            ImGui::PopStyleColor();
-            ImGui::PopStyleColor();
+            popRedButtonStyle();
             ImGui::PopID();
             if (state.isOnPathFinderTab) {
                 ImGui::TableNextColumn();
@@ -369,7 +375,7 @@ int main(int argc, char** argv) {
                         tableInputEntryText("turned off repeat CPs", input.turnedOffRepeatNodes, "List of CP numbers you want to ban from repeating.");
                         tableInputEntryText("output data file", input.outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max nr of routes\" found.\nIf left empty then no file is created.");
                     }
-                    tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.\nThat is CPs for which you want to include connection where you standing respawn after taking this CP to go back to previous CP.\n\nIt will only find connections where you take a single ring CP before respawning.\nIf optimal path requires taking 2+ ring CPs before respawning it won't be found.");
+                    tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.");
                     if (input.showAdvancedSettings) {
                         if (config.weights.size() > 0) {
                             tableInputEntry("calculate route time", "Calculate time of full or partial route (even a single connection).\n\nThe syntax is the same as in the output format, however the repeat node values in brackets and double-respawns will be ignored.\nThat is the program will forcefully take best repeat nodes for a given connection regardless of what you input.", [&]() {
@@ -472,37 +478,72 @@ int main(int argc, char** argv) {
 
                     runAlgorithm(algorithm, config, input, state);
                 };
-                bool disableAlgorithmButtons = isRunning(state.algorithmRunTask);
-                if (disableAlgorithmButtons)
-                    BeginDisabled();
-                if (ImGui::Button("Run exact algorithm")) {
-                    startAlgorithm(Algorithm::Assignment);
-                }
-                if (input.showAdvancedSettings) {
-                    ImGui::SameLine();
-                    if (ImGui::Button("Run arborescence algorithm")) {
-                        startAlgorithm(Algorithm::Arborescence);
+
+                bool isAlgorithmRunning = isRunning(state.algorithmRunTask);
+                if (ImGui::BeginTable("algorithmRunTable", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
+                    ImGui::TableSetupColumn("Col1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 0);
+                    ImGui::TableSetupColumn("Col2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
+                    ImGui::TableSetupColumn("Col3", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 2);
+
+                    if (isAlgorithmRunning)
+                        BeginDisabled();
+                    ImGui::TableNextColumn();
+                    if (ImGui::Button("Run default algorithm", ImVec2(-1, 0))) {
+                        startAlgorithm(Algorithm::Assignment);
                     }
+                    ImGui::TableNextColumn();
+                    if (input.showAdvancedSettings) {
+                        if (ImGui::Button("Run heuristic algorithm", ImVec2(-1, 0))) {
+                            startAlgorithm(Algorithm::LinKernighan);
+                        }
+                        ImGui::TableNextColumn();
+                    }
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::Text(" <- Partial Ring-CP support");
                     ImGui::SameLine();
-                    if (ImGui::Button("Run brute-force algorithm")) {
+                    HelpMarker(state, "It will only find routes where you take a single ring CP before respawning.\nIf optimal path requires taking 2+ ring CPs before respawning it won't be found.");
+                    if (!input.showAdvancedSettings) {
+                        ImGui::TableNextColumn();
+                    }
+                    
+                    ImGui::TableNextColumn();
+                    if (ImGui::Button("Run node-by-node algorithm", ImVec2(-1, 0))) {
                         startAlgorithm(Algorithm::BruteForce);
                     }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Run heuristic algorithm")) {
-                        startAlgorithm(Algorithm::LinKernighan);
+                    ImGui::TableNextColumn();
+                    if (input.showAdvancedSettings) {
+                        if (ImGui::Button("Run arborescence algorithm", ImVec2(-1, 0))) {
+                            startAlgorithm(Algorithm::Arborescence);
+                        }
+                        ImGui::TableNextColumn();
                     }
-                }
-                if (disableAlgorithmButtons)
-                    EndDisabled();
-                if (isRunning(state.algorithmRunTask)) {
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::Text(" <- Full Ring-CP support");
                     ImGui::SameLine();
-                    if (ImGui::Button("Cancel")) {
+                    HelpMarker(state, "It fully supports Ring CPs, however it is much slower than the algorithms with partial ring CP support");
+                    if (!input.showAdvancedSettings) {
+                        ImGui::TableNextColumn();
+                    }
+
+                    if (isAlgorithmRunning)
+                        EndDisabled();
+
+                    if (!isAlgorithmRunning)
+                        BeginDisabled();
+                    ImGui::TableNextColumn();
+                    pushRedButtonStyle();
+                    if (ImGui::Button("Cancel", ImVec2(-1, 0))) {
                         state.taskWasCanceled = true;
                     }
-                }
-                if (state.copiedBestSolutionsAfterAlgorithmDone) {
-                    ImGui::SameLine();
-                    ImGui::Checkbox("Show results connection filter", &input.showResultsFilter);
+                    popRedButtonStyle();
+                    if (!isAlgorithmRunning)
+                        EndDisabled();
+
+                    ImGui::TableNextColumn();
+                    if (state.copiedBestSolutionsAfterAlgorithmDone) {
+                        ImGui::Checkbox("Show results connection filter", &input.showResultsFilter);
+                    }
+                    ImGui::EndTable();
                 }
 
                 auto getRequiredAndOptionalConnectionSets = [&]() -> std::pair<FastSet2d, FastSet2d> {
