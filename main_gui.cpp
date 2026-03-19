@@ -498,31 +498,34 @@ int main(int argc, char** argv) {
                         }
                         ImGui::TableNextColumn();
                     }
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::Text(" <- Partial Ring-CP support");
-                    ImGui::SameLine();
-                    HelpMarker(state, "It will only find routes where you take a single ring CP before respawning.\nIf optimal path requires taking 2+ ring CPs before respawning it won't be found.");
+                    if (input.showAdvancedSettings || input.ringCps[0] != '\0') {
+                        ImGui::SetNextItemWidth(-1);
+                        ImGui::Text(" <- Partial Ring-CP support");
+                        ImGui::SameLine();
+                        HelpMarker(state, "It will only find routes where you take a single ring CP before respawning.\nIf optimal path requires taking 2+ ring CPs before respawning it won't be found.");
+                    }
                     if (!input.showAdvancedSettings) {
                         ImGui::TableNextColumn();
                     }
-                    
-                    ImGui::TableNextColumn();
-                    if (ImGui::Button("Run node-by-node algorithm", ImVec2(-1, 0))) {
-                        startAlgorithm(Algorithm::BruteForce);
-                    }
-                    ImGui::TableNextColumn();
-                    if (input.showAdvancedSettings) {
-                        if (ImGui::Button("Run arborescence algorithm", ImVec2(-1, 0))) {
-                            startAlgorithm(Algorithm::Arborescence);
+                    if (input.showAdvancedSettings || input.ringCps[0] != '\0') {
+                        ImGui::TableNextColumn();
+                        if (ImGui::Button("Run node-by-node algorithm", ImVec2(-1, 0))) {
+                            startAlgorithm(Algorithm::BruteForce);
                         }
                         ImGui::TableNextColumn();
-                    }
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::Text(" <- Full Ring-CP support");
-                    ImGui::SameLine();
-                    HelpMarker(state, "It fully supports Ring CPs, however it is much slower than the algorithms with partial ring CP support");
-                    if (!input.showAdvancedSettings) {
-                        ImGui::TableNextColumn();
+                        if (input.showAdvancedSettings) {
+                            if (ImGui::Button("Run arborescence algorithm", ImVec2(-1, 0))) {
+                                startAlgorithm(Algorithm::Arborescence);
+                            }
+                            ImGui::TableNextColumn();
+                        }
+                        ImGui::SetNextItemWidth(-1);
+                        ImGui::Text(" <- Full Ring-CP support");
+                        ImGui::SameLine();
+                        HelpMarker(state, "It fully supports Ring CPs, however it is much slower than the algorithms with partial ring CP support");
+                        if (!input.showAdvancedSettings) {
+                            ImGui::TableNextColumn();
+                        }
                     }
 
                     if (isAlgorithmRunning)
