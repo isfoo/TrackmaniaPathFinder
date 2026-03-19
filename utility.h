@@ -142,6 +142,10 @@ public:
         });
         waiting = false;
     }
+
+    int remainingTasksInQueueCount() {
+        return tasks.size();
+    }
 };
 
 struct PoolAllocator {

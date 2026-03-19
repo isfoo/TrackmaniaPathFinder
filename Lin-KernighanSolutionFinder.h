@@ -102,7 +102,10 @@ bool doubleBridge(SolutionConfig& config, std::vector<NodeType>& solution, std::
     }
     return false;
 }
-bool linKernighanRec(SolutionConfig& config, const std::vector<std::vector<NodeType>>& adjList, std::vector<NodeType>& solution, EdgeCostType costChange, NodeType curNode, NodeType endNode, int addedEdgesCount, FastStackBitset& bannedDstNodes, std::vector<NodeType>& revSolution, const std::vector<int>& maxSearchWidths, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions) {
+bool linKernighanRec(SolutionConfig& config, const std::vector<std::vector<NodeType>>& adjList, std::vector<NodeType>& solution, EdgeCostType costChange, NodeType curNode, NodeType endNode, int addedEdgesCount, FastStackBitset& bannedDstNodes, std::vector<NodeType>& revSolution, const std::vector<int>& maxSearchWidths, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions, std::atomic<bool>& stopWorking) {
+    if (config.stopWorking || stopWorking)
+        return false;
+    
     auto& cost = config.weights;
     auto& costEx = config.condWeights;
     auto N = solution.size();
@@ -157,7 +160,7 @@ bool linKernighanRec(SolutionConfig& config, const std::vector<std::vector<NodeT
             auto oldDstNode = solution[curNode];
             solution[curNode] = newDstNode;
             revSolution[newDstNode] = curNode;
-            if (linKernighanRec(config, adjList, solution, newCostChange, oldSrcNode, endNode, addedEdgesCount + 1, bannedDstNodes, revSolution, maxSearchWidths, processedSolutions)) {
+            if (linKernighanRec(config, adjList, solution, newCostChange, oldSrcNode, endNode, addedEdgesCount + 1, bannedDstNodes, revSolution, maxSearchWidths, processedSolutions, stopWorking)) {
                 bannedDstNodes.reset(newDstNode);
                 return true;
             }
@@ -185,7 +188,7 @@ bool linKernighanRec(SolutionConfig& config, const std::vector<std::vector<NodeT
 
     return false;
 }
-bool linKernighan(SolutionConfig& config, const std::vector<std::vector<NodeType>>& adjList, std::vector<NodeType>& solution, std::vector<NodeType>& revSolution, const std::vector<int>& maxSearchWidths, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions) {
+bool linKernighan(SolutionConfig& config, const std::vector<std::vector<NodeType>>& adjList, std::vector<NodeType>& solution, std::vector<NodeType>& revSolution, const std::vector<int>& maxSearchWidths, FastThreadSafeishHashSet<std::vector<NodeType>>& processedSolutions, std::atomic<bool>& stopWorking) {
     NodeType startNode = 0;
     for (NodeType startNode = 0; startNode != solution.size() - 1; startNode = solution[startNode]) {
         if (config.stopWorking)
@@ -194,7 +197,7 @@ bool linKernighan(SolutionConfig& config, const std::vector<std::vector<NodeType
         FastStackBitset bannedDstNodes;
         bannedDstNodes.set(0);
         bannedDstNodes.set(endNode);
-        if (linKernighanRec(config, adjList, solution, 0, startNode, endNode, 0, bannedDstNodes, revSolution, maxSearchWidths, processedSolutions)) {
+        if (linKernighanRec(config, adjList, solution, 0, startNode, endNode, 0, bannedDstNodes, revSolution, maxSearchWidths, processedSolutions, stopWorking)) {
             return true;
         }
     }
@@ -246,9 +249,10 @@ void findSolutionsLinKernighan(SolutionConfig& config) {
         }
         XorShift64 rng;
         FastThreadSafeishHashSet<std::vector<NodeType>> processedSolutions(24);
+        std::atomic<bool> stopWorking = false;
 
         config.partialSolutionCount.store(int128_t(maxSequenceLength + 1, 0));
-        const int TryCount = isFastRun ? 5 : 1000;
+        const int TryCount = (isFastRun ? 5 : 1000) + ThreadCount * 2;
         for (int tryId = 0; tryId < TryCount; ++tryId) {
             auto solution = generateRandomSolution(tryId, rng, config.ignoredValue, costEx);
             std::vector<NodeType> revSolution(N);
@@ -260,11 +264,16 @@ void findSolutionsLinKernighan(SolutionConfig& config) {
             processedSolutions.insert(solution);
             saveSolution(config, solution);
 
-            threadPool.addTask([&config, &adjList, &processedSolutions, &maxSearchWidths, solution, revSolution](int) mutable {
+            threadPool.addTask([&config, &adjList, &processedSolutions, &maxSearchWidths, &stopWorking, solution, revSolution](int) mutable {
                 while (true) {
-                    while (linKernighan(config, adjList, solution, revSolution, maxSearchWidths, processedSolutions))
+                    if (config.stopWorking || stopWorking)
+                        return;
+                    while (linKernighan(config, adjList, solution, revSolution, maxSearchWidths, processedSolutions, stopWorking)) {
                         saveSolution(config, solution);
-                    if (config.stopWorking)
+                        if (config.stopWorking || stopWorking)
+                            return;
+                    }
+                    if (config.stopWorking || stopWorking)
                         return;
                     if (!doubleBridge(config, solution, revSolution, processedSolutions))
                         break;
@@ -273,6 +282,10 @@ void findSolutionsLinKernighan(SolutionConfig& config) {
                 config.incrementPartialSolutionCount();
             });
         }
+        while (threadPool.remainingTasksInQueueCount() >= ThreadCount) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        stopWorking = true;
         threadPool.wait();
     }
 }
