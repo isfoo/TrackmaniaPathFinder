@@ -151,28 +151,43 @@ template<int Size> void findSolutionsBruteForceLoop(SolutionConfig& config, RawB
         if (solutionData.getCost() > config.limit())
             continue;
 
-        FixedStackVector<std::pair<NodeType, bool>, 256> nextNodes;
+        struct NextNode {
+            NodeType node;
+            bool isRespawn;
+            int time;
+
+            bool operator<(const NextNode& other) {
+                if (time != other.time)
+                    return time < other.time;
+                return isRespawn < other.isRespawn;
+            }
+        };
+
+        FixedStackVector<NextNode, 256> nextNodes;
         for (auto nextNode : adjList[curNode]) {
-            if (visited.test(nextNode) || config.condWeights[nextNode][curNode][edges.size() >= 1 ? edges[edges.size() - 1].src : 0] >= config.ignoredValue)
+            auto time = config.condWeights[nextNode][curNode][edges.size() >= 1 ? edges[edges.size() - 1].src : 0];
+            if (visited.test(nextNode) || time >= config.ignoredValue)
                 continue;
             if (nextNode == adjList.size() - 1 && edges.size() != config.weights.size() - 2)
                 continue;
-            nextNodes.emplace_back(std::pair{ nextNode, false });
+            nextNodes.emplace_back(NextNode{ nextNode, false, time });
         }
         if (curNode != lastNonRingNode) {
             for (auto nextNode : adjList[lastNonRingNode]) {
-                if (visited.test(nextNode) || config.condWeights.withRespawn(nextNode, lastNonRingNode) >= config.ignoredValue)
+                auto time = config.condWeights.withRespawn(nextNode, lastNonRingNode);
+                if (visited.test(nextNode) || time >= config.ignoredValue)
                     continue;
                 if (nextNode == adjList.size() - 1 && edges.size() != config.weights.size() - 2)
                     continue;
-                nextNodes.emplace_back(std::pair{ nextNode, true });
+                nextNodes.emplace_back(NextNode{ nextNode, true, time });
             }
         }
-        std::reverse(nextNodes.begin(), nextNodes.end());
-        for (auto [nextNode, isRespawn] : nextNodes) {
+        if (dataQueue.isAlmostFull()) {
+            std::sort(nextNodes.begin(), nextNodes.end());
+        }
+        for (auto [nextNode, isRespawn, diff] : nextNodes) {
             auto srcNode = isRespawn ? lastNonRingNode : curNode;
             edges.emplace_back(CompressedEdgeNoPrev{ NodeType(srcNode), NodeType(nextNode) });
-            auto diff = isRespawn ? config.condWeights.withRespawn(nextNode, srcNode) : config.condWeights[nextNode][srcNode][edges.size() >= 2 ? edges[edges.size() - 2].src : 0];
             int newLastNonRingNode = isRingCp.test(nextNode) ? lastNonRingNode : nextNode;
             auto queueIsAlmostFull = dataQueue.isAlmostFull();
             if (dataQueue.isAlmostFull()) {
