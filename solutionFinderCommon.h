@@ -152,8 +152,7 @@ std::string createSolutionString(const SolutionConfig& config, const std::vector
         } else if (edge.dst == edge.src + 1 && !isRespawn(config, edge)) {
             solStr += '-';
             i += 1;
-            // TODO: This was always broken. It fails to show repeat nodes in case its sequance of CPs
-            while (i < solution.size() && solution[i].dst == solution[i].src + 1 && !isRespawn(config, solution[i])) {
+            while (i < solution.size() && solution[i].dst == solution[i].src + 1 && !isRespawn(config, solution[i]) && solution[i].repeatNodesBeforeEdge.empty()) {
                 i += 1;
             }
             i -= 1;
