@@ -361,9 +361,9 @@ bool isUsingExtendedMatrix(ConditionalMatrix<int>& B) {
     return false;
 }
 
-std::pair<std::vector<int16_t>, double> createSolutionFromString(std::string solStr, const SolutionConfig& config) {
-    std::vector<int16_t> solution;
-    auto ErrorValue = std::pair<std::vector<int16_t>, double>{ {}, -1.0 };
+std::pair<std::vector<CompressedEdge>, double> createSolutionFromString(std::string solStr, const SolutionConfig& config) {
+    std::vector<CompressedEdge> solution;
+    auto ErrorValue = std::pair<std::vector<CompressedEdge>, double>{ {}, -1.0 };
 
     enum { Start, Finish, Integer, Comma, Dash, Respawn, OpenParen, CloseParen };
     auto tokens = tokenize(solStr, { 
@@ -372,36 +372,56 @@ std::pair<std::vector<int16_t>, double> createSolutionFromString(std::string sol
     });
 
     bool endedInComma = true;
+    NodeType src = NullNode;
     while (true) {
         if (tokens.empty())
             return ErrorValue;
         auto expectedNodeToken = tokens.eat();
-        int node = -1;
+        NodeType dst = NullNode;
+
+        if (expectedNodeToken.typeId == Respawn) {
+            if (!endedInComma || tokens.empty() || tokens.eat().typeId != OpenParen || tokens.empty() || tokens.peak().typeId != Integer)
+                return ErrorValue;
+            auto newSrc = strToInt(tokens.eat().value);
+            if (newSrc >= config.weights.size())
+                return ErrorValue;
+            src = newSrc;
+            if (tokens.empty() || tokens.eat().typeId != CloseParen || tokens.empty() || tokens.eat().typeId != Comma || tokens.empty())
+                return ErrorValue;
+            expectedNodeToken = tokens.eat();
+        }
         if (expectedNodeToken.typeId == Start) {
-            node = 0;
+            if (src != NullNode)
+                return ErrorValue;
+            dst = 0;
         } else if (expectedNodeToken.typeId == Finish) {
-            node = config.weights.size() - 1;
+            dst = config.weights.size() - 1;
         } else if (expectedNodeToken.typeId == Integer) {
-            node = strToInt(expectedNodeToken.value);
+            auto newDst = strToInt(expectedNodeToken.value);
+            if (newDst >= config.weights.size())
+                return ErrorValue;
+            dst = newDst;
         } else {
             return ErrorValue;
         }
-        if (node < 0 || node >= config.weights.size())
-            return ErrorValue;
         if (endedInComma) {
-            solution.push_back(node);
+            if (src != NullNode) {
+                solution.push_back({ 0, src, dst });
+            }
         } else {
-            if (solution.back() >= node)
+            if (src >= dst)
                 return ErrorValue;
-            while (solution.back() != node) {
-                solution.push_back(solution.back() + 1);
+            while (src != dst) {
+                solution.push_back({ 0, src, NodeType(src + 1) });
+                src += 1;
             }
         }
-        if (solution.back() == config.weights.size() - 1) {
+        if (dst == config.weights.size() - 1) {
             if (!tokens.empty())
                 return ErrorValue;
             break;
         }
+        src = dst;
 
         if (tokens.empty())
             break;
@@ -412,11 +432,7 @@ std::pair<std::vector<int16_t>, double> createSolutionFromString(std::string sol
             endedInComma = true;
             if (tokens.empty())
                 return ErrorValue;
-            if (tokens.peak().typeId == Respawn) {
-                tokens.eat();
-                if (tokens.empty() || tokens.eat().typeId != Comma)
-                    return ErrorValue;
-            } else if (tokens.peak().typeId == OpenParen) {
+            if (tokens.peak().typeId == OpenParen) {
                 tokens.eat();
                 while (true) {
                     if (tokens.empty() || tokens.eat().typeId != Integer)
@@ -437,15 +453,8 @@ std::pair<std::vector<int16_t>, double> createSolutionFromString(std::string sol
             return ErrorValue;
         }
     }
-    int realCost = 0;
-    for (int i = 1; i < solution.size(); ++i) {
-        auto connectionCost = config.condWeights[solution[i]][solution[i - 1]][i > 1 ? solution[i - 2] : config.weights.size() - 1];
-        if (connectionCost >= config.ignoredValue)
-            return ErrorValue;
-        realCost += connectionCost;
-    }
-
-    solution.erase(solution.begin());
+    
+    int realCost = calculateSolutionTime(config, createSolution(config, solution));
     return { solution, realCost / 10.0 };
 }
 
