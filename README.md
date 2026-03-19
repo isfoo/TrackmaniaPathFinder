@@ -164,7 +164,7 @@ Almost every input has a **(?)** tooltip you can mouse over to read about what i
 
 On **Path Finder** tab you need to provide the input spreadsheet with the format as described in [Input spreadsheet](#input-spreadsheet) section. It can either be a local file you input to **input data file** field or URL to google spreadsheet sheet you input to **input data link**. You can only use one option at a time so if you want to swtich to the other option clear the text box of the other one.
 
-Once you provide the input you can click **Run exact algorithm** and it's going to generate the solutions in table below. Once it's completed you will see **Status** change to **Done**. The solutions found are guaranteed to be optimal top **max nr of routes** solutions. Note that if status will change to **Timeout** it means the algorithm was not able to finish before **max search time** and in that case there are no guarantees on the quality of solutions found. By default **max search time** is set to `0` which means it's infinite.
+Once you provide the input you can click **Run default algorithm** and it's going to generate the solutions in table below. Once it's completed you will see **Status** change to **Done**. The solutions found are guaranteed to be optimal top **max nr of routes** solutions. Note that if status will change to **Timeout** it means the algorithm was not able to finish before **max search time** and in that case there are no guarantees on the quality of solutions found. By default **max search time** is set to `0` which means it's infinite.
 
 In the output, format of which I will describe below, you might see numbers in parentheses. Those are "repeat CPs". Best way to understand repeat CPs is by example. Say in my spreadsheet I wrote that going from CP1 to CP2 takes 12 seconds and going from CP2 to CP3 takes 5 seconds. I didn't write anything for CP1 to CP3 connection, because I couldn't find anything good. However actually if you go through CP2 you can get from CP1 to CP3 in 12+5=17 seconds. It might actually be the case that going through CP2 multiple times is worth it and required for the optimal route. Allowing this option it would find routes with that repeated CP2. Initially you might think it's rare for such connections to be useful, but that is not the case. Often routes end up having key CPs like for example ones with easy access to reactor boost that let you go quickly to many points of the map that otherwise would take much longer. Also it means you don't have to manually input such connections in the input spreadsheet as this program will do it for you.
 
@@ -178,13 +178,13 @@ At the very top of the program enable the checkbox **show advanced settings**.
 
 Most of the new options should be understable upon reading the **(?)** tooltip text. In this section I will explain the usage of **heuristic algorithm** and you can read about the [connection finder mode](#connection-finder-mode) below.
 
-As long as **Run exact algorithm** completes in a reasonable ammount of time you should always prefer it to **Run heuristic algorithm**. Upon completion the **Exact** algorithm will always find the best routes, while **Heuristic** algorithm might miss some of them. However if your spreadsheet is very big or is medium sized with tons of sequence dependence connections/ring CPs the **Exact algorithm** might not be fast enough. If that is the case here's are the recommended steps you should try in order:
+As long as **Run default algorithm** completes in a reasonable ammount of time you should always prefer it to **Run heuristic algorithm**. Upon completion the **Default** algorithm will always find the best routes, while **Heuristic** algorithm might miss some of them. However if your spreadsheet is very big or is medium sized with tons of sequence dependence connections/ring CPs the **Default algorithm** might not be fast enough. If that is the case here's are the recommended steps you should try in order:
 
 1. Decrease **max nr of routes**. This is the main parameter that increases the search time. If you set it too high initially you should try decreasing this value.
 
 2. Decrease **max route time**. You should set it something closer to the expected time the fastests routes should take. Of course you might not know that value, but if you set it to something too low the worst thing that can happen is the program will end without finding any route which will tell you that there are no possible routes with that time or lower and you can try increasing this value.
 
-3. Switch to **Run heuristic algorithm**. In that case feel free the set back **max nr of routes** and **max route time** to whatever you want - it won't make a difference for heuristic algorithm. You should **NOT** expect to finish running the algorithm until the status changes to **Done**. Most of the time the algorithm will find most or all top 100 solutions in the first 10 seconds, but then it will continue trying possibly for hours/days or longer depending on the problem, often not finding anything new (as there might be nothing new to find). In practice you should look at 2 things. 1st how does **Candidates found** changes while running the algorithm. If it stays at the same value or barely changes then likely there is not much more to find. 2nd thing to look at is **Search progress**. You will see there `Completed X tries for K-opt`. You should run the program such that at the end you see in that text at least `K > 7` or `K = 7` and `X >= 100`. Note that this algorithm although in practice seems to work very well, unlike the **Exact** algorithm even if it completes running (status **Done**) there are no guarantees on solution quality.
+3. Switch to **Run heuristic algorithm**. In that case feel free the set back **max nr of routes** and **max route time** to whatever you want - it won't make a difference for heuristic algorithm. You should **NOT** expect to finish running the algorithm until the status changes to **Done**. Most of the time the algorithm will find most or all top 100 solutions in the first 10 seconds, but then it will continue trying possibly for hours/days or longer depending on the problem, often not finding anything new (as there might be nothing new to find). In practice you should look at 2 things. 1st how does **Candidates found** changes while running the algorithm. If it stays at the same value or barely changes then likely there is not much more to find. 2nd thing to look at is **Search progress**. You will see there `Completed X tries for K-opt`. You should run the program such that at the end you see in that text at least `K > 7` or `K = 7` and `X >= 100`. Note that this algorithm although in practice seems to work very well, unlike the **Default** algorithm even if it completes running (status **Done**) there are no guarantees on solution quality.
 
 Additionally **ring CPs** can be very detrimental to the program runtime while not giving that much in return. If you set **ring CPs** you can try removing some/all of them. Note that in that case it will simply find all routes that don't use standing respawn. If you think using standing respawn is faster, often you will be able to tell when it's best to do it. In that case you can also consider creatinh second version of the input spreadsheet that doesn't contain ring CPs and use this program to find routes between normal CPs and just take ring CPs when it's fastests.
 
@@ -204,9 +204,9 @@ This means the route is: Start -> CP8 -> CP5 -> CP9 -> CP3 ->(go through CP5)-> 
 
 In case of ring CPs the standing respawn is shown as letter `R`. For example:
 
-```74.0 [Start,7,4,R,1-3,R,5-6,Finish]```
+```74.0 [Start,7,4,R(7),1-3,R(1),5-6,Finish]```
 
-This means CP4 and CP3 are ring checkpoints and the route is: Start -> CP7 -> CP4 ->(standing-respawn at CP7)-> CP1 -> CP2 -> CP3 ->(standing-respawn at CP2)-> CP5 -> CP6 -> Finish
+This means CP4, CP2 and CP3 are ring checkpoints and the route is: Start -> CP7 -> CP4 ->(standing-respawn at CP7)-> CP1 -> CP2 -> CP3 ->(standing-respawn at CP1)-> CP5 -> CP6 -> Finish
 
 ### Connection finder mode
 
@@ -239,7 +239,7 @@ This file can be used in a program in 2 ways:
 | [World of Wampus 6](https://trackmania.exchange/maps/111213/world-of-wampus-6) | 100 | [spreadsheet](example%20input%20data/World%20of%20Wampus%206.csv) | Lars_tm |
 | [World of Wampus 7](https://trackmania.exchange/maps/138791/world-of-wampus-7) | 100 | [spreadsheet](example%20input%20data/World%20of%20Wampus%207.csv) | Lars_tm |
 
-Note that even the 100+ CP Lars spreadsheets are easily processed using exact algorithm.
+Note that even the 100+ CP Lars spreadsheets are easily processed using default algorithm.
 
 ## Implementation details
 
@@ -250,8 +250,9 @@ Although You will find online some efficient programs that solve TSP there are a
 2. Many solvers don't natively support Asymmetric versions of TSP. For example [Concorde](https://www.math.uwaterloo.ca/tsp/concorde.html) which is consider one the best exact solvers doesn't support ATSP. Note that it's possible to convert ATSP to TSP problems by creating dummy nodes which is desribed well [here](https://www.linkedin.com/posts/andreas-beham-004279b_optimizing-asymmetric-travelling-salesperson-activity-7107809854215323648-FfuJ).
 3. No support for control over repeat nodes (aka repeat CPs)
 4. No ability to find top N solutions and not just a single one. This is a big one, because it's an important feature. There is a lot of hidden heuristic knowledge only the player generating solution has that can ultimately decide which routes are truly the best, but to do that in practice one has to see a list of solutions. The factors are things like number of hard CPs in route and where the connections are (It's usually best to have hard connections first and easy connections last). I can also say from experience that once you have a list of routes you start to piece together a better picture of the map and it makes you realise which additional connections would be good and it leads you to finding new great connections.
-5. No support for sequence dependence (that includes ring CPs)
-6. Lack of additional useful supporting features like "connection finder" or "verified connections list".
+5. No support for sequence dependence
+6. No support for ring CPs
+7. Lack of additional useful supporting features like "connection finder" or "verified connections list".
 
 Here's how the current implementations work:
 
