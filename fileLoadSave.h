@@ -219,6 +219,8 @@ InputAlgorithmData loadCsvData(const std::string& inputFileName, int ignoredValu
                 data.condWeights[i][j].back() = *std::max_element(data.condWeights[i][j].begin(), data.condWeights[i][j].end() - 1);
             }
         }
+        // for connections from start the respawn time is +1 second
+        data.condWeights[i][0].back() += 10;
     }
 
     return data;
