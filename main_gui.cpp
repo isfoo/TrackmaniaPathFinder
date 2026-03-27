@@ -227,7 +227,7 @@ void sortBestFoundSolutionsSolutions(State& state, const InputData& input) {
 
 int main(int argc, char** argv) {
     CoInitialize(NULL);
-    MyImGui::Init(u"Trackmania Path Finder v7.2.0");
+    MyImGui::Init(u"Trackmania Path Finder v7.2.1");
 
     constexpr int MinFontSize = 8;
     constexpr int MaxFontSize = 30;
@@ -526,6 +526,10 @@ int main(int argc, char** argv) {
                         ImGui::TableNextColumn();
                         if (ImGui::Button("Run arborescence algorithm", ImVec2(-1, 0))) {
                             startAlgorithm(Algorithm::Arborescence);
+                        }
+                    } else if (input.ringCps[0] != '\0') {
+                        if (ImGui::Button("Run node-by-node algorithm", ImVec2(-1, 0))) {
+                            startAlgorithm(Algorithm::BruteForce);
                         }
                     }
                     if (isAlgorithmRunning)
