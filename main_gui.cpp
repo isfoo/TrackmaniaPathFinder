@@ -227,7 +227,7 @@ void sortBestFoundSolutionsSolutions(State& state, const InputData& input) {
 
 int main(int argc, char** argv) {
     CoInitialize(NULL);
-    MyImGui::Init(u"Trackmania Path Finder v7.1.0");
+    MyImGui::Init(u"Trackmania Path Finder v7.2.0");
 
     constexpr int MinFontSize = 8;
     constexpr int MaxFontSize = 30;
@@ -249,7 +249,7 @@ int main(int argc, char** argv) {
     config.limit_ = &limitForConfig;
     config.maxSolutionCount = input.maxSolutionCount;
     config.partialSolutionCount = 0;
-    config.stopWorking = false;
+    config.globalStopWorking = false;
 
     auto guiFont = setGuiStyle();
 
@@ -364,18 +364,38 @@ int main(int argc, char** argv) {
                     ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
                     ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 2);
                     ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
+                    tableInputEntryInt("max nr of routes", input.maxSolutionCount, 1, 100'000, "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable.\n\nFor \"Heuristic\" algorithm this is irrelevant.");
+                    tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.");
                     if (input.showAdvancedSettings) {
                         tableInputEntryInt("max connection time", input.ignoredValue, 1, 100'000, "Connections with this or higher time\nwill not be considered in the solutions.");
                         tableInputEntryInt("max route time", input.limitValue, 1, 100'000, "Maximum time route can take to be considered as a valid solution.\n\nFor \"Heuristic\" algorithm this is irrelevant, but for \"Exact\" algorithm lowering this value might help the algorithm complete the search faster.");
                     }
-                    tableInputEntryInt("max nr of routes", input.maxSolutionCount, 1, 100'000, "Number of fastest routes you want to find.\n\nUnless you are working with a small number of connections you should not set it to an arbitrarily high value - this parameter plays a key role in how long the search process will take so you should set it to something reasonable.\n\nFor \"Heuristic\" algorithm this is irrelevant.");
+                    ImGui::EndTable();
+                }
+                ImGui::SetNextItemWidth(-1);
+                auto width = ImGui::CalcItemWidth() - 50;
+                if (ImGui::BeginTable("menuTable2", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
+                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
+                    ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, (width / 2) - input.fontSize * 12.0f, 1);
+                    ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, width / 2, 2);
                     if (input.showAdvancedSettings) {
-                        tableInputEntryInt("max search time", input.maxTime, 0, 100'000, "Max time in seconds you want to search for. 0 means infinity.\n\nIt's mostly useful for \"Heuristic\" algorithm since it will usually find most if not all top 100 solutions in the first ~10 seconds even for hard problems, but if left at infinity for large problems it will likely never end.");
                         tableInputEntryInt("max repeat CPs", input.maxRepeatNodesToAdd, 0, 100'000, "Max number of newly calculated/improved connections the program will try to create by going through other CPs on the way.\n\nTypically you should be able to leave it at an arbitrarily large value, however for \"Exact\" algorithm you might want to lower this to improve search times.");
-                        tableInputEntryText("turned off repeat CPs", input.turnedOffRepeatNodes, "List of CP numbers you want to ban from repeating.");
-                        tableInputEntryText("output data file", input.outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max nr of routes\" found.\nIf left empty then no file is created.");
+                        ImGui::TableNextColumn();
+                        ImGui::Checkbox("Allow repeat CPs for filled connections", &input.allowRepeatCpsForFilledConnections);
+                        ImGui::SameLine();
+                        HelpMarker(state, "If this is OFF then only connections with time equal to or higher than \"max connection time\" will be replaced with connections that go through other CPs.\nIf this is ON all connections are subject to be overwritten by repeat CP connections.");
                     }
-                    tableInputEntryText("ring CPs", input.ringCps, "List of CP numbers that are rings.");
+                    ImGui::EndTable();
+                }
+                if (ImGui::BeginTable("menuTable", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
+                    ImGui::TableSetupColumn("Text1", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 0);
+                    ImGui::TableSetupColumn("Input1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
+                    ImGui::TableSetupColumn("Text2", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, input.fontSize * 12.0f, 2);
+                    ImGui::TableSetupColumn("Input2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 3);
+                    if (input.showAdvancedSettings) {
+                        tableInputEntryText("output data file", input.outputDataFile, "After completing running the algorithm this file\nwill have sorted list of top \"max nr of routes\" found.\nIf left empty then no file is created.");
+                        tableInputEntryText("turned off repeat CPs", input.turnedOffRepeatNodes, "List of CP numbers you want to ban from repeating.");
+                    }
                     if (input.showAdvancedSettings) {
                         if (config.weights.size() > 0) {
                             tableInputEntry("calculate route time", "Calculate time of full or partial route (even a single connection).\n\nThe syntax is the same as in the output format, however the repeat node values in brackets and double-respawns will be ignored.\nThat is the program will forcefully take best repeat nodes for a given connection regardless of what you input.", [&]() {
@@ -480,15 +500,18 @@ int main(int argc, char** argv) {
                 };
 
                 bool isAlgorithmRunning = isRunning(state.algorithmRunTask);
-                if (ImGui::BeginTable("algorithmRunTable", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
+                if (ImGui::BeginTable("algorithmRunTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_Resizable | ImGuiTableFlags_NoBordersInBody)) {
                     ImGui::TableSetupColumn("Col1", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 0);
                     ImGui::TableSetupColumn("Col2", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 1);
-                    ImGui::TableSetupColumn("Col3", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_NoResize, 1.0f, 2);
 
                     if (isAlgorithmRunning)
                         BeginDisabled();
                     ImGui::TableNextColumn();
-                    if (ImGui::Button("Run default algorithm", ImVec2(-1, 0))) {
+                    std::string defaultAlgorithmButtonStr = "Run default algorithm";
+                    if (input.ringCps[0] != '\0') {
+                        defaultAlgorithmButtonStr += " (No full Ring-CP support)";
+                    }
+                    if (ImGui::Button(defaultAlgorithmButtonStr.c_str(), ImVec2(-1, 0))) {
                         startAlgorithm(Algorithm::Assignment);
                     }
                     ImGui::TableNextColumn();
@@ -497,37 +520,14 @@ int main(int argc, char** argv) {
                             startAlgorithm(Algorithm::LinKernighan);
                         }
                         ImGui::TableNextColumn();
-                    }
-                    if (input.showAdvancedSettings || input.ringCps[0] != '\0') {
-                        ImGui::SetNextItemWidth(-1);
-                        ImGui::Text(" <- Partial Ring-CP support");
-                        ImGui::SameLine();
-                        HelpMarker(state, "It will only find routes where you take a single ring CP before respawning.\nIf optimal path requires taking 2+ ring CPs before respawning it won't be found.");
-                    }
-                    if (!input.showAdvancedSettings) {
-                        ImGui::TableNextColumn();
-                    }
-                    if (input.showAdvancedSettings || input.ringCps[0] != '\0') {
-                        ImGui::TableNextColumn();
                         if (ImGui::Button("Run node-by-node algorithm", ImVec2(-1, 0))) {
                             startAlgorithm(Algorithm::BruteForce);
                         }
                         ImGui::TableNextColumn();
-                        if (input.showAdvancedSettings) {
-                            if (ImGui::Button("Run arborescence algorithm", ImVec2(-1, 0))) {
-                                startAlgorithm(Algorithm::Arborescence);
-                            }
-                            ImGui::TableNextColumn();
-                        }
-                        ImGui::SetNextItemWidth(-1);
-                        ImGui::Text(" <- Full Ring-CP support");
-                        ImGui::SameLine();
-                        HelpMarker(state, "It fully supports Ring CPs, however it is much slower than the algorithms with partial ring CP support");
-                        if (!input.showAdvancedSettings) {
-                            ImGui::TableNextColumn();
+                        if (ImGui::Button("Run arborescence algorithm", ImVec2(-1, 0))) {
+                            startAlgorithm(Algorithm::Arborescence);
                         }
                     }
-
                     if (isAlgorithmRunning)
                         EndDisabled();
 
@@ -691,12 +691,16 @@ int main(int argc, char** argv) {
                         ImGui::Text("Checked %s / %d connections", config.partialSolutionCountString().c_str(), state.connectionsToTest.size());
                     } else if (state.currentAlgorithm == Algorithm::LinKernighan) {
                         auto n = config.partialSolutionCount.load();
-                        auto optVal = n.high;
-                        auto tryVal = n.low;
-                        ImGui::Text("Completed "); 
-                        ImGui::SameLine();
-                        addNumberPadding(int(tryVal), 1000);
-                        ImGui::Text("%d tries for %d-opt", tryVal, optVal);
+                        if (n.low == std::numeric_limits<uint64_t>::max()) {
+                            ImGui::Text("Generating starting points");
+                        } else {
+                            auto optVal = n.high;
+                            auto tryVal = n.low;
+                            ImGui::Text("Completed ");
+                            ImGui::SameLine();
+                            addNumberPadding(int(tryVal), 1000);
+                            ImGui::Text("%d tries for %d-opt", tryVal, optVal);
+                        }
                     } else if (state.currentAlgorithm == Algorithm::Assignment || state.currentAlgorithm == Algorithm::Arborescence || state.currentAlgorithm == Algorithm::BruteForce) {
                         ImGui::Text("Partial routes processed: %s", config.partialSolutionCountString().c_str());
                     } else {
@@ -706,7 +710,7 @@ int main(int argc, char** argv) {
                     ImGui::EndTable();
                 }
 
-                if (config.stopWorking && !state.copiedBestSolutionsAfterAlgorithmDone) {
+                if (config.stopWorking() && !state.copiedBestSolutionsAfterAlgorithmDone) {
                     state.copiedBestSolutionsAfterAlgorithmDone = true;
                     state.bestFoundSolutions = config.bestSolutions;
                     sortBestFoundSolutionsSolutions(state, input);

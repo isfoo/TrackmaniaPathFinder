@@ -82,55 +82,6 @@ struct AdjList {
     }
 };
 
-struct ArrayOfPoolAllocators {
-    std::vector<PoolAllocator> allocators;
-    static thread_local inline XorShift64 rng = XorShift64();
-
-    ArrayOfPoolAllocators() {}
-    ArrayOfPoolAllocators(int elementsPerAllocation, int allocatorCount, int64_t maxTotalCapacity, int size) {
-        int maxBlockCount = maxTotalCapacity / allocatorCount / elementsPerAllocation;
-        for (int i = 0; i < allocatorCount; ++i) {
-            allocators.emplace_back(size, elementsPerAllocation, maxBlockCount);
-        }
-    }
-    
-    int randomAllocatorId() {
-        return rng() % allocators.size();
-    }
-    bool tryLockForAllocate(int id) {
-        if (!allocators[id].canAllocate())
-            return false;
-        if (!allocators[id].mutex.try_lock())
-            return false;
-        if (!allocators[id].canAllocate()) {
-            allocators[id].mutex.unlock();
-            return false;
-        }
-        return true;
-    }
-    
-    void* allocate(int size) {
-        while (true) {
-            int id = randomAllocatorId();
-            if (tryLockForAllocate(id)) {
-                auto ptr = allocators[id].allocateWithoutLock();
-                allocators[id].mutex.unlock();
-                return ptr;
-            }
-        }
-    }
-    void deallocate(void* ptr, int size) {
-        while (true) {
-            int id = randomAllocatorId();
-            if (allocators[id].mutex.try_lock()) {
-                allocators[id].deallocateWithoutLock(ptr);
-                allocators[id].mutex.unlock();
-                return;
-            }
-        }
-    }
-};
-
 struct MemoryPool {
     uint8_t* curPtr = nullptr;
     uint8_t* memory = nullptr;
@@ -155,12 +106,12 @@ struct MemoryPool {
 
     void allocate(int size) {
         deallocate();
-        curPtr = memory = (uint8_t*)allocators.allocate(size);
+        curPtr = memory = (uint8_t*)allocators.allocate();
         memorySize = size;
     }
     void deallocate() {
         if (memory)
-            allocators.deallocate(memory, memorySize);
+            allocators.deallocate(memory);
         curPtr = nullptr;
         memory = nullptr;
         memorySize = 0;
@@ -491,7 +442,7 @@ template<typename SolutionType> void findSolutions(SolutionConfig& config, Solut
     do {
         if (!updatedSolution && !backlog.empty()) {
             while (true) {
-                if (config.stopWorking || backlog.empty())
+                if (config.stopWorking() || backlog.empty())
                     return;
                 branchAndBoundSolution = std::move(backlog.back().first);
                 auto pivotEdge = backlog.back().second;
@@ -505,7 +456,7 @@ template<typename SolutionType> void findSolutions(SolutionConfig& config, Solut
         updatedSolution = false;
 
         config.lazyIncrementPartialSolutionCount();
-        if (config.stopWorking)
+        if (config.stopWorking())
             return;
 
         if (branchAndBoundSolution.getCost() > config.limit())
@@ -521,14 +472,14 @@ template<typename SolutionType> void findSolutions(SolutionConfig& config, Solut
             branchAndBoundSolution.saveSolution(config);
             continue;
         }
-        if (config.stopWorking)
+        if (config.stopWorking())
             return;
 
         auto pivotEdge = branchAndBoundSolution.findPivotEdge();
         if (pivotEdge == NullEdge)
             continue;
 
-        if (config.stopWorking)
+        if (config.stopWorking())
             return;
         auto assignmentSolutionCopy = branchAndBoundSolution;
         if (assignmentQueue.isAlmostFull()) {
@@ -538,7 +489,7 @@ template<typename SolutionType> void findSolutions(SolutionConfig& config, Solut
         } else {
             if (branchAndBoundSolution.lockEdge(Out, pivotEdge))
                 assignmentQueue.push(std::move(branchAndBoundSolution));
-            if (config.stopWorking)
+            if (config.stopWorking())
                 return;
             if (assignmentSolutionCopy.removeEdge(Out, pivotEdge))
                 assignmentQueue.push(std::move(assignmentSolutionCopy));
@@ -569,7 +520,7 @@ template<typename BacklogType, typename SolutionType, typename FunctionType> voi
             PreallocatedVector<BacklogType> backlog(config.nodeCount() * config.nodeCount());
             SolutionType solution = dummySolution;
             while (true) {
-                if (config.stopWorking)
+                if (config.stopWorking())
                     break;
                 while (assignmentQueue.empty()) {
                     // I'm sure there is more elegant way to do this. Basically I want all worker threads to wait
@@ -586,7 +537,7 @@ template<typename BacklogType, typename SolutionType, typename FunctionType> voi
                         if (!stillWorking)
                             goto End;
                     }
-                    if (config.stopWorking)
+                    if (config.stopWorking())
                         goto End;
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }

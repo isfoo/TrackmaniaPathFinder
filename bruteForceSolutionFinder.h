@@ -51,7 +51,7 @@ template<int Size> void findSolutionsBruteForceLoop(SolutionConfig& config, RawB
         auto& solutionData = rawSolutionData.asData();
 
         config.lazyIncrementPartialSolutionCount(1217);
-        if (config.stopWorking)
+        if (config.stopWorking())
             return;
 
         auto& [adjListPtr, revAdjListPtr, curNode, previousLastNonRingNode, lastNonRingNode, cost, minInSum, 

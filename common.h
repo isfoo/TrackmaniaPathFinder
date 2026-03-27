@@ -29,7 +29,8 @@ struct InputData {
     int ignoredValue = 600;
     int limitValue = 100'000;
     int maxSolutionCount = 100;
-    int maxTime = 0;
+    //int maxTime = 0;
+    bool allowRepeatCpsForFilledConnections = true;
     int maxRepeatNodesToAdd = 100'000;
     char turnedOffRepeatNodes[1024] = { 0 };
 
@@ -70,7 +71,8 @@ struct InputData {
         file << "ignoredValue " << ignoredValue << '\n';
         file << "limitValue " << limitValue << '\n';
         file << "maxSolutionCount " << maxSolutionCount << '\n';
-        file << "maxTime " << maxTime << '\n';
+        //file << "maxTime " << maxTime << '\n';
+        file << "allowRepeatCpsForFilledConnections" << allowRepeatCpsForFilledConnections << '\n';
         file << "maxRepeatNodesToAdd " << maxRepeatNodesToAdd << '\n';
         file << "turnedOffRepeatNodes " << turnedOffRepeatNodes << '\n';
 
@@ -115,9 +117,11 @@ struct InputData {
                 limitValue = stoi(value);
             } else if (key == "maxSolutionCount") {
                 maxSolutionCount = stoi(value);
-            } else if (key == "maxTime") {
+            } else if (key == "allowRepeatCpsForFilledConnections") {
+                allowRepeatCpsForFilledConnections = stoi(value);
+            } /*else if (key == "maxTime") {
                 maxTime = stoi(value);
-            } else if (key == "maxRepeatNodesToAdd") {
+            } */else if (key == "maxRepeatNodesToAdd") {
                 maxRepeatNodesToAdd = stoi(value);
             } else if (key == "turnedOffRepeatNodes") {
                 strcpy(turnedOffRepeatNodes, value.c_str() + 1);
@@ -340,7 +344,8 @@ struct SolutionConfig {
     Vector3d<Bool> useRespawnMatrix;
     std::vector<int> ringCps;
     std::atomic<int128_t> partialSolutionCount;
-    std::atomic<bool>& stopWorking;
+    std::atomic<bool>& globalStopWorking;
+    std::atomic<bool> localStopWorking = false;
     Edge addedConnection;
 
     std::mutex solutionUpdateMutex;
@@ -348,8 +353,8 @@ struct SolutionConfig {
 
     static thread_local inline int LocalPartialSolutionCount = 0;
 
-    SolutionConfig(std::atomic<bool>& stopWorking) : stopWorking(stopWorking) {}
-    SolutionConfig(const SolutionConfig& other) : stopWorking(other.stopWorking) {
+    SolutionConfig(std::atomic<bool>& stopWorking) : globalStopWorking(stopWorking) {}
+    SolutionConfig(const SolutionConfig& other) : globalStopWorking(other.globalStopWorking) {
         weights = other.weights;
         condWeights = other.condWeights;
         isVerifiedConnection = other.isVerifiedConnection;
@@ -367,6 +372,9 @@ struct SolutionConfig {
     }
     int nodeCount() const {
         return weights.size();
+    }
+    bool stopWorking() const {
+        return globalStopWorking || localStopWorking;
     }
     void updateLimit(int newValue) {
         limit_->store(newValue);

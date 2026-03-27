@@ -193,6 +193,7 @@ void insertSortedByTimeAndConnectionOrder(std::vector<BestSolution>& vec, const 
 void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::vector<CompressedEdge>& edges) {
     auto solution = createSolution(config, edges);
     auto time = calculateSolutionTime(config, solution);
+    std::scoped_lock l{ config.solutionUpdateMutex };
     if (time > config.limit() || (config.bestSolutions.size() >= config.maxSolutionCount && time >= config.limit()))
         return;
 
@@ -234,7 +235,6 @@ void saveSolutionAndUpdateLimit(SolutionConfig& config, const std::vector<Compre
 }
 
 void saveSolution(SolutionConfig& config, const std::vector<CompressedEdge>& edges) {
-    std::scoped_lock l{ config.solutionUpdateMutex };
     saveSolutionAndUpdateLimit(config, edges);
 }
 void saveSolution(SolutionConfig& config, const std::vector<NodeType>& solution) {
@@ -252,7 +252,7 @@ struct RepeatEdgePath {
         return A[k][j] + A[j][i];
     }
 };
-std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<int>>& A, int ignoredValue, std::vector<int> turnedOffRepeatNodes) {
+std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<int>>& A, int ignoredValue, std::vector<int> turnedOffRepeatNodes, bool allowRepeatCpsForFilledConnections) {
     std::vector<std::vector<int>> adjList(A.size());
     for (int i = 0; i < A.size(); ++i) {
         for (int j = 0; j < A[i].size(); ++j) {
@@ -269,6 +269,8 @@ std::vector<RepeatEdgePath> getRepeatNodeEdges(const std::vector<std::vector<int
                 if (i == k)
                     continue;
                 auto time = A[k][j] + A[j][i];
+                if (!allowRepeatCpsForFilledConnections && A[k][i] < ignoredValue)
+                    continue;
                 if (time < A[k][i] && time < ignoredValue) {
                     if (std::find(turnedOffRepeatNodes.begin(), turnedOffRepeatNodes.end(), j) == turnedOffRepeatNodes.end())
                         additionalPaths.emplace_back(k, j, i);
@@ -304,12 +306,12 @@ int addRepeatNodeEdges(std::vector<std::vector<int>>& A, ConditionalMatrix<int>&
     return addedEdgesCount;
 }
 
-RepeatNodeMatrix addRepeatNodeEdges(std::vector<std::vector<int>>& A, ConditionalMatrix<int>& B, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes) {
+RepeatNodeMatrix addRepeatNodeEdges(std::vector<std::vector<int>>& A, ConditionalMatrix<int>& B, int ignoredValue, int maxEdgesToAdd, std::vector<int> turnedOffRepeatNodes, bool allowRepeatCpsForFilledConnections) {
     auto repeatEdgeMatrix = RepeatNodeMatrix(int(B.data.size()));
     if (maxEdgesToAdd <= 0)
         return repeatEdgeMatrix;
     for (int i = 0; i < 2; ++i) {
-        auto repeatEdges = getRepeatNodeEdges(A, ignoredValue, turnedOffRepeatNodes);
+        auto repeatEdges = getRepeatNodeEdges(A, ignoredValue, turnedOffRepeatNodes, allowRepeatCpsForFilledConnections);
         auto edgesAdded = addRepeatNodeEdges(A, B, repeatEdgeMatrix, repeatEdges, maxEdgesToAdd);
         maxEdgesToAdd = std::max<int>(0, maxEdgesToAdd - edgesAdded);
     }
@@ -542,10 +544,55 @@ struct State {
     }
 };
 
+struct LinKernighanSettings {
+    int maxSequenceLengthLimit = 1'000;
+    int tryCount = 1'000;
+    bool fullRingCpMode = false;
+    std::vector<BestSolution> initialSolutions = {};
+};
+
 void findSolutionsAssignment(SolutionConfig& config);
 void findSolutionsArborescence(SolutionConfig& config);
-void findSolutionsLinKernighan(SolutionConfig& config);
+void findSolutionsLinKernighan(SolutionConfig& config, LinKernighanSettings settings);
 void findSolutionsBruteForce(SolutionConfig& config);
+
+void findSolutionsLinKernighan(SolutionConfig& config, State& state, bool isFastMode) {
+    LinKernighanSettings settings;
+    if (!config.ringCps.empty()) {
+        auto lkhConfig = config;
+        lkhConfig.maxSolutionCount = 500;
+        addRingCps(lkhConfig, config.ringCps);
+        settings.fullRingCpMode = false;
+        if (isFastMode) {
+            settings.maxSequenceLengthLimit = 8;
+            settings.tryCount = 5;
+        } else {
+            settings.maxSequenceLengthLimit = 20;
+            settings.tryCount = 1'000;
+        }
+        config.partialSolutionCount = std::numeric_limits<uint64_t>::max();
+        int maxTime = 1 + (config.nodeCount() >= 40) + (config.nodeCount() >= 75) + (config.nodeCount() >= 100);
+        auto timerThread = std::thread([&state, maxTime = maxTime, &lkhConfig, &config]() {
+            int copiedSolutionCount = 0;
+            auto timer = Timer();
+            while (!lkhConfig.stopWorking() && !config.stopWorking() && !state.taskWasCanceled && (maxTime == 0 || timer.getTime() < maxTime)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                for (; copiedSolutionCount < lkhConfig.solutionsVec.size(); ++copiedSolutionCount) {
+                    saveSolution(config, lkhConfig.solutionsVec[copiedSolutionCount].compressedSolution());
+                }
+            }
+            lkhConfig.localStopWorking = true;
+        });
+        findSolutionsLinKernighan(lkhConfig, settings);
+        lkhConfig.localStopWorking = true;
+        timerThread.join();
+        settings.initialSolutions = lkhConfig.bestSolutions;
+    }
+    settings.fullRingCpMode = !config.ringCps.empty();
+    settings.maxSequenceLengthLimit = isFastMode ? 5 : 1'000;
+    config.partialSolutionCount = 0;
+    findSolutionsLinKernighan(config, settings);
+}
 
 void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input, State& state) {
     state.taskWasCanceled = false;
@@ -572,12 +619,13 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
         inputDataFile = dataFilePath.string();
     }
 
+    bool allowRepeatCpsForFilledConnections = input.allowRepeatCpsForFilledConnections;
     config.updateLimit(input.limitValue * 10);
     config.ignoredValue = input.ignoredValue * 10;
     config.maxSolutionCount = input.maxSolutionCount;
     config.outputFileName = input.outputDataFile;
     config.partialSolutionCount = 0;
-    config.stopWorking = false;
+    config.globalStopWorking = false;
     config.repeatNodeMatrix.clear();
     config.solutionsVec.clear();
     config.addedConnection = NullEdge;
@@ -606,12 +654,12 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
         return;
 
     state.timer = Timer();
-    state.timerThread = std::thread([&state, maxTime=input.maxTime, &config]() {
-        while (!config.stopWorking && !state.taskWasCanceled && (maxTime == 0 || state.timer.getTime() < maxTime)) {
+    state.timerThread = std::thread([&state, maxTime=0, &config]() {
+        while (!config.stopWorking() && !state.taskWasCanceled && (maxTime == 0 || state.timer.getTime() < maxTime)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         state.endedWithTimeout = maxTime != 0 && state.timer.getTime() >= maxTime;
-        config.stopWorking = true;
+        config.globalStopWorking = true;
     });
     if (input.isConnectionSearchAlgorithm) {
         auto connectionFinderSettings = input.connectionFinderSettings;
@@ -621,7 +669,7 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
         config.useExtendedMatrix = isUsingExtendedMatrix(config.condWeights);
         config.bestSolutions.clear();
         state.connectionsToTest.clear();
-        state.algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [algorithm, &input, &state, &config, ringCps, repeatNodesTurnedOff, searchSourceNodes, connectionFinderSettings]() mutable {
+        state.algorithmRunTask = std::async(std::launch::async | std::launch::deferred, [algorithm, &input, &state, &config, ringCps, repeatNodesTurnedOff, allowRepeatCpsForFilledConnections, searchSourceNodes, connectionFinderSettings]() mutable {
             auto privateConfig = config;
             privateConfig.maxSolutionCount = 1;
 
@@ -653,7 +701,7 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
                 }
             }
             for (auto [src, dst] : state.connectionsToTest) {
-                if (config.stopWorking)
+                if (config.stopWorking())
                     break;
 
                 privateConfig.addedConnection = Edge{ src, dst };
@@ -663,14 +711,16 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
                 std::atomic<int> limit = config.limit();
                 privateConfig.limit_ = &limit;
                 std::fill(privateConfig.condWeights[dst][src].begin(), privateConfig.condWeights[dst][src].end(), privateConfig.weights[dst][src]);
-                privateConfig.repeatNodeMatrix = addRepeatNodeEdges(privateConfig.weights, privateConfig.condWeights, privateConfig.ignoredValue, input.maxRepeatNodesToAdd, repeatNodesTurnedOff);
-                addRingCps(config, ringCps);
+                privateConfig.repeatNodeMatrix = addRepeatNodeEdges(privateConfig.weights, privateConfig.condWeights, privateConfig.ignoredValue, input.maxRepeatNodesToAdd, repeatNodesTurnedOff, allowRepeatCpsForFilledConnections);
+                if (algorithm == Algorithm::Assignment) {
+                    addRingCps(config, ringCps);
+                }
                 privateConfig.weights = createAtspMatrixFromInput(privateConfig.weights);
                 std::fill(privateConfig.condWeights[0].back().begin(), privateConfig.condWeights[0].back().end(), 0);
                 if (algorithm == Algorithm::Assignment) {
                     findSolutionsAssignment(privateConfig);
                 } else {
-                    findSolutionsLinKernighan(privateConfig);
+                    findSolutionsLinKernighan(privateConfig, state, true);
                 }
 
                 if (!privateConfig.bestSolutions.empty()) {
@@ -687,14 +737,14 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
                 privateConfig.condWeights = config.condWeights;
                 config.incrementPartialSolutionCount();
             }
-            config.stopWorking = true;
+            config.globalStopWorking = true;
             state.timerThread.join();
             state.timer.stop();
         });
     } else {
-        config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, input.maxRepeatNodesToAdd, repeatNodesTurnedOff);
+        config.repeatNodeMatrix = addRepeatNodeEdges(config.weights, config.condWeights, config.ignoredValue, input.maxRepeatNodesToAdd, repeatNodesTurnedOff, allowRepeatCpsForFilledConnections);
         config.ringCps = ringCps;
-        if (algorithm != Algorithm::Arborescence && algorithm != Algorithm::BruteForce) {
+        if (algorithm == Algorithm::Assignment) {
             addRingCps(config, ringCps);
         }
         clearFile(config.outputFileName);
@@ -710,9 +760,9 @@ void runAlgorithm(Algorithm algorithm, SolutionConfig& config, InputData& input,
             } else if (algorithm == Algorithm::BruteForce) {
                 findSolutionsBruteForce(config);
             } else {
-                findSolutionsLinKernighan(config);
+                findSolutionsLinKernighan(config, state, false);
             }
-            config.stopWorking = true;
+            config.globalStopWorking = true;
             state.timerThread.join();
             overwriteFileWithSortedSolutions(config.outputFileName, config.maxSolutionCount, config.solutionsVec, config);
             state.timer.stop();

@@ -148,6 +148,28 @@ public:
     }
 };
 
+struct XorShift64 {
+    using result_type = uint64_t;
+    static constexpr result_type min() { return 0; }
+    static constexpr result_type max() { return std::numeric_limits<result_type>::max() - 1; }
+
+    XorShift64() {
+        state = 0x12345678;
+        xorShift64();
+    }
+    result_type operator()() {
+        xorShift64();
+        return state - 1;
+    }
+private:
+    void xorShift64() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+    }
+    result_type state;
+};
+
 struct PoolAllocator {
     std::vector<void*> freeList;
     std::vector<char*> allocatedBlocks;
@@ -207,6 +229,55 @@ struct PoolAllocator {
 
     bool canAllocate() {
         return !freeList.empty() || allocatedBlocks.size() < maxBlockCount;
+    }
+};
+
+struct ArrayOfPoolAllocators {
+    std::vector<PoolAllocator> allocators;
+    static thread_local inline XorShift64 rng = XorShift64();
+
+    ArrayOfPoolAllocators() {}
+    ArrayOfPoolAllocators(int elementsPerAllocation, int allocatorCount, int64_t maxTotalCapacity, int size) {
+        int maxBlockCount = maxTotalCapacity / allocatorCount / elementsPerAllocation;
+        for (int i = 0; i < allocatorCount; ++i) {
+            allocators.emplace_back(size, elementsPerAllocation, maxBlockCount);
+        }
+    }
+    
+    int randomAllocatorId() {
+        return rng() % allocators.size();
+    }
+    bool tryLockForAllocate(int id) {
+        if (!allocators[id].canAllocate())
+            return false;
+        if (!allocators[id].mutex.try_lock())
+            return false;
+        if (!allocators[id].canAllocate()) {
+            allocators[id].mutex.unlock();
+            return false;
+        }
+        return true;
+    }
+    
+    void* allocate() {
+        while (true) {
+            int id = randomAllocatorId();
+            if (tryLockForAllocate(id)) {
+                auto ptr = allocators[id].allocateWithoutLock();
+                allocators[id].mutex.unlock();
+                return ptr;
+            }
+        }
+    }
+    void deallocate(void* ptr) {
+        while (true) {
+            int id = randomAllocatorId();
+            if (allocators[id].mutex.try_lock()) {
+                allocators[id].deallocateWithoutLock(ptr);
+                allocators[id].mutex.unlock();
+                return;
+            }
+        }
     }
 };
 
@@ -426,28 +497,6 @@ template<typename T, int MaxSize> struct FastSmallVector {
     const T& operator[](int i) const { return data[i]; }
 };
 
-struct XorShift64 {
-    using result_type = uint64_t;
-    static constexpr result_type min() { return 0; }
-    static constexpr result_type max() { return std::numeric_limits<result_type>::max() - 1; }
-
-    XorShift64() {
-        state = 0x12345678;
-        xorShift64();
-    }
-    result_type operator()() {
-        xorShift64();
-        return state - 1;
-    }
-private:
-    void xorShift64() {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-    }
-    result_type state;
-};
-
 using FastStackBitset = std::bitset<256>;// FastStackBitsetT<256>;
 
 struct DynamicBitset {
@@ -560,7 +609,9 @@ template<typename T> class FastThreadSafeishHashSet {
     
     Node** data;
     int capacity_;
+    int maxElementCount;
     PoolAllocator allocator;
+    std::atomic<int> elementCount = 0;
 
     Node*& node(std::size_t index) { return data[index]; }
     int capacity() { return capacity_; }
@@ -596,9 +647,27 @@ template<typename T> class FastThreadSafeishHashSet {
     }
 
 public:
-    FastThreadSafeishHashSet(int power2Capacity = 8) : allocator(sizeof(Node), 8192), data(allocData(1 << power2Capacity)), capacity_(1 << power2Capacity) {}
+    FastThreadSafeishHashSet(int maxElementCount, int power2Capacity) : allocator(sizeof(Node), 8192), data(allocData(1 << power2Capacity)), capacity_(1 << power2Capacity), maxElementCount(maxElementCount) {}
     ~FastThreadSafeishHashSet() {
+        std::size_t index = 0;
+        while (!node(index))
+            index += 1;
+        while (true) {
+            Node* n = node(index);
+            while (n) {
+                auto nextNode = n->next;
+                deallocNode(n);
+                n = nextNode;
+            }
+            index += 1;
+            if (index >= capacity())
+                break;
+        }
         deallocData(data);
+    }
+
+    bool hitElementLimit() {
+        return elementCount > maxElementCount;
     }
 
     T* find(const T& value) {
@@ -616,6 +685,9 @@ public:
         // or it will add duplicate of the same node.
         // however niether is a big problem, because orphan pointers are going to get deallocated anyway and having some duplicates
         // is not a problem.
+        if (hitElementLimit())
+            return;
+        elementCount += 1;
         auto i = getIndex(value);
         auto n = node(i);
         Node* allocatedNode = allocNode(std::move(value));
@@ -637,12 +709,17 @@ template<typename T, int Size=256> struct FixedStackVector {
     alignas(T) char data[sizeof(T) * Size];
     int size_ = 0;
     template<typename... Args> void emplace_back(Args&&... args) { new (&data[sizeof(T) * size_++]) T(std::forward<Args>(args)...); }
-    void pop_back()       { size_ -= 1; }
-    int size() const      { return size_; }
-    T* begin()            { return (T*)&data[0]; }
-    T* end()              { return (T*)&data[sizeof(T) * size_]; }
-    T& operator[] (int i) { return *(T*)&data[sizeof(T) * i]; }
-    T& back()             { return (*this)[size() - 1]; }
+    void pop_back()        { size_ -= 1; }
+    int size() const       { return size_; }
+    void clear()           { size_ = 0; }
+    T* begin()             { return (T*)&data[0]; }
+    T* end()               { return (T*)&data[sizeof(T) * size_]; }
+    const T* begin() const { return (const T*)&data[0]; }
+    const T* end() const   { return (const T*)&data[sizeof(T) * size_]; }
+    T& operator[] (int i)  { return *(T*)&data[sizeof(T) * i]; }
+    const T& operator[] (int i) const { return *(const T*)&data[sizeof(T) * i]; }
+    T& back()              { return (*this)[size() - 1]; }
+    bool empty() const     { return size() == 0; }
 };
 
 template<typename T> class PreallocatedVector {
@@ -673,6 +750,129 @@ public:
     int capacity() { return capacity_; }
     T* begin()     { return data; }
     T* end()       { return data + size_; }
+};
+
+template<typename T> class SmallVector {
+    constexpr static int StackSize = 14;
+    alignas(T) char data_[sizeof(T) * StackSize];
+    uint8_t size_ = 0;
+    bool useStackMemory = true;
+    T* data() {
+        if (useStackMemory)
+            return (T*)&data_[0];
+        return *(T**)data_;
+    }
+    const T* data() const {
+        if (useStackMemory)
+            return (const T*)&data_[0];
+        return *(const T**)data_;
+    }
+public:
+    static inline std::atomic<bool> UsedNonStackMemory = false;
+
+    SmallVector() {}
+    SmallVector(const SmallVector& other) {
+        (*this) = other;
+    }
+    SmallVector& operator=(const SmallVector& other) {
+        if (this == &other) 
+            return *this;
+        clear();
+        for (auto v : other)
+            emplace_back(v);
+        return *this;
+    }
+    ~SmallVector() {
+        if (!useStackMemory) {
+            free(data());
+        }
+    }
+    template<typename... Args> void emplace_back(Args&&... args) {
+        if (useStackMemory && size_ < StackSize) {
+            new (&data_[sizeof(T) * size_++]) T(std::forward<Args>(args)...);
+        } else {
+            if (useStackMemory) {
+                UsedNonStackMemory = true;
+                auto ptr = (T*)malloc(sizeof(T) * 256);
+                memcpy(ptr, data(), sizeof(T) * size_);
+                *(T**)data_ = ptr;
+                useStackMemory = false;
+            }
+            new (&data()[size_++]) T(std::forward<Args>(args)...);
+        }
+    }
+    void pop_back()        { size_ -= 1; }
+    int size() const       { return size_; }
+    void clear()           { size_ = 0; }
+    T* begin()             { return data(); }
+    T* end()               { return data() + size(); }
+    const T* begin() const { return data(); }
+    const T* end() const   { return data() + size(); }
+    T& operator[] (int i)  { return data()[i]; }
+    const T& operator[] (int i) const { return data()[i]; }
+    T& back()              { return (*this)[size() - 1]; }
+    bool empty() const     { return size() == 0; }
+};
+
+template<typename T> class VectorPoolAlloc {
+    T* data;
+    int size_;
+    ArrayOfPoolAllocators* allocator;
+
+    void clear() {
+        if (data == nullptr)
+            return;
+        if (SmallVector<NodeType>::UsedNonStackMemory) {
+            for (int i = 0; i < size_; ++i) {
+                data[i].~T();
+            }
+        }
+        allocator->deallocate(data);
+    }
+public:
+    VectorPoolAlloc(ArrayOfPoolAllocators* allocator, int size) : allocator(allocator), size_(size) {
+        data = (T*)allocator->allocate();
+        for (int i = 0; i < size_; ++i) {
+            new (&data[i]) T();
+        }
+    }
+    VectorPoolAlloc(const VectorPoolAlloc& other) : VectorPoolAlloc(other.allocator, other.size_) {
+        (*this) = other;
+    }
+    VectorPoolAlloc(VectorPoolAlloc&& other) {
+        data = other.data;
+        size_ = other.size_;
+        allocator = other.allocator;
+        other.data = nullptr;
+        other.allocator = nullptr;
+    }
+    VectorPoolAlloc& operator=(const VectorPoolAlloc& other) {
+        if (this == &other)
+            return *this;
+        for (int i = 0; i < size(); ++i) {
+            data[i] = other[i];
+        }
+        return *this;
+    }
+    VectorPoolAlloc& operator=(VectorPoolAlloc&& other) {
+        if (this == &other)
+            return *this;
+        clear();
+        data = other.data;
+        size_ = other.size_;
+        allocator = other.allocator;
+        other.data = nullptr;
+        other.allocator = nullptr;
+        return *this;
+    }
+    ~VectorPoolAlloc() {
+        clear();
+    }
+    T& operator[](int i) { return data[i]; }
+    const T& operator[](int i) const { return data[i]; }
+    int size() const { return size_; }
+    T* begin()       { return data; }
+    T* end()         { return data + size_; }
 };
 
 template<typename T> struct PriorityMultiQueue {
